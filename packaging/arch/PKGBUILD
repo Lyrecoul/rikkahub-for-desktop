@@ -1,0 +1,26 @@
+pkgname=rikkahub
+pkgver=2.4.2
+pkgrel=1
+pkgdesc='RikkaHub desktop LLM chat client'
+arch=('x86_64')
+url='https://github.com/rikkahub/rikkahub'
+license=('AGPL-3.0-only')
+depends=('glibc' 'libx11' 'libxext' 'libxi' 'libxrender' 'libxtst' 'freetype2' 'fontconfig')
+makedepends=('jdk-openjdk')
+options=('!strip' '!debug')
+source=()
+sha256sums=()
+
+build() {
+  cd "$startdir/../.."
+  ./gradlew -PdesktopOnly :desktop:createDistributable
+}
+
+package() {
+  local app_dir="$startdir/../../desktop/build/compose/binaries/main/app/rikkahub"
+  install -d "$pkgdir/opt/rikkahub" "$pkgdir/usr/bin" "$pkgdir/usr/share/applications" "$pkgdir/usr/share/pixmaps"
+  cp -a "$app_dir/." "$pkgdir/opt/rikkahub/"
+  ln -s /opt/rikkahub/bin/rikkahub "$pkgdir/usr/bin/rikkahub"
+  install -Dm644 "$startdir/../../docs/icon.png" "$pkgdir/usr/share/pixmaps/rikkahub.png"
+  install -Dm644 "$startdir/rikkahub.desktop" "$pkgdir/usr/share/applications/rikkahub.desktop"
+}

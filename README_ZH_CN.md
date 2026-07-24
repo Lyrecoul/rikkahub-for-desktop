@@ -70,6 +70,21 @@
 > [!TIP]
 > 你需要在 `app` 文件夹下添加 `google-services.json` 文件才能构建应用。
 
+### Arch Linux 桌面版
+
+桌面客户端无需 Android SDK 即可构建：
+
+```bash
+./gradlew -PdesktopOnly :desktop:run
+./gradlew -PdesktopOnly :desktop:createDistributable
+cd packaging/arch && makepkg -si
+```
+
+Arch 软件包内置 Java 运行时，构建时需要 `jdk17-openjdk`。设置和会话保存在
+`$XDG_CONFIG_HOME/rikkahub/desktop.json`（默认 `~/.config/rikkahub/desktop.json`）。服务商和 Brave Search
+密钥保存于 Linux Secret Service，而非 JSON 文件。当前桌面版支持 OpenAI-compatible 聊天接口、流式响应、
+结构化外部联网搜索和按需启用的本地时间工具。
+
 > [!IMPORTANT]  
 > 以下PR将被拒绝：
 > 1. 添加新语言，因为添加新语言会增加后续本地化的工作量

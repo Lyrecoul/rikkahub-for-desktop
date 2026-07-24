@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=RikkaHub
+Comment=Desktop LLM chat client
+Exec=rikkahub
+Icon=rikkahub
+Terminal=false
+Categories=Network;Chat;

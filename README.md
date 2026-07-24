@@ -76,6 +76,21 @@ Technology stack documentation:
 > [!TIP]
 > You need a `google-services.json` file at `app` folder to build the app.
 
+### Arch Linux desktop
+
+The native desktop client can be built without the Android SDK:
+
+```bash
+./gradlew -PdesktopOnly :desktop:run
+./gradlew -PdesktopOnly :desktop:createDistributable
+cd packaging/arch && makepkg -si
+```
+
+The Arch package bundles a Java runtime. Building it requires `jdk17-openjdk`; runtime settings and conversations are
+stored in `$XDG_CONFIG_HOME/rikkahub/desktop.json` (or `~/.config/rikkahub/desktop.json`). Provider and Brave Search
+keys are stored in the Linux Secret Service rather than this JSON file. The current desktop client supports
+OpenAI-compatible chat endpoints, streaming responses, structured external web search, and the opt-in local-time tool.
+
 > [!IMPORTANT]  
 > The following PRs will be rejected:
 > 1. Translation related changes, such as adding new languages or updating existing translations
