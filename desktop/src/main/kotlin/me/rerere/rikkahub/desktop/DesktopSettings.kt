@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.desktop
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -40,6 +42,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Bot
 import com.composables.icons.lucide.ChevronLeft
+import com.composables.icons.lucide.ChevronUp
 import com.composables.icons.lucide.CircleCheck
 import com.composables.icons.lucide.CircleX
 import com.composables.icons.lucide.Copy
@@ -81,6 +85,7 @@ import kotlin.math.roundToInt
 
 internal enum class DesktopSettingsSection(val itemIndex: Int) {
     GENERAL(0),
+    DATA(3),
     ASSISTANTS(4),
     PROVIDERS(5)
 }
@@ -92,8 +97,11 @@ internal fun DesktopSettingsPane(
     assistants: List<DesktopAssistantProfile>,
     selectedAssistantId: String,
     preferences: DesktopPreferences,
+    globalMemories: List<DesktopMemory>,
     webSearchSettings: DesktopWebSearchSettings,
     client: OpenAiClient,
+    mcpServers: List<DesktopMcpServer>,
+    mcpClient: DesktopMcpClient,
     initialSection: DesktopSettingsSection,
     showMenu: Boolean,
     onMenu: () -> Unit,
@@ -111,7 +119,9 @@ internal fun DesktopSettingsPane(
     onImportData: () -> String?,
     onResetData: () -> Unit,
     onWebSearchSettingsChange: (DesktopWebSearchSettings) -> Unit,
-    onPreferencesChange: (DesktopPreferences) -> Unit
+    onMcpServersChange: (List<DesktopMcpServer>) -> Unit,
+    onPreferencesChange: (DesktopPreferences) -> Unit,
+    onGlobalMemoriesChange: (List<DesktopMemory>) -> Unit
 ) {
     val selectedProvider = providers.firstOrNull { it.id == selectedProviderId } ?: providers.first()
     val selectedAssistant = assistants.firstOrNull { it.id == selectedAssistantId } ?: assistants.first()
@@ -140,6 +150,12 @@ internal fun DesktopSettingsPane(
     val memoriesValid = remember(draftAssistant.memories) {
         draftAssistant.memories.all { it.content.isNotBlank() }
     }
+    val injectionsValid = remember(draftAssistant.promptInjections) {
+        draftAssistant.promptInjections.all { injection ->
+            injection.content.isNotBlank() && (injection.constantActive || injection.keywords.isNotEmpty()) &&
+                (!injection.useRegex || injection.keywords.all { runCatching { Regex(it) }.isSuccess })
+        }
+    }
     val assistantBodiesValid = remember(draftAssistant.customHeaders, draftAssistant.customBodies) {
         draftAssistant.customHeaders.all { it.name.isNotBlank() } && draftAssistant.customBodies.all { body ->
             body.key.isNotBlank() && runCatching { Json.parseToJsonElement(body.value) }.isSuccess
@@ -155,6 +171,12 @@ internal fun DesktopSettingsPane(
     }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialSection.itemIndex)
+    var activeSection by remember { mutableStateOf(initialSection) }
+
+    LaunchedEffect(initialSection) {
+        activeSection = initialSection
+        listState.scrollToItem(initialSection.itemIndex)
+    }
 
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -176,10 +198,29 @@ internal fun DesktopSettingsPane(
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
 
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxHeight().widthIn(max = 880.dp),
+        Row(Modifier.fillMaxSize()) {
+            if (!showMenu) {
+                DesktopSettingsNavigation(
+                    activeSection = activeSection,
+                    onSectionClick = { section ->
+                        activeSection = section
+                        scope.launch { listState.animateScrollToItem(section.itemIndex) }
+                    }
+                )
+                Box(
+                    Modifier.fillMaxHeight().width(1.dp).background(
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                    )
+                )
+            }
+
+            Box(
+                Modifier.weight(1f).fillMaxHeight(),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize().widthIn(max = 880.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                     start = 24.dp,
                     end = 24.dp,
@@ -188,7 +229,7 @@ internal fun DesktopSettingsPane(
                 ),
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                item {
+                item("general") {
                     SettingsSection("通用设置", Lucide.Palette) {
                         SettingsRow(
                             title = "颜色模式",
@@ -234,7 +275,7 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                item {
+                item("message-display") {
                     SettingsSection("消息显示", Lucide.MessageSquareText) {
                         PreferenceSwitch(
                             "显示用户头像",
@@ -288,7 +329,7 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                item {
+                item("interaction") {
                     SettingsSection("交互", Lucide.Keyboard) {
                         PreferenceSwitch(
                             "按 Enter 发送",
@@ -301,11 +342,25 @@ internal fun DesktopSettingsPane(
                             "生成时跟随新的推理和回复内容",
                             preferences.enableAutoScroll
                         ) { onPreferencesChange(preferences.copy(enableAutoScroll = it)) }
+                        SettingsDivider()
+                        PreferenceSwitch(
+                            "消息导航",
+                            "滚动消息后显示跳转到顶部、上一条、下一条和底部的按钮",
+                            preferences.showMessageJumper
+                        ) { onPreferencesChange(preferences.copy(showMessageJumper = it)) }
+                        if (preferences.showMessageJumper) {
+                            SettingsDivider()
+                            PreferenceSwitch(
+                                "消息导航置左",
+                                "默认显示在消息区域右侧",
+                                preferences.messageJumperOnLeft
+                            ) { onPreferencesChange(preferences.copy(messageJumperOnLeft = it)) }
+                        }
                     }
                 }
 
-                item {
-                    SettingsSection("联网搜索、数据与备份", Lucide.Save) {
+                item("data") {
+                    SettingsSection("数据、备份与联网搜索", Lucide.Save) {
                         SettingsRow(
                             title = "导出备份",
                             description = "将服务商、助手、偏好和对话保存为 JSON"
@@ -392,7 +447,7 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                item {
+                item("assistants") {
                     SettingsSection("助手", Lucide.Bot) {
                         FlowRow(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -438,6 +493,18 @@ internal fun DesktopSettingsPane(
                                     Icon(Lucide.Trash2, "删除助手", Modifier.size(18.dp))
                                 }
                             }
+                            OutlinedTextField(
+                                draftAssistant.tags.joinToString(", "),
+                                { value ->
+                                    draftAssistant = draftAssistant.copy(
+                                        tags = value.split(',').map { it.trim() }.filter { it.isNotBlank() }
+                                            .distinctBy { it.lowercase() }.toSet()
+                                    )
+                                },
+                                Modifier.fillMaxWidth(),
+                                label = { Text("标签（逗号分隔）") },
+                                singleLine = true
+                            )
                             Box {
                                 val assistantProvider = providers.firstOrNull {
                                     it.id == draftAssistant.providerId
@@ -535,6 +602,13 @@ internal fun DesktopSettingsPane(
                                 draftAssistant = draftAssistant.copy(allowConversationSystemPrompt = it)
                             }
                             PreferenceSwitch(
+                                "对话世界书",
+                                "允许单个对话启用或禁用此助手的提示词注入",
+                                draftAssistant.allowConversationPromptInjection
+                            ) {
+                                draftAssistant = draftAssistant.copy(allowConversationPromptInjection = it)
+                            }
+                            PreferenceSwitch(
                                 "联网搜索",
                                 "默认在新对话中启用兼容 OpenAI 的联网搜索",
                                 draftAssistant.enableWebSearch
@@ -563,12 +637,38 @@ internal fun DesktopSettingsPane(
                             }
                             PreferenceSwitch(
                                 "记忆",
-                                "在此助手的系统提示词中包含已保存的事实",
+                                "允许模型记录、更新和使用跨对话的长期信息",
                                 draftAssistant.enableMemory
                             ) {
                                 draftAssistant = draftAssistant.copy(enableMemory = it)
                             }
                             if (draftAssistant.enableMemory) {
+                                PreferenceSwitch(
+                                    "全局共享记忆",
+                                    "与其他启用共享记忆的助手共用记忆库",
+                                    draftAssistant.useGlobalMemory
+                                ) {
+                                    draftAssistant = draftAssistant.copy(useGlobalMemory = it)
+                                }
+                                if (draftAssistant.useGlobalMemory) {
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Text("全局记忆", Modifier.weight(1f), fontWeight = FontWeight.Medium)
+                                        IconButton(onClick = { onGlobalMemoriesChange(globalMemories + DesktopMemory()) }) {
+                                            Icon(Lucide.Plus, "添加全局记忆", Modifier.size(18.dp))
+                                        }
+                                    }
+                                    globalMemories.forEachIndexed { index, memory ->
+                                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                                            OutlinedTextField(memory.content, { value ->
+                                                onGlobalMemoriesChange(globalMemories.mapIndexed { i, item -> if (i == index) item.copy(content = value) else item })
+                                            }, Modifier.weight(1f), label = { Text("共享事实或偏好") }, minLines = 2)
+                                            IconButton(onClick = { onGlobalMemoriesChange(globalMemories.filterIndexed { i, _ -> i != index }) }) {
+                                                Icon(Lucide.Trash2, "删除全局记忆", Modifier.size(18.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                                if (!draftAssistant.useGlobalMemory) {
                                 Row(
                                     Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
@@ -615,7 +715,18 @@ internal fun DesktopSettingsPane(
                                         ) { Icon(Lucide.Trash2, "删除记忆", Modifier.size(18.dp)) }
                                     }
                                 }
+                                }
                             }
+                            SettingsDivider()
+                            DesktopMcpSettings(
+                                servers = mcpServers,
+                                selectedServerIds = draftAssistant.mcpServerIds,
+                                mcpClient = mcpClient,
+                                onServersChange = onMcpServersChange,
+                                onSelectedServerIdsChange = { ids ->
+                                    draftAssistant = draftAssistant.copy(mcpServerIds = ids)
+                                }
+                            )
                             Row(
                                 Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -987,6 +1098,237 @@ internal fun DesktopSettingsPane(
                                 }
                             }
                             SettingsDivider()
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("提示词注入 / 世界书", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        "按关键词匹配上下文，或设为常驻注入",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        draftAssistant = draftAssistant.copy(
+                                            promptInjections = draftAssistant.promptInjections + DesktopPromptInjection()
+                                        )
+                                    }
+                                ) {
+                                    Icon(Lucide.Plus, null, Modifier.size(17.dp))
+                                    Text("添加", Modifier.padding(start = 7.dp))
+                                }
+                            }
+                            draftAssistant.promptInjections.forEachIndexed { index, injection ->
+                                Column(
+                                    Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        OutlinedTextField(
+                                            injection.name,
+                                            { value ->
+                                                draftAssistant = draftAssistant.copy(
+                                                    promptInjections = draftAssistant.promptInjections.mapIndexed { itemIndex, item ->
+                                                        if (itemIndex == index) item.copy(name = value) else item
+                                                    }
+                                                )
+                                            },
+                                            Modifier.weight(1f),
+                                            label = { Text("条目名称") },
+                                            singleLine = true
+                                        )
+                                        Switch(
+                                            checked = injection.enabled,
+                                            onCheckedChange = { enabled ->
+                                                draftAssistant = draftAssistant.copy(
+                                                    promptInjections = draftAssistant.promptInjections.mapIndexed { itemIndex, item ->
+                                                        if (itemIndex == index) item.copy(enabled = enabled) else item
+                                                    }
+                                                )
+                                            }
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                draftAssistant = draftAssistant.copy(
+                                                    promptInjections = draftAssistant.promptInjections.filterIndexed {
+                                                            itemIndex, _ -> itemIndex != index
+                                                    }
+                                                )
+                                            }
+                                        ) { Icon(Lucide.Trash2, "删除注入条目", Modifier.size(18.dp)) }
+                                    }
+                                    OutlinedTextField(
+                                        injection.content,
+                                        { value ->
+                                            draftAssistant = draftAssistant.copy(
+                                                promptInjections = draftAssistant.promptInjections.mapIndexed { itemIndex, item ->
+                                                    if (itemIndex == index) item.copy(content = value) else item
+                                                }
+                                            )
+                                        },
+                                        Modifier.fillMaxWidth(),
+                                        label = { Text("注入内容") },
+                                        minLines = 2
+                                    )
+                                    OutlinedTextField(
+                                        injection.keywords.joinToString(", "),
+                                        { value ->
+                                            draftAssistant = draftAssistant.copy(
+                                                promptInjections = draftAssistant.promptInjections.mapIndexed { itemIndex, item ->
+                                                    if (itemIndex == index) {
+                                                        item.copy(keywords = value.split(',').map { it.trim() }.filter { it.isNotBlank() })
+                                                    } else item
+                                                }
+                                            )
+                                        },
+                                        Modifier.fillMaxWidth(),
+                                        label = { Text("关键词（逗号分隔）") },
+                                        supportingText = { Text("留空时请开启常驻") },
+                                        singleLine = true
+                                    )
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedTextField(
+                                            injection.priority.toString(),
+                                            { value ->
+                                                if (value == "-" || value.toIntOrNull() != null) {
+                                                    draftAssistant = draftAssistant.copy(
+                                                        promptInjections = draftAssistant.promptInjections.mapIndexed { itemIndex, item ->
+                                                            if (itemIndex == index) item.copy(priority = value.toIntOrNull() ?: 0) else item
+                                                        }
+                                                    )
+                                                }
+                                            },
+                                            Modifier.weight(1f),
+                                            label = { Text("优先级") },
+                                            supportingText = { Text("数值越大越靠前") },
+                                            singleLine = true
+                                        )
+                                        OutlinedTextField(
+                                            injection.scanDepth.toString(),
+                                            { value ->
+                                                if (value.toIntOrNull()?.let { it > 0 } == true) {
+                                                    draftAssistant = draftAssistant.copy(
+                                                        promptInjections = draftAssistant.promptInjections.mapIndexed { itemIndex, item ->
+                                                            if (itemIndex == index) item.copy(scanDepth = value.toInt()) else item
+                                                        }
+                                                    )
+                                                }
+                                            },
+                                            Modifier.weight(1f),
+                                            label = { Text("扫描消息数") },
+                                            supportingText = { Text("用于关键词匹配") },
+                                            singleLine = true
+                                        )
+                                        if (injection.position == DesktopInjectionPosition.AT_DEPTH) {
+                                            OutlinedTextField(
+                                                injection.injectDepth.toString(),
+                                                { value ->
+                                                    if (value.toIntOrNull()?.let { it >= 0 } == true) {
+                                                        draftAssistant = draftAssistant.copy(
+                                                            promptInjections = draftAssistant.promptInjections.mapIndexed { itemIndex, item ->
+                                                                if (itemIndex == index) item.copy(injectDepth = value.toInt()) else item
+                                                            }
+                                                        )
+                                                    }
+                                                },
+                                                Modifier.weight(1f),
+                                                label = { Text("注入深度") },
+                                                supportingText = { Text("从末尾倒数") },
+                                                singleLine = true
+                                            )
+                                        }
+                                    }
+                                    Text("注入角色", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    SingleChoiceSegmentedButtonRow {
+                                        listOf("system", "user", "assistant").forEachIndexed { roleIndex, role ->
+                                            SegmentedButton(
+                                                selected = injection.role == role,
+                                                onClick = {
+                                                    draftAssistant = draftAssistant.copy(
+                                                        promptInjections = draftAssistant.promptInjections.mapIndexed { itemIndex, item ->
+                                                            if (itemIndex == index) item.copy(role = role) else item
+                                                        }
+                                                    )
+                                                },
+                                                shape = SegmentedButtonDefaults.itemShape(roleIndex, 3),
+                                                label = { Text(role) }
+                                            )
+                                        }
+                                    }
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        DesktopInjectionPosition.entries.forEach { position ->
+                                            FilterChip(
+                                                selected = injection.position == position,
+                                                onClick = {
+                                                    draftAssistant = draftAssistant.copy(
+                                                        promptInjections = draftAssistant.promptInjections.mapIndexed { itemIndex, item ->
+                                                            if (itemIndex == index) item.copy(position = position) else item
+                                                        }
+                                                    )
+                                                },
+                                                label = {
+                                                    Text(
+                                                        when (position) {
+                                                            DesktopInjectionPosition.BEFORE_SYSTEM_PROMPT -> "系统前"
+                                                            DesktopInjectionPosition.AFTER_SYSTEM_PROMPT -> "系统后"
+                                                            DesktopInjectionPosition.TOP_OF_CHAT -> "聊天顶部"
+                                                            DesktopInjectionPosition.BOTTOM_OF_CHAT -> "聊天底部"
+                                                            DesktopInjectionPosition.AT_DEPTH -> "指定深度"
+                                                        }
+                                                    )
+                                                }
+                                            )
+                                        }
+                                        FilterChip(
+                                            selected = injection.constantActive,
+                                            onClick = {
+                                                draftAssistant = draftAssistant.copy(
+                                                    promptInjections = draftAssistant.promptInjections.mapIndexed { itemIndex, item ->
+                                                        if (itemIndex == index) item.copy(constantActive = !item.constantActive) else item
+                                                    }
+                                                )
+                                            },
+                                            label = { Text("常驻") }
+                                        )
+                                        FilterChip(
+                                            selected = injection.useRegex,
+                                            onClick = {
+                                                draftAssistant = draftAssistant.copy(
+                                                    promptInjections = draftAssistant.promptInjections.mapIndexed { itemIndex, item ->
+                                                        if (itemIndex == index) item.copy(useRegex = !item.useRegex) else item
+                                                    }
+                                                )
+                                            },
+                                            label = { Text("正则关键词") }
+                                        )
+                                        FilterChip(
+                                            selected = injection.caseSensitive,
+                                            onClick = {
+                                                draftAssistant = draftAssistant.copy(
+                                                    promptInjections = draftAssistant.promptInjections.mapIndexed { itemIndex, item ->
+                                                        if (itemIndex == index) item.copy(caseSensitive = !item.caseSensitive) else item
+                                                    }
+                                                )
+                                            },
+                                            label = { Text("区分大小写") }
+                                        )
+                                    }
+                                }
+                            }
+                            SettingsDivider()
                             RequestOverridesEditor(
                                 headers = draftAssistant.customHeaders,
                                 bodies = draftAssistant.customBodies,
@@ -1001,7 +1343,7 @@ internal fun DesktopSettingsPane(
                                 enabled = draftAssistant.name.isNotBlank() &&
                                     draftAssistant.presetMessages.all { it.content.isNotBlank() } &&
                                     draftAssistant.quickMessages.all { it.content.isNotBlank() } &&
-                                    messageTemplateValid && regexRulesValid && assistantBodiesValid && memoriesValid,
+                                    messageTemplateValid && regexRulesValid && assistantBodiesValid && memoriesValid && injectionsValid,
                                 modifier = Modifier.align(Alignment.End)
                             ) {
                                 Icon(Lucide.Save, null, Modifier.size(17.dp))
@@ -1011,7 +1353,7 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                item {
+                item("providers") {
                     SettingsSection("模型与服务", Lucide.ServerCog) {
                         FlowRow(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -1155,6 +1497,31 @@ internal fun DesktopSettingsPane(
                                     }
                                 }
                             }
+                            OutlinedTextField(
+                                draftProvider.config.titleModel,
+                                { value ->
+                                    draftProvider = draftProvider.copy(
+                                        config = draftProvider.config.copy(titleModel = value)
+                                    )
+                                },
+                                Modifier.fillMaxWidth(),
+                                label = { Text("标题模型") },
+                                supportingText = { Text("留空时使用聊天模型") },
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                draftProvider.config.titlePrompt,
+                                { value ->
+                                    draftProvider = draftProvider.copy(
+                                        config = draftProvider.config.copy(titlePrompt = value)
+                                    )
+                                },
+                                Modifier.fillMaxWidth(),
+                                label = { Text("标题提示词") },
+                                supportingText = { Text("支持 {locale} 与 {content} 占位符") },
+                                minLines = 4,
+                                maxLines = 8
+                            )
                             Text(
                                 "温度  ${"%.1f".format(draftProvider.config.temperature)}",
                                 fontSize = 13.sp
@@ -1373,11 +1740,12 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                item {
+                item("back-to-chat") {
                     TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
                         Icon(Lucide.ChevronLeft, null, Modifier.size(17.dp))
                         Text("返回对话", Modifier.padding(start = 6.dp))
                     }
+                }
                 }
             }
         }
@@ -1525,6 +1893,71 @@ private fun SettingsSection(title: String, icon: ImageVector, content: @Composab
 }
 
 @Composable
+private fun DesktopSettingsNavigation(
+    activeSection: DesktopSettingsSection,
+    onSectionClick: (DesktopSettingsSection) -> Unit
+) {
+    val sections = listOf(
+        Triple(DesktopSettingsSection.GENERAL, "通用设置", Lucide.Palette),
+        Triple(DesktopSettingsSection.ASSISTANTS, "助手", Lucide.Bot),
+        Triple(DesktopSettingsSection.PROVIDERS, "模型与服务", Lucide.ServerCog),
+        Triple(DesktopSettingsSection.DATA, "数据与备份", Lucide.Save)
+    )
+
+    Column(
+        Modifier.widthIn(min = 196.dp, max = 196.dp).fillMaxHeight().padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            "设置分类",
+            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium
+        )
+        sections.forEach { (section, label, icon) ->
+            val selected = activeSection == section
+            Surface(
+                modifier = Modifier.fillMaxWidth().clickable { onSectionClick(section) },
+                shape = RoundedCornerShape(6.dp),
+                color = if (selected) {
+                    MaterialTheme.colorScheme.secondaryContainer
+                } else {
+                    Color.Transparent
+                }
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        icon,
+                        null,
+                        Modifier.size(18.dp),
+                        tint = if (selected) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                    Text(
+                        label,
+                        Modifier.padding(start = 10.dp),
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        fontSize = 14.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SettingsRow(
     title: String,
     description: String,
@@ -1562,6 +1995,152 @@ private fun SettingsDivider() {
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
     )
 }
+
+@Composable
+private fun DesktopMcpSettings(
+    servers: List<DesktopMcpServer>,
+    selectedServerIds: Set<String>,
+    mcpClient: DesktopMcpClient,
+    onServersChange: (List<DesktopMcpServer>) -> Unit,
+    onSelectedServerIdsChange: (Set<String>) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var syncingServerId by remember { mutableStateOf<String?>(null) }
+    var syncError by remember { mutableStateOf<String?>(null) }
+    var expandedToolServerIds by remember { mutableStateOf(emptySet<String>()) }
+
+    Column(Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("MCP 服务器", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Text("同步远程工具后，为此助手启用所需服务器", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            }
+            IconButton(onClick = { onServersChange(servers + DesktopMcpServer()) }) {
+                Icon(Lucide.Plus, "添加 MCP 服务器", Modifier.size(18.dp))
+            }
+        }
+        servers.forEach { server ->
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked = server.id in selectedServerIds,
+                        onCheckedChange = { selected ->
+                            onSelectedServerIdsChange(if (selected) selectedServerIds + server.id else selectedServerIds - server.id)
+                        }
+                    )
+                    Text(server.name.ifBlank { "未命名 MCP 服务器" }, Modifier.padding(start = 10.dp).weight(1f))
+                    IconButton(onClick = { onServersChange(servers.filterNot { it.id == server.id }) }) {
+                        Icon(Lucide.Trash2, "删除 MCP 服务器", Modifier.size(18.dp))
+                    }
+                }
+                OutlinedTextField(
+                    value = server.name,
+                    onValueChange = { value -> onServersChange(servers.replaceMcpServer(server.id) { it.copy(name = value) }) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("服务器名称") },
+                    supportingText = { Text("仅允许字母和数字，用于生成稳定的工具名") },
+                    singleLine = true,
+                    isError = server.name.isNotBlank() && !server.name.matches(Regex("[A-Za-z0-9]+"))
+                )
+                OutlinedTextField(
+                    value = server.url,
+                    onValueChange = { value -> onServersChange(servers.replaceMcpServer(server.id) { it.copy(url = value) }) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("服务器 URL") },
+                    placeholder = { Text("https://example.com/mcp") },
+                    singleLine = true
+                )
+                SingleChoiceSegmentedButtonRow {
+                    DesktopMcpTransport.entries.forEachIndexed { index, transport ->
+                        SegmentedButton(
+                            selected = server.transport == transport,
+                            onClick = { onServersChange(servers.replaceMcpServer(server.id) { it.copy(transport = transport) }) },
+                            shape = SegmentedButtonDefaults.itemShape(index, DesktopMcpTransport.entries.size),
+                            label = { Text(if (transport == DesktopMcpTransport.STREAMABLE_HTTP) "Streamable HTTP" else "SSE") }
+                        )
+                    }
+                }
+                PreferenceSwitch("启用服务器", "关闭后不会向模型暴露其中的工具", server.enabled) { enabled ->
+                    onServersChange(servers.replaceMcpServer(server.id) { it.copy(enabled = enabled) })
+                }
+                OutlinedButton(
+                    enabled = syncingServerId == null && server.name.matches(Regex("[A-Za-z0-9]+")) && server.url.isNotBlank(),
+                    onClick = {
+                        syncingServerId = server.id
+                        syncError = null
+                        scope.launch {
+                            runCatching { mcpClient.syncTools(server) }
+                                .onSuccess { tools ->
+                                    val prior = server.tools.associateBy { it.name }
+                                    onServersChange(servers.replaceMcpServer(server.id) {
+                                        it.copy(tools = tools.map { tool ->
+                                            tool.copy(enabled = prior[tool.name]?.enabled ?: true)
+                                        })
+                                    })
+                                }
+                                .onFailure { syncError = it.message ?: "同步 MCP 工具失败" }
+                            syncingServerId = null
+                        }
+                    }
+                ) {
+                    if (syncingServerId == server.id) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    else Icon(Lucide.Download, null, Modifier.size(17.dp))
+                    Text("同步工具", Modifier.padding(start = 7.dp))
+                }
+                if (server.tools.isNotEmpty()) {
+                    val toolsExpanded = server.id in expandedToolServerIds
+                    val enabledToolCount = server.tools.count { it.enabled }
+                    TextButton(
+                        onClick = {
+                            expandedToolServerIds = if (toolsExpanded) {
+                                expandedToolServerIds - server.id
+                            } else {
+                                expandedToolServerIds + server.id
+                            }
+                        }
+                    ) {
+                        Text(
+                            if (toolsExpanded) {
+                                "收起工具"
+                            } else {
+                                "管理 ${server.tools.size} 个工具（已启用 $enabledToolCount 个）"
+                            }
+                        )
+                        Icon(
+                            if (toolsExpanded) Lucide.ChevronUp else Lucide.ChevronDown,
+                            null,
+                            Modifier.padding(start = 4.dp).size(17.dp)
+                        )
+                    }
+                    if (toolsExpanded) {
+                        server.tools.forEach { tool ->
+                            PreferenceSwitch(tool.name, tool.description.ifBlank { "MCP 工具" }, tool.enabled) { enabled ->
+                                onServersChange(servers.replaceMcpServer(server.id) {
+                                    it.copy(tools = it.tools.map { existing ->
+                                        if (existing.name == tool.name) existing.copy(enabled = enabled) else existing
+                                    })
+                                })
+                            }
+                        }
+                    }
+                }
+                SettingsDivider()
+            }
+        }
+        syncError?.let { Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+    }
+}
+
+private fun List<DesktopMcpServer>.replaceMcpServer(
+    id: String,
+    transform: (DesktopMcpServer) -> DesktopMcpServer
+): List<DesktopMcpServer> = map { if (it.id == id) transform(it) else it }
 
 private sealed interface ConnectionState {
     data object Idle : ConnectionState

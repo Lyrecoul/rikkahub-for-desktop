@@ -1,19 +1,27 @@
 package me.rerere.rikkahub.desktop
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -26,6 +34,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -69,7 +78,10 @@ import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -79,9 +91,10 @@ import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
@@ -91,17 +104,24 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import com.composables.icons.lucide.Bot
+import com.composables.icons.lucide.ArrowDown
+import com.composables.icons.lucide.ArrowDownToLine
+import com.composables.icons.lucide.ArrowUp
+import com.composables.icons.lucide.ArrowUpToLine
 import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronLeft
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Download
 import com.composables.icons.lucide.Globe
+import com.composables.icons.lucide.GitFork
+import com.composables.icons.lucide.Languages
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Menu
 import com.composables.icons.lucide.Maximize2
 import com.composables.icons.lucide.Ellipsis
 import com.composables.icons.lucide.ExternalLink
+import com.composables.icons.lucide.Folder
 import com.composables.icons.lucide.Pencil
 import com.composables.icons.lucide.Paperclip
 import com.composables.icons.lucide.Pin
@@ -113,7 +133,14 @@ import com.composables.icons.lucide.Send
 import com.composables.icons.lucide.Settings
 import com.composables.icons.lucide.Sparkles
 import com.composables.icons.lucide.Square
+import com.composables.icons.lucide.Star
 import com.composables.icons.lucide.Trash2
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
+import dev.chrisbanes.haze.blur.blurEffect
+import dev.chrisbanes.haze.blur.HazeColorEffect
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -195,8 +222,43 @@ private data class ConversationPromptTarget(
     val systemPrompt: String
 )
 
+private data class FolderCreateTarget(
+    val conversationId: String? = null,
+    val assistantId: String
+)
+
+private data class CompressionTarget(val conversationId: String)
+
+private data class TranslationTarget(
+    val conversationId: String,
+    val messageIndex: Int,
+    val content: String
+)
+
 private val MessageTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
     .withZone(ZoneId.systemDefault())
+
+private val FilledStar = ImageVector.Builder(
+    name = "filled_star",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+).apply {
+    path(fill = SolidColor(Color.Black)) {
+        moveTo(12f, 2f)
+        lineTo(15.09f, 8.26f)
+        lineTo(22f, 9.27f)
+        lineTo(17f, 14.14f)
+        lineTo(18.18f, 21.02f)
+        lineTo(12f, 17.77f)
+        lineTo(5.82f, 21.02f)
+        lineTo(7f, 14.14f)
+        lineTo(2f, 9.27f)
+        lineTo(8.91f, 8.26f)
+        close()
+    }
+}.build()
 
 private fun showOpenFileDialog(owner: Frame, title: String, multiple: Boolean): List<File>? {
     val dialog = FileDialog(owner, title, FileDialog.LOAD).apply {
@@ -219,10 +281,11 @@ private fun showSaveFileDialog(owner: Frame, title: String, suggestedName: Strin
 }
 
 fun main() = application {
+    val appIcon = rememberDesktopResourcePainter("icon.png")
     Window(
         onCloseRequest = ::exitApplication,
         title = "RikkaHub",
-        icon = painterResource("icon.png"),
+        icon = appIcon,
         state = WindowState(size = DpSize(1280.dp, 820.dp))
     ) {
         RikkaHubDesktop(dialogOwner = window)
@@ -233,7 +296,8 @@ fun main() = application {
 private fun RikkaHubDesktop(
     dialogOwner: Frame,
     store: DesktopStore = remember { DesktopStore() },
-    client: OpenAiClient = remember { OpenAiClient() }
+    client: OpenAiClient = remember { OpenAiClient() },
+    mcpClient: DesktopMcpClient = remember { DesktopMcpClient() }
 ) {
     var data by remember { mutableStateOf(store.load()) }
     var prompt by remember { mutableStateOf("") }
@@ -241,11 +305,17 @@ private fun RikkaHubDesktop(
     var showSettings by remember { mutableStateOf(false) }
     var settingsSection by remember { mutableStateOf(DesktopSettingsSection.GENERAL) }
     var showSidebar by remember { mutableStateOf(true) }
+    var jumpToMessageId by remember { mutableStateOf<String?>(null) }
     var editTarget by remember { mutableStateOf<MessageEditTarget?>(null) }
     var renameTarget by remember { mutableStateOf<ConversationRenameTarget?>(null) }
     var conversationPromptTarget by remember { mutableStateOf<ConversationPromptTarget?>(null) }
+    var folderCreateTarget by remember { mutableStateOf<FolderCreateTarget?>(null) }
+    var compressionTarget by remember { mutableStateOf<CompressionTarget?>(null) }
+    var showConversationStats by remember { mutableStateOf(false) }
+    var translationTarget by remember { mutableStateOf<TranslationTarget?>(null) }
     var attachmentPickerOpen by remember { mutableStateOf(false) }
     val generationJobs = remember { mutableStateMapOf<String, Job>() }
+    val suggestionJobs = remember { mutableStateMapOf<String, Job>() }
     val generationErrors = remember { mutableStateMapOf<String, String>() }
     val scope = rememberCoroutineScope()
     var saveJob by remember { mutableStateOf<Job?>(null) }
@@ -330,14 +400,7 @@ private fun RikkaHubDesktop(
     }
 
     fun selectConversationAssistant(conversationId: String, assistantId: String) {
-        if (data.assistants.any { it.id == assistantId }) {
-            update(data.copy(
-                selectedAssistantId = assistantId,
-                conversations = data.conversations.map {
-                    if (it.id == conversationId) it.copy(assistantId = assistantId) else it
-                }
-            ))
-        }
+        update(data.assignAssistantToConversation(conversationId, assistantId))
     }
 
     fun selectAssistantModel(assistantId: String, providerId: String, model: String) {
@@ -386,6 +449,8 @@ private fun RikkaHubDesktop(
         val imported = store.importData(source.toPath())
         generationJobs.values.forEach { it.cancel() }
         generationJobs.clear()
+        suggestionJobs.values.forEach { it.cancel() }
+        suggestionJobs.clear()
         generationErrors.clear()
         prompt = ""
         pendingAttachments = emptyList()
@@ -396,6 +461,8 @@ private fun RikkaHubDesktop(
     fun resetDesktopData() {
         generationJobs.values.forEach { it.cancel() }
         generationJobs.clear()
+        suggestionJobs.values.forEach { it.cancel() }
+        suggestionJobs.clear()
         generationErrors.clear()
         prompt = ""
         pendingAttachments = emptyList()
@@ -404,24 +471,171 @@ private fun RikkaHubDesktop(
     }
 
     fun chooseAttachments(): List<DesktopAttachment>? {
-        return showOpenFileDialog(dialogOwner, "添加图片或文本文件", multiple = true)?.map(::loadDesktopAttachment)
+        return showOpenFileDialog(dialogOwner, "添加图片、音频、文本或文档", multiple = true)?.map(::loadDesktopAttachment)
+    }
+
+    fun memoryToolHandler(assistantId: String) = DesktopMemoryToolHandler(
+        create = { content ->
+            val memory = DesktopMemory(content = content.trim())
+            update(data.updateMemories(assistantId) { it + memory })
+            memory
+        },
+        edit = { id, content ->
+            var updated: DesktopMemory? = null
+            update(data.updateMemories(assistantId) { memories ->
+                memories.map { memory ->
+                    if (memory.id == id) memory.copy(content = content.trim()).also { updated = it } else memory
+                }
+            })
+            updated ?: error("Memory record #$id not found")
+        },
+        delete = { id ->
+            var found = false
+            update(data.updateMemories(assistantId) { memories ->
+                memories.filter { memory ->
+                    (memory.id != id).also { if (!it) found = true }
+                }
+            })
+            check(found) { "Memory record #$id not found" }
+        }
+    )
+
+    fun startTitleGeneration(conversationId: String, force: Boolean = true) {
+        if (generationJobs.containsKey(conversationId)) return
+        val conversation = data.conversations.firstOrNull { it.id == conversationId } ?: return
+        if (conversation.messages.isEmpty()) return
+        if (!force && conversation.title != "新对话" && conversation.title.isNotBlank()) return
+        val config = data.titleGenerationConfig(conversation)
+        val content = conversation.messages.takeLast(4).joinToString("\n\n") { message ->
+            "${message.role.uppercase()}: ${message.content.take(500)}"
+        }
+        val request = config.titleRequest(content)
+        generationErrors.remove(conversationId)
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                var result = ""
+                client.stream(config, listOf(ChatMessage(role = "user", content = request))).collect { delta ->
+                    result += delta.content
+                }
+                val title = normalizeGeneratedTitle(result)
+                check(title.isNotBlank()) { "标题模型没有返回内容" }
+                updateConversation(conversationId) { current ->
+                    current.copy(title = title, updatedAt = System.currentTimeMillis())
+                }
+            } catch (_: CancellationException) {
+                // Keep the existing title when the request is cancelled.
+            } catch (error: Throwable) {
+                generationErrors[conversationId] = error.message ?: "生成标题失败"
+            } finally {
+                generationJobs.remove(conversationId)
+            }
+        }
+        generationJobs[conversationId] = job
+        job.start()
+    }
+
+    fun startSuggestionGeneration(conversationId: String) {
+        if (suggestionJobs.containsKey(conversationId)) return
+        val conversation = data.conversations.firstOrNull { it.id == conversationId } ?: return
+        if (conversation.messages.isEmpty()) return
+        val config = data.configForConversation(conversation).backgroundRequestConfig(maxTokens = 256)
+        val content = conversation.messages.takeLast(6).joinToString("\n\n") { message ->
+            "${message.role.uppercase()}: ${message.content.take(700)}"
+        }
+        val request = """
+            Suggest 3 concise, useful next messages the user could send to continue this conversation.
+            Use the user's primary language. Reply with one suggestion per line and no introduction.
+
+            <conversation>
+            $content
+            </conversation>
+        """.trimIndent()
+        generationErrors.remove(conversationId)
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                var result = ""
+                client.stream(config, listOf(ChatMessage(role = "user", content = request))).collect { delta ->
+                    result += delta.content
+                }
+                val suggestions = parseChatSuggestions(result)
+                check(suggestions.isNotEmpty()) { "建议模型没有返回内容" }
+                updateConversation(conversationId) { current ->
+                    current.copy(suggestions = suggestions, updatedAt = System.currentTimeMillis())
+                }
+            } catch (_: CancellationException) {
+                // Cancellation leaves existing suggestions unchanged.
+            } catch (error: Throwable) {
+                generationErrors[conversationId] = error.message ?: "生成回复建议失败"
+            } finally {
+                suggestionJobs.remove(conversationId)
+            }
+        }
+        suggestionJobs[conversationId] = job
+        job.start()
     }
 
     fun startGeneration(
         conversationId: String,
         requestMessages: List<ChatMessage>,
         title: String? = null,
-        alternativeTarget: ChatMessage? = null,
-        forkName: String? = null
+        alternativeTarget: ChatMessage? = null
     ) {
         if (generationJobs.containsKey(conversationId)) return
         val generationConversation = data.conversations.firstOrNull { it.id == conversationId } ?: return
         val generationAssistant = data.assistantFor(generationConversation)
-        val generationConfig = data.configForConversation(generationConversation)
+        val selectedMcpServerIds = generationAssistant.mcpServerIds
+        val selectedMcpServers = data.mcpServers.filter { server ->
+            server.enabled && server.id in selectedMcpServerIds
+        }
+        val missingMcpServerIds = selectedMcpServerIds - data.mcpServers.map { it.id }.toSet()
+        if (missingMcpServerIds.isNotEmpty()) {
+            generationErrors[conversationId] = "MCP 配置已失效，请在助手设置中重新选择服务器"
+            return
+        }
+        val serversNeedingSync = selectedMcpServers.filter { it.tools.isEmpty() }
+        if (serversNeedingSync.isNotEmpty()) {
+            generationErrors.remove(conversationId)
+            val syncJob = scope.launch {
+                var handedOffToGeneration = false
+                try {
+                    val toolsByServerId = serversNeedingSync.map { server ->
+                        server.id to mcpClient.syncTools(server).also { tools ->
+                            check(tools.isNotEmpty()) { "MCP 服务器 ${server.name} 未提供可用工具" }
+                        }
+                    }.toMap()
+                    update(data.copy(mcpServers = data.mcpServers.map { server ->
+                        toolsByServerId[server.id]?.let { tools -> server.copy(tools = tools) } ?: server
+                    }))
+                    generationJobs.remove(conversationId)
+                    handedOffToGeneration = true
+                    startGeneration(conversationId, requestMessages, title, alternativeTarget)
+                } catch (error: Throwable) {
+                    generationErrors[conversationId] = "MCP 工具同步失败：${error.message ?: "未知错误"}"
+                } finally {
+                    if (!handedOffToGeneration) generationJobs.remove(conversationId)
+                }
+            }
+            generationJobs[conversationId] = syncJob
+            return
+        }
+        val requestAssistant = if (generationConversation.usesPromptInjections(generationAssistant)) {
+            generationAssistant
+        } else {
+            generationAssistant.copy(promptInjections = emptyList())
+        }
+        val baseGenerationConfig = data.configForConversation(generationConversation)
+        val injected = requestAssistant.injectPromptMessages(
+            requestAssistant.limitContext(requestMessages)
+        )
+        val generationConfig = baseGenerationConfig.copy(
+            systemPrompt = (injected.systemPrefix + baseGenerationConfig.systemPrompt + injected.systemSuffix)
+                .filter { it.isNotBlank() }
+                .joinToString("\n\n")
+        )
         val generationMessages = runCatching {
-            generationAssistant.renderMessageTemplate(
-                generationAssistant.transformRequestMessages(
-                    generationAssistant.limitContext(requestMessages)
+            requestAssistant.renderMessageTemplate(
+                requestAssistant.transformRequestMessages(
+                    injected.messages
                 )
             )
         }.getOrElse { error ->
@@ -430,26 +644,11 @@ private fun RikkaHubDesktop(
         }
         generationErrors.remove(conversationId)
         updateConversation(conversationId) { conversation ->
-            val nextMessages = requestMessages + (alternativeTarget?.beginAlternative()
-                ?: ChatMessage(role = "assistant", content = ""))
-            val updated = conversation.copy(
-                title = title ?: conversation.title,
-                messages = nextMessages,
-                updatedAt = System.currentTimeMillis()
-            )
-            if (forkName != null && conversation.messages != requestMessages) {
-                updated.copy(
-                    branches = conversation.branches + DesktopConversationBranch(
-                        name = forkName,
-                        messages = conversation.messages
-                    )
-                )
-            } else {
-                updated
-            }
+            conversation.prepareGeneration(requestMessages, alternativeTarget, title)
         }
 
         val job = scope.launch(start = CoroutineStart.LAZY) {
+            var completed = false
             try {
                 var request = generationMessages
                 var toolRounds = 0
@@ -474,8 +673,25 @@ private fun RikkaHubDesktop(
                     val toolCalls = data.conversations.firstOrNull { it.id == conversationId }
                         ?.messages?.lastOrNull()?.toolCalls.orEmpty()
                     if (toolCalls.isEmpty()) break
-                    check(toolRounds++ < 8) { "工具调用次数超过上限" }
-                    val results = client.executeToolCalls(generationConfig, toolCalls)
+                    if (toolRounds >= 8) {
+                        val limitMessage = "本次回复已达到 8 轮工具调用上限。请继续发送消息以开始新的处理。"
+                        updateConversation(conversationId) { conversation ->
+                            conversation.copy(
+                                messages = conversation.messages + toolCalls.map { call ->
+                                    ChatMessage(role = "tool", content = limitMessage, toolCallId = call.id)
+                                } + ChatMessage(role = "assistant", content = limitMessage),
+                                updatedAt = System.currentTimeMillis()
+                            )
+                        }
+                        break
+                    }
+                    toolRounds++
+                    val results = client.executeToolCalls(
+                        generationConfig,
+                        toolCalls,
+                        memoryToolHandler(generationAssistant.id),
+                        mcpClient
+                    )
                     updateConversation(conversationId) { conversation ->
                         conversation.copy(
                             messages = conversation.messages + results,
@@ -483,9 +699,11 @@ private fun RikkaHubDesktop(
                         )
                     }
                     val current = data.conversations.firstOrNull { it.id == conversationId } ?: break
-                    request = generationAssistant.renderMessageTemplate(
-                        generationAssistant.transformRequestMessages(
-                            generationAssistant.limitContext(current.messages)
+                    request = requestAssistant.renderMessageTemplate(
+                        requestAssistant.transformRequestMessages(
+                            requestAssistant.injectPromptMessages(
+                                requestAssistant.limitContext(current.messages)
+                            ).messages
                         )
                     )
                     updateConversation(conversationId) { conversation ->
@@ -504,6 +722,7 @@ private fun RikkaHubDesktop(
                     }
                     conversation.copy(messages = messages, updatedAt = System.currentTimeMillis())
                 }
+                completed = true
             } catch (_: CancellationException) {
                 updateConversation(conversationId) { conversation ->
                     val last = conversation.messages.lastOrNull()
@@ -547,14 +766,114 @@ private fun RikkaHubDesktop(
                 }
             } finally {
                 generationJobs.remove(conversationId)
+                if (completed) {
+                    val latest = data.conversations.firstOrNull { it.id == conversationId }
+                    if (latest?.title == "新对话" && latest.messages.any { it.role == "assistant" }) {
+                        startTitleGeneration(conversationId, force = false)
+                    }
+                    startSuggestionGeneration(conversationId)
+                }
             }
         }
         generationJobs[conversationId] = job
         job.start()
     }
 
+    fun startCompression(conversationId: String, targetTokens: Int, keepRecentMessages: Int, additionalPrompt: String) {
+        if (generationJobs.containsKey(conversationId)) return
+        val conversation = data.conversations.firstOrNull { it.id == conversationId } ?: return
+        if (targetTokens <= 0 || keepRecentMessages < 0 || conversation.messages.size <= keepRecentMessages) {
+            generationErrors[conversationId] = "没有足够的消息可压缩"
+            return
+        }
+        val messagesToCompress = conversation.messages.dropLast(keepRecentMessages)
+        val config = data.configForConversation(conversation).backgroundRequestConfig(maxTokens = targetTokens)
+        val request = buildString {
+            appendLine("You are a conversation compression assistant. Summarize the conversation below for a future assistant.")
+            appendLine("Preserve facts, decisions, user preferences, unresolved work, and important details.")
+            appendLine("Keep the same language where practical. Target approximately $targetTokens tokens.")
+            appendLine("Output only the reusable summary, with no meta-commentary.")
+            if (additionalPrompt.isNotBlank()) appendLine("Additional instructions: ${additionalPrompt.trim()}")
+            appendLine("<conversation>")
+            append(messagesToCompress.compressionTranscript())
+            appendLine()
+            append("</conversation>")
+        }
+        generationErrors.remove(conversationId)
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                var summary = ""
+                client.stream(config, listOf(ChatMessage(role = "user", content = request))).collect { delta ->
+                    summary += delta.content
+                }
+                check(summary.isNotBlank()) { "压缩模型没有返回摘要" }
+                updateConversation(conversationId) { current ->
+                    current.replaceHistoryWithSummary(summary, keepRecentMessages)
+                }
+            } catch (_: CancellationException) {
+                // Cancellation leaves the original conversation untouched.
+            } catch (error: Throwable) {
+                generationErrors[conversationId] = error.message ?: "压缩对话失败"
+            } finally {
+                generationJobs.remove(conversationId)
+            }
+        }
+        generationJobs[conversationId] = job
+        job.start()
+    }
+
+    fun startTranslation(target: TranslationTarget, language: String) {
+        if (generationJobs.containsKey(target.conversationId)) return
+        val conversation = data.conversations.firstOrNull { it.id == target.conversationId } ?: return
+        val message = conversation.messages.getOrNull(target.messageIndex) ?: return
+        val config = data.configForConversation(conversation).backgroundRequestConfig()
+        val request = """
+            Translate the text in <source_text> into ${language.trim()}.
+            Return only the translation, without explanations.
+
+            <source_text>
+            ${message.content}
+            </source_text>
+        """.trimIndent()
+        generationErrors.remove(target.conversationId)
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            var translatedMessageId: String? = null
+            try {
+                var result = ""
+                client.stream(config, listOf(ChatMessage(role = "user", content = request))).collect { delta ->
+                    result += delta.content
+                }
+                check(result.isNotBlank()) { "翻译模型没有返回内容" }
+                updateConversation(target.conversationId) { current ->
+                    current.copy(
+                        messages = current.messages.mapIndexed { index, item ->
+                            if (index == target.messageIndex) {
+                                item.withTranslation(result.trim(), language.trim())
+                            } else item
+                        },
+                        updatedAt = System.currentTimeMillis()
+                    )
+                }
+                translatedMessageId = message.id
+            } catch (_: CancellationException) {
+                // Cancellation leaves the original message untouched.
+            } catch (error: Throwable) {
+                generationErrors[target.conversationId] = error.message ?: "翻译失败"
+            } finally {
+                generationJobs.remove(target.conversationId)
+                translatedMessageId?.let { messageId -> jumpToMessageId = messageId }
+            }
+        }
+        generationJobs[target.conversationId] = job
+        job.start()
+    }
+
     val selected = data.conversations.firstOrNull { it.id == data.selectedConversationId }
         ?: data.conversations.first()
+    LaunchedEffect(selected.id, selected.draft, selected.draftAttachments) {
+        prompt = selected.draft
+        pendingAttachments = selected.draftAttachments
+    }
     val selectedAssistant = data.assistantFor(selected)
     val effectiveConfig = data.configForAssistant(selectedAssistant)
     val systemDark = isSystemInDarkTheme()
@@ -566,7 +885,17 @@ private fun RikkaHubDesktop(
 
     MaterialTheme(colorScheme = if (useDarkTheme) SakuraDarkColors else SakuraLightColors) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
+        BoxWithConstraints(
+            Modifier.fillMaxSize().onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.isCtrlPressed && event.key == Key.N) {
+                    newConversation()
+                    showSettings = false
+                    true
+                } else {
+                    false
+                }
+            }
+        ) {
         val compact = maxWidth < 850.dp
         val sidebarWidth = if (compact) maxWidth else 292.dp
         Row(Modifier.fillMaxSize()) {
@@ -577,6 +906,13 @@ private fun RikkaHubDesktop(
                     generatingConversationIds = generationJobs.keys,
                     onSelect = {
                         update(data.copy(selectedConversationId = it))
+                        jumpToMessageId = null
+                        showSettings = false
+                        if (compact) showSidebar = false
+                    },
+                    onSelectFavorite = { conversationId, messageId ->
+                        update(data.copy(selectedConversationId = conversationId))
+                        jumpToMessageId = messageId
                         showSettings = false
                         if (compact) showSidebar = false
                     },
@@ -587,12 +923,21 @@ private fun RikkaHubDesktop(
                     },
                     onDelete = { id ->
                         generationJobs.remove(id)?.cancel()
-                        val remaining = data.conversations.filterNot { it.id == id }
-                            .ifEmpty { listOf(DesktopConversation()) }
-                        update(data.copy(conversations = remaining, selectedConversationId = remaining.first().id))
+                        suggestionJobs.remove(id)?.cancel()
+                        generationErrors.remove(id)
+                        update(data.deleteConversation(id))
                     },
                     onPin = { id ->
                         updateConversation(id) { it.copy(isPinned = !it.isPinned, updatedAt = System.currentTimeMillis()) }
+                    },
+                    onRenameFolder = { folderId, name ->
+                        update(data.renameFolder(folderId, name))
+                    },
+                    onDeleteFolder = { folderId ->
+                        update(data.deleteFolder(folderId))
+                    },
+                    onCreateFolder = { assistantId ->
+                        folderCreateTarget = FolderCreateTarget(assistantId = assistantId)
                     },
                     onSettings = {
                         settingsSection = DesktopSettingsSection.GENERAL
@@ -610,8 +955,11 @@ private fun RikkaHubDesktop(
                         assistants = data.assistants.ifEmpty { listOf(data.activeAssistant()) },
                         selectedAssistantId = data.activeAssistant().id,
                         preferences = data.preferences,
+                        globalMemories = data.globalMemories,
                         webSearchSettings = data.webSearchSettings,
                         client = client,
+                        mcpServers = data.mcpServers,
+                        mcpClient = mcpClient,
                         initialSection = settingsSection,
                         showMenu = compact,
                         onMenu = { showSidebar = true },
@@ -633,7 +981,9 @@ private fun RikkaHubDesktop(
                         },
                         onResetData = ::resetDesktopData,
                         onWebSearchSettingsChange = { update(data.copy(webSearchSettings = it)) },
-                        onPreferencesChange = { update(data.copy(preferences = it)) }
+                        onMcpServersChange = { update(data.copy(mcpServers = it)) },
+                        onPreferencesChange = { update(data.copy(preferences = it)) },
+                        onGlobalMemoriesChange = { update(data.copy(globalMemories = it.filter { memory -> memory.content.isNotBlank() })) }
                     )
                 } else {
                     ChatPane(
@@ -646,13 +996,19 @@ private fun RikkaHubDesktop(
                         assistants = data.assistants.ifEmpty { listOf(data.activeAssistant()) },
                         preferences = data.preferences,
                         providers = data.providers.ifEmpty { listOf(data.activeProvider()) },
+                        folders = data.folders.filter { it.assistantId == selectedAssistant.id },
                         selectedProviderId = selectedAssistant.providerId.ifBlank { data.activeProvider().id },
                         webSearchEnabled = selected.webSearchEnabled ?: selectedAssistant.enableWebSearch,
+                        jumpToMessageId = jumpToMessageId,
                         showMenu = compact,
                         onMenu = { showSidebar = true },
                         onNew = ::newConversation,
                         onSettings = {
                             settingsSection = DesktopSettingsSection.PROVIDERS
+                            showSettings = true
+                        },
+                        onAssistantSettings = {
+                            settingsSection = DesktopSettingsSection.ASSISTANTS
                             showSettings = true
                         },
                         onProviderModelSelect = { providerId, selectedModel ->
@@ -667,11 +1023,19 @@ private fun RikkaHubDesktop(
                                 conversation.copy(webSearchEnabled = !current, updatedAt = System.currentTimeMillis())
                             }
                         },
-                        onPromptChange = { prompt = it },
+                        onPromptChange = { value ->
+                            prompt = value
+                            updateConversation(selected.id) { conversation ->
+                                conversation.copy(draft = value, updatedAt = System.currentTimeMillis())
+                            }
+                        },
                         pendingAttachments = pendingAttachments,
                         onAddAttachments = { attachmentPickerOpen = true },
                         onRemoveAttachment = { attachment ->
                             pendingAttachments = pendingAttachments.filterNot { it == attachment }
+                            updateConversation(selected.id) { conversation ->
+                                conversation.copy(draftAttachments = pendingAttachments, updatedAt = System.currentTimeMillis())
+                            }
                         },
                         onDismissError = { generationErrors.remove(selected.id) },
                         onCancel = { generationJobs[selected.id]?.cancel() },
@@ -679,6 +1043,29 @@ private fun RikkaHubDesktop(
                         onExportConversation = {
                             runCatching { exportConversation(selected) }.onFailure { error ->
                                 generationErrors[selected.id] = "导出失败：${error.message}"
+                            }
+                        },
+                        onMoveToFolder = { folderId ->
+                            update(data.moveConversationToFolder(selected.id, folderId))
+                        },
+                        onCreateFolder = {
+                            folderCreateTarget = FolderCreateTarget(selected.id, selectedAssistant.id)
+                        },
+                        onCompress = { compressionTarget = CompressionTarget(selected.id) },
+                        onGenerateTitle = { startTitleGeneration(selected.id) },
+                        onShowStats = { showConversationStats = true },
+                        onGenerateSuggestions = { startSuggestionGeneration(selected.id) },
+                        onTogglePromptInjections = {
+                            updateConversation(selected.id) { conversation ->
+                                conversation.copy(
+                                    promptInjectionsEnabled = !conversation.usesPromptInjections(selectedAssistant),
+                                    updatedAt = System.currentTimeMillis()
+                                )
+                            }
+                        },
+                        onTranslateMessage = { index ->
+                            selected.messages.getOrNull(index)?.let { message ->
+                                translationTarget = TranslationTarget(selected.id, index, message.content)
                             }
                         },
                         onRestoreBranch = { branchId ->
@@ -699,14 +1086,30 @@ private fun RikkaHubDesktop(
                         },
                         onDeleteMessage = { index ->
                             if (!generationJobs.containsKey(selected.id)) {
+                                updateConversation(selected.id) { conversation -> conversation.deleteMessageAt(index) }
+                            }
+                        },
+                        onToggleMessageFavorite = { index ->
+                            if (!generationJobs.containsKey(selected.id)) {
                                 updateConversation(selected.id) { conversation ->
                                     conversation.copy(
-                                        messages = conversation.messages.filterIndexed { messageIndex, _ ->
-                                            messageIndex != index
+                                        messages = conversation.messages.mapIndexed { messageIndex, message ->
+                                            if (messageIndex == index) message.copy(isFavorite = !message.isFavorite) else message
                                         },
                                         updatedAt = System.currentTimeMillis()
                                     )
                                 }
+                            }
+                        },
+                        onForkAtMessage = { index ->
+                            if (!generationJobs.containsKey(selected.id)) {
+                                val fork = selected.forkAtMessage(index)
+                                update(
+                                    data.copy(
+                                        conversations = listOf(fork) + data.conversations,
+                                        selectedConversationId = fork.id
+                                    )
+                                )
                             }
                         },
                         onRegenerateMessage = { index ->
@@ -720,8 +1123,7 @@ private fun RikkaHubDesktop(
                                 startGeneration(
                                     selected.id,
                                     requestMessages,
-                                    alternativeTarget = target.takeIf { it.role == "assistant" },
-                                    forkName = "从消息 ${index + 1} 重新生成"
+                                    alternativeTarget = target.takeIf { it.role == "assistant" }
                                 )
                             }
                         },
@@ -742,20 +1144,14 @@ private fun RikkaHubDesktop(
                             if ((text.isNotEmpty() || pendingAttachments.isNotEmpty()) &&
                                 !generationJobs.containsKey(selected.id)
                             ) {
-                                prompt = ""
                                 val attachments = pendingAttachments
-                                pendingAttachments = emptyList()
                                 val userMessage = ChatMessage(
                                     role = "user",
                                     content = text,
                                     attachments = attachments
                                 )
                                 val requestMessages = selected.messages + userMessage
-                                val titleText = text.ifBlank { attachments.firstOrNull()?.name.orEmpty() }
-                                val title = if (selected.title == "新对话") {
-                                    titleText.take(48)
-                                } else selected.title
-                                startGeneration(selected.id, requestMessages, title)
+                                startGeneration(selected.id, requestMessages)
                             }
                         },
                         onAddWithoutResponse = {
@@ -763,9 +1159,7 @@ private fun RikkaHubDesktop(
                             if ((text.isNotEmpty() || pendingAttachments.isNotEmpty()) &&
                                 !generationJobs.containsKey(selected.id)
                             ) {
-                                prompt = ""
                                 val attachments = pendingAttachments
-                                pendingAttachments = emptyList()
                                 val userMessage = ChatMessage(
                                     role = "user",
                                     content = text,
@@ -778,6 +1172,9 @@ private fun RikkaHubDesktop(
                                             titleText.take(48)
                                         } else conversation.title,
                                         messages = conversation.messages + userMessage,
+                                        draft = "",
+                                        draftAttachments = emptyList(),
+                                        suggestions = emptyList(),
                                         updatedAt = System.currentTimeMillis()
                                     )
                                 }
@@ -799,9 +1196,8 @@ private fun RikkaHubDesktop(
                 val conversation = data.conversations.firstOrNull { it.id == target.conversationId }
                 val message = conversation?.messages?.getOrNull(target.messageIndex)
                 if (conversation != null && message != null && content.isNotBlank()) {
-                    val requestMessages = conversation.messages.take(target.messageIndex) + message.copy(content = content.trim())
+                    updateConversation(target.conversationId) { current -> current.editMessageAt(target.messageIndex, content) }
                     editTarget = null
-                    startGeneration(conversation.id, requestMessages, forkName = "编辑消息后重新生成")
                 }
             }
         )
@@ -838,6 +1234,48 @@ private fun RikkaHubDesktop(
             }
         )
     }
+    folderCreateTarget?.let { target ->
+        TextEditDialog(
+            title = "新建文件夹",
+            initialValue = "",
+            singleLine = true,
+            onDismiss = { folderCreateTarget = null },
+            onSave = { name ->
+                if (name.isNotBlank()) {
+                    val folder = DesktopFolder(assistantId = target.assistantId, name = name.trim())
+                    update(data.createFolder(folder, target.conversationId))
+                    folderCreateTarget = null
+                }
+            }
+        )
+    }
+    compressionTarget?.let { target ->
+        val conversation = data.conversations.firstOrNull { it.id == target.conversationId }
+        if (conversation == null) {
+            compressionTarget = null
+        } else {
+            CompressionDialog(
+                messageCount = conversation.messages.size,
+                onDismiss = { compressionTarget = null },
+                onConfirm = { targetTokens, keepRecentMessages, additionalPrompt ->
+                    compressionTarget = null
+                    startCompression(target.conversationId, targetTokens, keepRecentMessages, additionalPrompt)
+                }
+            )
+        }
+    }
+    if (showConversationStats) {
+        ConversationStatsDialog(conversation = selected, onDismiss = { showConversationStats = false })
+    }
+    translationTarget?.let { target ->
+        TranslationDialog(
+            onDismiss = { translationTarget = null },
+            onConfirm = { language ->
+                translationTarget = null
+                startTranslation(target, language)
+            }
+        )
+    }
     if (attachmentPickerOpen) {
         DesktopAttachmentPickerDialog(
             onDismiss = { attachmentPickerOpen = false },
@@ -846,12 +1284,122 @@ private fun RikkaHubDesktop(
                 runCatching { files.map(::loadDesktopAttachment) }.fold(
                     onSuccess = { attachments ->
                         pendingAttachments = (pendingAttachments + attachments).distinctBy { it.name to it.data }
+                        updateConversation(selected.id) { conversation ->
+                            conversation.copy(draftAttachments = pendingAttachments, updatedAt = System.currentTimeMillis())
+                        }
                     },
                     onFailure = { error -> generationErrors[selected.id] = error.message ?: "无法添加文件" }
                 )
             }
         )
     }
+    }
+}
+
+@Composable
+private fun CompressionDialog(
+    messageCount: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (targetTokens: Int, keepRecentMessages: Int, additionalPrompt: String) -> Unit
+) {
+    var targetTokens by remember { mutableStateOf("1500") }
+    var keepRecentMessages by remember { mutableStateOf(minOf(8, messageCount - 1).toString()) }
+    var additionalPrompt by remember { mutableStateOf("") }
+    val target = targetTokens.toIntOrNull()
+    val keep = keepRecentMessages.toIntOrNull()
+    val valid = target != null && target > 0 && keep != null && keep >= 0 && keep < messageCount
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("压缩对话历史") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "将较早消息生成摘要，并保留最近消息。压缩前的完整历史会保存为可恢复快照。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+                OutlinedTextField(
+                    value = targetTokens,
+                    onValueChange = { value -> if (value.all(Char::isDigit)) targetTokens = value },
+                    label = { Text("目标 Token 数") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = keepRecentMessages,
+                    onValueChange = { value -> if (value.all(Char::isDigit)) keepRecentMessages = value },
+                    label = { Text("保留最近消息数（共 $messageCount 条）") },
+                    isError = keep != null && (keep < 0 || keep >= messageCount),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = additionalPrompt,
+                    onValueChange = { additionalPrompt = it },
+                    label = { Text("附加说明（可选）") },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = valid,
+                onClick = { onConfirm(target!!, keep!!, additionalPrompt) }
+            ) { Text("压缩") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
+}
+
+@Composable
+private fun ConversationStatsDialog(conversation: DesktopConversation, onDismiss: () -> Unit) {
+    val stats = conversation.stats()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("对话统计") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                ConversationStatRow("消息", "${stats.messageCount} 条（用户 ${stats.userMessageCount} / 助手 ${stats.assistantMessageCount}）")
+                ConversationStatRow("附件", "${stats.attachmentCount} 个")
+                ConversationStatRow("文本与思维链字符", stats.characterCount.toString())
+                ConversationStatRow("输入 Token", stats.promptTokens.toString())
+                ConversationStatRow("输出 Token", stats.completionTokens.toString())
+                ConversationStatRow("创建时间", MessageTimeFormatter.format(Instant.ofEpochMilli(conversation.createdAt)))
+                ConversationStatRow("更新时间", MessageTimeFormatter.format(Instant.ofEpochMilli(conversation.updatedAt)))
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+    )
+}
+
+@Composable
+private fun TranslationDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var language by remember { mutableStateOf("中文") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("翻译消息") },
+        text = {
+            OutlinedTextField(
+                value = language,
+                onValueChange = { language = it },
+                label = { Text("目标语言") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(language.trim()) }, enabled = language.isNotBlank()) { Text("翻译") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
+}
+
+@Composable
+private fun ConversationStatRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value)
     }
 }
 
@@ -923,9 +1471,13 @@ private fun ConversationSidebar(
     settingsSelected: Boolean,
     generatingConversationIds: Set<String>,
     onSelect: (String) -> Unit,
+    onSelectFavorite: (String, String) -> Unit,
     onNew: () -> Unit,
     onDelete: (String) -> Unit,
     onPin: (String) -> Unit,
+    onRenameFolder: (String, String) -> Unit,
+    onDeleteFolder: (String) -> Unit,
+    onCreateFolder: (String) -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -933,7 +1485,22 @@ private fun ConversationSidebar(
     var query by remember { mutableStateOf("") }
     var assistantFilterId by remember { mutableStateOf<String?>(null) }
     var assistantFilterOpen by remember { mutableStateOf(false) }
-    val conversations = data.filteredConversations(query, assistantFilterId)
+    var tagFilter by remember { mutableStateOf<String?>(null) }
+    var tagFilterOpen by remember { mutableStateOf(false) }
+    var folderFilterId by remember { mutableStateOf<String?>(null) }
+    var folderFilterOpen by remember { mutableStateOf(false) }
+    var folderManagerOpen by remember { mutableStateOf(false) }
+    var renameFolder by remember { mutableStateOf<DesktopFolder?>(null) }
+    var showFavorites by remember { mutableStateOf(false) }
+    val conversations = data.filteredConversations(query, assistantFilterId).filter {
+        (folderFilterId == null || it.folderId == folderFilterId) &&
+            (tagFilter == null || data.assistantFor(it).tags.any { tag -> tag.equals(tagFilter, ignoreCase = true) })
+    }
+    val favorites = data.favoriteMessages(assistantFilterId).filter { (conversation, _) ->
+        tagFilter == null || data.assistantFor(conversation).tags.any { tag ->
+            tag.equals(tagFilter, ignoreCase = true)
+        }
+    }
 
     Surface(modifier.fillMaxHeight(), color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 14.dp)) {
@@ -952,6 +1519,9 @@ private fun ConversationSidebar(
             Spacer(Modifier.height(16.dp))
             DrawerAction(Lucide.Plus, "新建对话", onNew)
             DrawerAction(Lucide.Search, "搜索对话") { searching = !searching }
+            DrawerAction(Lucide.Star, if (showFavorites) "返回对话" else "收藏消息") {
+                showFavorites = !showFavorites
+            }
             if (searching) {
                 OutlinedTextField(
                     query,
@@ -999,29 +1569,118 @@ private fun ConversationSidebar(
                             },
                             onClick = {
                                 assistantFilterId = assistant.id
+                                folderFilterId = data.folderFilterForAssistant(folderFilterId, assistant.id)
                                 assistantFilterOpen = false
                             }
                         )
                     }
                 }
             }
+            Box {
+                val tags = data.assistants.flatMap { it.tags }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() }
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { tagFilterOpen = true }
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Lucide.Sparkles, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(tagFilter ?: "全部标签", Modifier.padding(start = 9.dp).weight(1f), fontSize = 13.sp, maxLines = 1)
+                    Icon(Lucide.ChevronDown, null, Modifier.size(15.dp))
+                }
+                DropdownMenu(tagFilterOpen, onDismissRequest = { tagFilterOpen = false }) {
+                    DropdownMenuItem(text = { Text("全部标签") }, onClick = { tagFilter = null; tagFilterOpen = false })
+                    tags.forEach { tag ->
+                        DropdownMenuItem(text = { Text(tag) }, onClick = { tagFilter = tag; tagFilterOpen = false })
+                    }
+                }
+            }
+            Box {
+                val availableFolders = data.folders.filter { folder ->
+                    assistantFilterId == null || folder.assistantId == assistantFilterId
+                }
+                val folder = availableFolders.firstOrNull { it.id == folderFilterId }
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                        .clickable { folderFilterOpen = true }
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Lucide.Menu, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        folder?.name ?: "全部文件夹",
+                        Modifier.padding(start = 9.dp).weight(1f),
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Icon(Lucide.ChevronDown, null, Modifier.size(15.dp))
+                }
+                DropdownMenu(folderFilterOpen, onDismissRequest = { folderFilterOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("全部文件夹") },
+                        onClick = {
+                            folderFilterId = null
+                            folderFilterOpen = false
+                        }
+                    )
+                    availableFolders.forEach { availableFolder ->
+                        DropdownMenuItem(
+                            text = { Text(availableFolder.name) },
+                            onClick = {
+                                folderFilterId = availableFolder.id
+                                folderFilterOpen = false
+                            }
+                        )
+                    }
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("管理文件夹") },
+                        leadingIcon = { Icon(Lucide.Settings, null, Modifier.size(17.dp)) },
+                        onClick = {
+                            folderFilterOpen = false
+                            folderManagerOpen = true
+                        }
+                    )
+                }
+            }
             Text(
-                "对话",
+                if (showFavorites) "收藏消息" else "对话",
                 modifier = Modifier.padding(start = 10.dp, top = 22.dp, bottom = 8.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold
             )
             LazyColumn(verticalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.weight(1f)) {
-                items(conversations, key = { it.id }) { conversation ->
-                    ConversationRow(
-                        conversation = conversation,
-                        selected = !settingsSelected && conversation.id == data.selectedConversationId,
-                        generating = conversation.id in generatingConversationIds,
-                        onClick = { onSelect(conversation.id) },
-                        onPin = { onPin(conversation.id) },
-                        onDelete = { onDelete(conversation.id) }
-                    )
+                if (showFavorites) {
+                    items(favorites, key = { (conversation, message) -> "${conversation.id}:${message.id}" }) {
+                            (conversation, message) ->
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                .clickable { onSelectFavorite(conversation.id, message.id) }
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                        ) {
+                            Text(conversation.title, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                            Text(
+                                message.content.ifBlank { message.reasoning }.ifBlank { "工具调用" },
+                                Modifier.padding(top = 3.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                } else {
+                    items(conversations, key = { it.id }) { conversation ->
+                        ConversationRow(
+                            conversation = conversation,
+                            selected = !settingsSelected && conversation.id == data.selectedConversationId,
+                            generating = conversation.id in generatingConversationIds,
+                            onClick = { onSelect(conversation.id) },
+                            onPin = { onPin(conversation.id) },
+                            onDelete = { onDelete(conversation.id) }
+                        )
+                    }
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
@@ -1041,10 +1700,56 @@ private fun ConversationSidebar(
                 Icon(Lucide.Settings, "设置", Modifier.size(19.dp))
                 Column(Modifier.padding(start = 10.dp).weight(1f)) {
                     Text("设置", fontSize = 14.sp)
-                    Text(data.config.model.ifBlank { "未选择模型" }, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
+    }
+    if (folderManagerOpen) {
+        AlertDialog(
+            onDismissRequest = { folderManagerOpen = false },
+            title = { Text("管理文件夹") },
+            text = {
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+                    items(data.folders, key = { it.id }) { folder ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(folder.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            IconButton(onClick = { renameFolder = folder }, modifier = Modifier.size(36.dp)) {
+                                Icon(Lucide.Pencil, "重命名文件夹", Modifier.size(17.dp))
+                            }
+                            IconButton(
+                                onClick = {
+                                    onDeleteFolder(folder.id)
+                                    if (folderFilterId == folder.id) folderFilterId = null
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) { Icon(Lucide.Trash2, "删除文件夹", Modifier.size(17.dp)) }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { folderManagerOpen = false }) { Text("完成") } },
+            dismissButton = {
+                TextButton(onClick = {
+                    folderManagerOpen = false
+                    onCreateFolder(assistantFilterId ?: data.activeAssistant().id)
+                }) { Text("新建文件夹") }
+            }
+        )
+    }
+    renameFolder?.let { folder ->
+        TextEditDialog(
+            title = "重命名文件夹",
+            initialValue = folder.name,
+            singleLine = true,
+            onDismiss = { renameFolder = null },
+            onSave = { name ->
+                if (name.isNotBlank()) onRenameFolder(folder.id, name)
+                renameFolder = null
+            }
+        )
     }
 }
 
@@ -1122,17 +1827,28 @@ private fun ChatPane(
     assistants: List<DesktopAssistantProfile>,
     preferences: DesktopPreferences,
     providers: List<DesktopProviderProfile>,
+    folders: List<DesktopFolder>,
     selectedProviderId: String,
     webSearchEnabled: Boolean,
+    jumpToMessageId: String?,
     showMenu: Boolean,
     onMenu: () -> Unit,
     onNew: () -> Unit,
     onSettings: () -> Unit,
+    onAssistantSettings: () -> Unit,
     onProviderModelSelect: (String, String) -> Unit,
     onAssistantSelect: (String) -> Unit,
     onToggleWebSearch: () -> Unit,
     onRename: () -> Unit,
     onExportConversation: () -> Unit,
+    onMoveToFolder: (String?) -> Unit,
+    onCreateFolder: () -> Unit,
+    onCompress: () -> Unit,
+    onGenerateTitle: () -> Unit,
+    onShowStats: () -> Unit,
+    onGenerateSuggestions: () -> Unit,
+    onTogglePromptInjections: () -> Unit,
+    onTranslateMessage: (Int) -> Unit,
     onRestoreBranch: (String) -> Unit,
     onDeleteBranch: (String) -> Unit,
     onEditSystemPrompt: () -> Unit,
@@ -1143,26 +1859,51 @@ private fun ChatPane(
     onCancel: () -> Unit,
     onEditMessage: (Int, String) -> Unit,
     onDeleteMessage: (Int) -> Unit,
+    onToggleMessageFavorite: (Int) -> Unit,
+    onForkAtMessage: (Int) -> Unit,
     onRegenerateMessage: (Int) -> Unit,
     onSelectMessageVariant: (Int, Int) -> Unit,
     onSend: () -> Unit,
     onAddWithoutResponse: () -> Unit
 ) {
     var conversationMenuOpen by remember { mutableStateOf(false) }
+    var folderMenuOpen by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val hazeState = rememberHazeState()
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     val providerName = providers.firstOrNull { it.id == assistant.providerId }?.name
         ?: providers.firstOrNull { it.id == selectedProviderId }?.name
         ?: "OpenAI"
     val lastContent = conversation.messages.lastOrNull()?.content
     val lastReasoning = conversation.messages.lastOrNull()?.reasoning
+    var showMessageJumper by remember(conversation.id) { mutableStateOf(false) }
+    var pointerOverMessageJumper by remember(conversation.id) { mutableStateOf(false) }
     LaunchedEffect(conversation.messages.size, lastContent, lastReasoning, isGenerating) {
         if (preferences.enableAutoScroll && conversation.messages.isNotEmpty()) {
             val targetIndex = conversation.messages.size + if (isGenerating) 1 else 0
             listState.animateScrollToItem(targetIndex)
         }
     }
+    LaunchedEffect(jumpToMessageId, conversation.id) {
+        val index = conversation.messages.indexOfFirst { it.id == jumpToMessageId }
+        if (index >= 0) {
+            highlightedMessageId = jumpToMessageId
+            listState.animateScrollToItem(index + 1)
+            delay(1_800)
+            if (highlightedMessageId == jumpToMessageId) highlightedMessageId = null
+        }
+    }
+    LaunchedEffect(listState.isScrollInProgress, pointerOverMessageJumper) {
+        if (listState.isScrollInProgress) {
+            showMessageJumper = true
+        } else if (showMessageJumper && !pointerOverMessageJumper) {
+            delay(1_500)
+            showMessageJumper = false
+        }
+    }
 
-    Column(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -1206,6 +1947,42 @@ private fun ChatPane(
                             onExportConversation()
                         }
                     )
+                    DropdownMenuItem(
+                        text = { Text("生成标题") },
+                        leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
+                        enabled = !isGenerating && conversation.messages.isNotEmpty(),
+                        onClick = {
+                            conversationMenuOpen = false
+                            onGenerateTitle()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("对话统计") },
+                        enabled = conversation.messages.isNotEmpty(),
+                        onClick = {
+                            conversationMenuOpen = false
+                            onShowStats()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("生成回复建议") },
+                        leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
+                        enabled = !isGenerating && conversation.messages.isNotEmpty(),
+                        onClick = {
+                            conversationMenuOpen = false
+                            onGenerateSuggestions()
+                        }
+                    )
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("压缩历史") },
+                        leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
+                        enabled = !isGenerating && conversation.messages.size > 1,
+                        onClick = {
+                            conversationMenuOpen = false
+                            onCompress()
+                        }
+                    )
                     if (assistant.allowConversationSystemPrompt) {
                         DropdownMenuItem(
                             text = {
@@ -1224,13 +2001,28 @@ private fun ChatPane(
                             }
                         )
                     }
+                    if (assistant.allowConversationPromptInjection) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (conversation.usesPromptInjections(assistant)) "禁用本对话世界书" else "启用本对话世界书"
+                                )
+                            },
+                            leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
+                            enabled = !isGenerating,
+                            onClick = {
+                                conversationMenuOpen = false
+                                onTogglePromptInjections()
+                            }
+                        )
+                    }
                     if (conversation.branches.isNotEmpty()) {
                         HorizontalDivider()
                         conversation.branches.forEachIndexed { index, branch ->
                             DropdownMenuItem(
                                 text = {
                                     Column {
-                                        Text("恢复分支 ${index + 1}: ${branch.name}")
+                                        Text("恢复历史快照 ${index + 1}: ${branch.name}")
                                         Text(
                                             "${branch.messages.size} 条消息",
                                             fontSize = 11.sp,
@@ -1241,7 +2033,7 @@ private fun ChatPane(
                                 leadingIcon = { Icon(Lucide.RotateCcw, null, Modifier.size(18.dp)) },
                                 trailingIcon = {
                                     IconButton(onClick = { onDeleteBranch(branch.id) }, modifier = Modifier.size(28.dp)) {
-                                        Icon(Lucide.Trash2, "删除分支", Modifier.size(15.dp))
+                                        Icon(Lucide.Trash2, "删除历史快照", Modifier.size(15.dp))
                                     }
                                 },
                                 onClick = {
@@ -1253,40 +2045,123 @@ private fun ChatPane(
                     }
                 }
             }
+            Box {
+                IconButton(onClick = { folderMenuOpen = true }) {
+                    Icon(Lucide.Folder, "移动到文件夹")
+                }
+                DropdownMenu(folderMenuOpen, onDismissRequest = { folderMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("未分类") },
+                                     onClick = {
+                                         folderMenuOpen = false
+                                         onMoveToFolder(null)
+                                     }
+                    )
+                    folders.forEach { folder ->
+                        DropdownMenuItem(
+                            text = { Text(folder.name) },
+                                         onClick = {
+                                             folderMenuOpen = false
+                                             onMoveToFolder(folder.id)
+                                         }
+                        )
+                    }
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("新建文件夹") },
+                                     leadingIcon = { Icon(Lucide.Plus, null, Modifier.size(18.dp)) },
+                                     onClick = {
+                                         folderMenuOpen = false
+                                         onCreateFolder()
+                                     }
+                    )
+                }
+            }
             IconButton(onClick = onNew) { Icon(Lucide.Plus, "新建对话") }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
 
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-            if (conversation.messages.isEmpty()) {
-                EmptyConversation(model, assistant.quickMessages, onPromptChange)
-            } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxHeight().widthIn(max = 920.dp).padding(horizontal = 28.dp),
-                    verticalArrangement = Arrangement.spacedBy(24.dp)
-                ) {
-                    item { Spacer(Modifier.height(22.dp)) }
-                    itemsIndexed(conversation.messages, key = { _, message -> message.id }) { index, message ->
-                        SoftMessageReveal(message.id) {
-                            MessageBlock(
-                                message = message,
-                                model = model,
-                                providerName = providerName,
-                                assistant = assistant,
-                                preferences = preferences,
-                                generating = isGenerating && index == conversation.messages.lastIndex,
-                                actionsEnabled = !isGenerating,
-                                onEdit = { onEditMessage(index, message.content) },
-                                onDelete = { onDeleteMessage(index) },
-                                onRegenerate = { onRegenerateMessage(index) },
-                                onSelectVariant = { variantIndex -> onSelectMessageVariant(index, variantIndex) }
-                            )
+            Box(
+                Modifier.fillMaxSize()
+                    .hazeSource(hazeState)
+                    .background(MaterialTheme.colorScheme.background),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                if (conversation.messages.isEmpty()) {
+                    EmptyConversation(model, assistant.quickMessages, onPromptChange)
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxHeight().widthIn(max = 920.dp).padding(horizontal = 28.dp),
+                        contentPadding = PaddingValues(bottom = 164.dp),
+                        verticalArrangement = Arrangement.spacedBy(24.dp)
+                    ) {
+                        item { Spacer(Modifier.height(22.dp)) }
+                        itemsIndexed(conversation.messages, key = { _, message -> message.id }) { index, message ->
+                            if (message.role != "tool") SoftMessageReveal(message.id) {
+                                MessageBlock(
+                                    message = message,
+                                    model = model,
+                                    providerName = providerName,
+                                    assistant = assistant,
+                                    preferences = preferences,
+                                    toolResults = conversation.messages.filter { it.role == "tool" && it.toolCallId != null }
+                                        .associateBy { it.toolCallId!! },
+                                    generating = isGenerating && index == conversation.messages.lastIndex,
+                                    actionsEnabled = !isGenerating,
+                                    onEdit = { onEditMessage(index, message.content) },
+                                    onDelete = { onDeleteMessage(index) },
+                                    onToggleFavorite = { onToggleMessageFavorite(index) },
+                                    onFork = { onForkAtMessage(index) },
+                                    onTranslate = { onTranslateMessage(index) },
+                                    highlighted = message.id == highlightedMessageId,
+                                    onRegenerate = { onRegenerateMessage(index) },
+                                    onSelectVariant = { variantIndex -> onSelectMessageVariant(index, variantIndex) }
+                                )
+                            }
                         }
+                        item { Spacer(Modifier.height(18.dp)) }
                     }
-                    item { Spacer(Modifier.height(18.dp)) }
                 }
             }
+            if (conversation.messages.isNotEmpty()) {
+                DesktopMessageJumper(
+                    visible = showMessageJumper && !listState.isScrollInProgress && preferences.showMessageJumper,
+                    onLeft = preferences.messageJumperOnLeft,
+                    state = listState,
+                    messageCount = conversation.messages.size,
+                    onPointerOverChange = { pointerOverMessageJumper = it }
+                )
+            }
+            Composer(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                prompt = prompt,
+                pendingAttachments = pendingAttachments,
+                model = model,
+                isGenerating = isGenerating,
+                onPromptChange = onPromptChange,
+                onAddAttachments = onAddAttachments,
+                onRemoveAttachment = onRemoveAttachment,
+                onSend = onSend,
+                onAddWithoutResponse = onAddWithoutResponse,
+                onCancel = onCancel,
+                onSettings = onSettings,
+                onAssistantSettings = onAssistantSettings,
+                sendOnEnter = preferences.sendOnEnter,
+                providers = providers,
+                selectedProviderId = selectedProviderId,
+                webSearchEnabled = webSearchEnabled,
+                onProviderModelSelect = onProviderModelSelect,
+                assistant = assistant,
+                assistants = assistants,
+                onAssistantSelect = onAssistantSelect,
+                onToggleWebSearch = onToggleWebSearch,
+                onQuickMessageSelect = onPromptChange,
+                suggestions = conversation.suggestions,
+                onSuggestionSelect = onPromptChange,
+                hazeState = hazeState
+            )
         }
 
         errorMessage?.let {
@@ -1297,29 +2172,65 @@ private fun ChatPane(
                 }
             }
         }
-        Composer(
-            prompt = prompt,
-            pendingAttachments = pendingAttachments,
-            model = model,
-            isGenerating = isGenerating,
-            onPromptChange = onPromptChange,
-            onAddAttachments = onAddAttachments,
-            onRemoveAttachment = onRemoveAttachment,
-            onSend = onSend,
-            onAddWithoutResponse = onAddWithoutResponse,
-            onCancel = onCancel,
-            onSettings = onSettings,
-            sendOnEnter = preferences.sendOnEnter,
-            providers = providers,
-            selectedProviderId = selectedProviderId,
-            webSearchEnabled = webSearchEnabled,
-            onProviderModelSelect = onProviderModelSelect,
-            assistant = assistant,
-            assistants = assistants,
-            onAssistantSelect = onAssistantSelect,
-            onToggleWebSearch = onToggleWebSearch,
-            onQuickMessageSelect = onPromptChange
-        )
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalComposeUiApi::class)
+private fun BoxScope.DesktopMessageJumper(
+    visible: Boolean,
+    onLeft: Boolean,
+    state: LazyListState,
+    messageCount: Int,
+    onPointerOverChange: (Boolean) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val alignment = if (onLeft) Alignment.CenterStart else Alignment.CenterEnd
+    val color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f)
+    val horizontalOffset: (Int) -> Int = { width -> if (onLeft) -width else width }
+
+    AnimatedVisibility(
+        visible = visible,
+        modifier = Modifier.align(alignment)
+            .padding(horizontal = 12.dp)
+            .onPointerEvent(PointerEventType.Enter) { onPointerOverChange(true) }
+            .onPointerEvent(PointerEventType.Exit) { onPointerOverChange(false) },
+        enter = fadeIn(tween(180)) + slideInHorizontally(tween(180), initialOffsetX = horizontalOffset),
+        exit = fadeOut(tween(220)) + slideOutHorizontally(tween(220), targetOffsetX = horizontalOffset)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            MessageJumperButton(Lucide.ArrowUpToLine, "跳转到顶部", color) {
+                scope.launch { state.animateScrollToItem(0) }
+            }
+            MessageJumperButton(Lucide.ArrowUp, "上一条消息", color) {
+                scope.launch { state.animateScrollToItem((state.firstVisibleItemIndex - 1).coerceAtLeast(0)) }
+            }
+            MessageJumperButton(Lucide.ArrowDown, "下一条消息", color) {
+                scope.launch {
+                    state.animateScrollToItem((state.firstVisibleItemIndex + 1).coerceAtMost(messageCount + 1))
+                }
+            }
+            MessageJumperButton(Lucide.ArrowDownToLine, "跳转到底部", color) {
+                scope.launch { state.animateScrollToItem(messageCount + 1) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageJumperButton(icon: ImageVector, description: String, color: Color, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(40.dp),
+        shape = CircleShape,
+        color = color,
+        tonalElevation = 3.dp,
+        shadowElevation = 2.dp
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, description, Modifier.size(18.dp))
+        }
     }
 }
 
@@ -1386,10 +2297,15 @@ private fun MessageBlock(
     providerName: String,
     assistant: DesktopAssistantProfile,
     preferences: DesktopPreferences,
+    toolResults: Map<String, ChatMessage>,
     generating: Boolean,
     actionsEnabled: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onFork: () -> Unit,
+    onTranslate: () -> Unit,
+    highlighted: Boolean,
     onRegenerate: () -> Unit,
     onSelectVariant: (Int) -> Unit
 ) {
@@ -1403,7 +2319,13 @@ private fun MessageBlock(
         codeBlockAutoWrap = preferences.codeBlockAutoWrap
     )
     Column(
-        Modifier.fillMaxWidth().animateContentSize(tween(180, easing = FastOutSlowInEasing)),
+        Modifier.fillMaxWidth()
+            .background(
+                if (highlighted) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f) else Color.Transparent,
+                RoundedCornerShape(8.dp)
+            )
+            .padding(if (highlighted) 8.dp else 0.dp)
+            .animateContentSize(tween(180, easing = FastOutSlowInEasing)),
         horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
@@ -1461,27 +2383,11 @@ private fun MessageBlock(
                 )
             }
         } else {
+            if (!isTool) {
             if (message.toolCalls.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     message.toolCalls.forEach { toolCall ->
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh
-                        ) {
-                            Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
-                                Text("调用工具：${toolCall.name}", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                if (toolCall.arguments.isNotBlank() && toolCall.arguments != "{}") {
-                                    Text(
-                                        toolCall.arguments,
-                                        Modifier.padding(top = 3.dp),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 11.sp,
-                                        maxLines = 3,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
+                        ToolCallStep(toolCall, toolResults[toolCall.id], generating)
                     }
                 }
             }
@@ -1523,6 +2429,7 @@ private fun MessageBlock(
                     )
                 }
             }
+            }
         }
         if (message.attachments.isNotEmpty()) {
             FlowRow(
@@ -1534,6 +2441,14 @@ private fun MessageBlock(
                 }
             }
         }
+        if (message.translation.isNotBlank()) {
+            TranslationBlock(
+                messageId = message.id,
+                translation = message.translation,
+                targetLanguage = message.translationTargetLanguage,
+                markdownOptions = markdownOptions
+            )
+        }
         if (!isUser && message.citations.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("来源", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
@@ -1544,7 +2459,7 @@ private fun MessageBlock(
                     message.citations.forEachIndexed { index, citation ->
                         Surface(
                             onClick = {
-                                if (Desktop.isDesktopSupported()) {
+                                if (isSafeExternalUrl(citation.url) && Desktop.isDesktopSupported()) {
                                     runCatching { Desktop.getDesktop().browse(URI(citation.url)) }
                                 }
                             },
@@ -1584,10 +2499,10 @@ private fun MessageBlock(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             val variants = message.availableVariants()
-            if (!isUser && variants.size > 1) {
+            if (!isTool && variants.size > 1) {
                 MessageAction(
                     Lucide.ChevronLeft,
-                    "上一条回复",
+                    "上一个版本",
                     enabled = actionsEnabled && message.selectedVariantIndex > 0
                 ) { onSelectVariant(message.selectedVariantIndex - 1) }
                 Text(
@@ -1598,16 +2513,26 @@ private fun MessageBlock(
                 )
                 MessageAction(
                     Lucide.ChevronRight,
-                    "下一条回复",
+                    "下一个版本",
                     enabled = actionsEnabled && message.selectedVariantIndex < variants.lastIndex
                 ) { onSelectVariant(message.selectedVariantIndex + 1) }
             }
             MessageAction(Lucide.Copy, "复制", enabled = displayContent.isNotEmpty()) {
                 clipboardScope.launch { clipboard.setClipEntry(ClipEntry(StringSelection(displayContent))) }
             }
-            if (!isTool) {
+            MessageAction(Lucide.GitFork, "从此处分支", enabled = actionsEnabled, onClick = onFork)
+            if (!isTool && !isUser) {
                 MessageAction(Lucide.RotateCcw, "重新生成", enabled = actionsEnabled, onClick = onRegenerate)
             }
+            if (!isTool) {
+                MessageAction(Lucide.Languages, "翻译", enabled = actionsEnabled && displayContent.isNotBlank(), onClick = onTranslate)
+            }
+            MessageAction(
+                if (message.isFavorite) FilledStar else Lucide.Star,
+                if (message.isFavorite) "取消收藏" else "收藏",
+                enabled = actionsEnabled,
+                onClick = onToggleFavorite
+            )
             if (isUser) {
                 MessageAction(Lucide.Pencil, "编辑", enabled = actionsEnabled, onClick = onEdit)
             }
@@ -1618,8 +2543,8 @@ private fun MessageBlock(
 
 @Composable
 private fun AttachmentPreview(attachment: DesktopAttachment) {
-    val bitmap = remember(attachment.data, attachment.isImage) {
-        if (!attachment.isImage) null else runCatching {
+    val bitmap = remember(attachment.data, attachment.kind) {
+        if (attachment.kind != DesktopAttachmentKind.IMAGE) null else runCatching {
             org.jetbrains.skia.Image.makeFromEncoded(Base64.getDecoder().decode(attachment.data))
                 .toComposeImageBitmap()
         }.getOrNull()
@@ -1645,7 +2570,11 @@ private fun AttachmentPreview(attachment: DesktopAttachment) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(Lucide.Paperclip, null, Modifier.size(14.dp))
-                Text(attachment.name, Modifier.padding(start = 6.dp), fontSize = 11.sp)
+                Text(
+                    if (attachment.kind == DesktopAttachmentKind.AUDIO) "音频 · ${attachment.name}" else attachment.name,
+                    Modifier.padding(start = 6.dp),
+                    fontSize = 11.sp
+                )
             }
         }
     }
@@ -1659,6 +2588,73 @@ private fun MessageTimestamp(createdAt: Long) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         fontSize = 11.sp
     )
+}
+
+@Composable
+private fun ToolCallStep(toolCall: DesktopToolCall, result: ChatMessage?, generating: Boolean) {
+    var expanded by remember(toolCall.id) { mutableStateOf(false) }
+    Surface(
+        modifier = Modifier.widthIn(max = 620.dp),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                    Icon(Lucide.Sparkles, null, Modifier.padding(5.dp).size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+                Column(Modifier.padding(start = 8.dp).weight(1f)) {
+                    Text(toolCall.name, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text(
+                        if (generating && result == null) "正在调用" else "调用完成",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp
+                    )
+                }
+                Icon(if (expanded) Lucide.ChevronDown else Lucide.ChevronRight, null, Modifier.size(16.dp))
+            }
+            if (expanded && ((toolCall.arguments.isNotBlank() && toolCall.arguments != "{}") || result?.content?.isNotBlank() == true)) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (toolCall.arguments.isNotBlank() && toolCall.arguments != "{}") Text(toolCall.arguments, fontSize = 11.sp)
+                    result?.content?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 11.sp) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolResultStep(content: String) {
+    var expanded by remember(content) { mutableStateOf(true) }
+    Surface(
+        modifier = Modifier.widthIn(max = 620.dp),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Lucide.Sparkles, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                Text("工具结果", Modifier.padding(start = 8.dp).weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Icon(if (expanded) Lucide.ChevronDown else Lucide.ChevronRight, null, Modifier.size(16.dp))
+            }
+            if (expanded && content.isNotBlank()) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                Text(
+                    content,
+                    Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -1717,6 +2713,53 @@ private fun ReasoningBlock(
 }
 
 @Composable
+private fun TranslationBlock(
+    messageId: String,
+    translation: String,
+    targetLanguage: String,
+    markdownOptions: MarkdownRenderOptions
+) {
+    var expanded by remember(messageId) { mutableStateOf(true) }
+    val title = "翻译${targetLanguage.takeIf { it.isNotBlank() }?.let { "（$it）" }.orEmpty()}"
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer
+    ) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded }
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    if (expanded) Lucide.ChevronDown else Lucide.ChevronRight,
+                    if (expanded) "收起$title" else "展开$title",
+                    Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+                Text(
+                    title,
+                    Modifier.padding(start = 7.dp),
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            if (expanded) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.2f))
+                MarkdownContent(
+                    translation,
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
+                    markdownOptions
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun MessageAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
@@ -1730,6 +2773,7 @@ private fun MessageAction(
 
 @Composable
 private fun Composer(
+    modifier: Modifier,
     prompt: String,
     pendingAttachments: List<DesktopAttachment>,
     model: String,
@@ -1741,6 +2785,7 @@ private fun Composer(
     onAddWithoutResponse: () -> Unit,
     onCancel: () -> Unit,
     onSettings: () -> Unit,
+    onAssistantSettings: () -> Unit,
     sendOnEnter: Boolean,
     providers: List<DesktopProviderProfile>,
     selectedProviderId: String,
@@ -1750,20 +2795,61 @@ private fun Composer(
     assistants: List<DesktopAssistantProfile>,
     onAssistantSelect: (String) -> Unit,
     onToggleWebSearch: () -> Unit,
-    onQuickMessageSelect: (String) -> Unit
+    onQuickMessageSelect: (String) -> Unit,
+    suggestions: List<String>,
+    onSuggestionSelect: (String) -> Unit,
+    hazeState: HazeState
 ) {
     var modelMenuOpen by remember { mutableStateOf(false) }
     var assistantMenuOpen by remember { mutableStateOf(false) }
     var quickMessageMenuOpen by remember { mutableStateOf(false) }
     var fullScreenEditorOpen by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 16.dp), contentAlignment = Alignment.Center) {
-        Surface(
-            modifier = Modifier.fillMaxWidth().widthIn(max = 920.dp),
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f))
+    val composerShape = RoundedCornerShape(24.dp)
+    val glassSurface = MaterialTheme.colorScheme.surface
+    Box(
+        modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 920.dp)
+                .hazeEffect(hazeState) {
+                    blurEffect {
+                        blurRadius = 40.dp
+                        noiseFactor = 0.04f
+                        backgroundColor = glassSurface.copy(alpha = 0.16f)
+                        colorEffects = listOf(
+                            HazeColorEffect.tint(glassSurface.copy(alpha = 0.32f))
+                        )
+                        fallbackTint = HazeColorEffect.tint(glassSurface.copy(alpha = 0.72f))
+                    }
+                }
+                .clip(composerShape)
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f),
+                    shape = composerShape
+                )
         ) {
-            Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
+            Box(
+                Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+                if (suggestions.isNotEmpty()) {
+                    FlowRow(
+                        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        suggestions.forEach { suggestion ->
+                            OutlinedButton(
+                                onClick = { onSuggestionSelect(suggestion) },
+                                modifier = Modifier.widthIn(max = 360.dp)
+                            ) {
+                                Text(suggestion, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
                 if (pendingAttachments.isNotEmpty()) {
                     FlowRow(
                         Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
@@ -1780,7 +2866,16 @@ private fun Composer(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(Lucide.Paperclip, null, Modifier.size(14.dp))
-                                    Text(attachment.name, Modifier.padding(start = 5.dp), fontSize = 11.sp, maxLines = 1)
+                                    Text(
+                                        if (attachment.kind == DesktopAttachmentKind.AUDIO) {
+                                            "音频 · ${attachment.name}"
+                                        } else {
+                                            attachment.name
+                                        },
+                                        Modifier.padding(start = 5.dp),
+                                        fontSize = 11.sp,
+                                        maxLines = 1
+                                    )
                                     IconButton(
                                         onClick = { onRemoveAttachment(attachment) },
                                         modifier = Modifier.size(28.dp)
@@ -1896,6 +2991,15 @@ private fun Composer(
                                     }
                                 )
                             }
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("管理助手与标签") },
+                                leadingIcon = { Icon(Lucide.Settings, null, Modifier.size(17.dp)) },
+                                onClick = {
+                                    assistantMenuOpen = false
+                                    onAssistantSettings()
+                                }
+                            )
                         }
                     }
                     Box {
@@ -1992,6 +3096,7 @@ private fun Composer(
                             }
                         }
                     }
+                }
                 }
             }
         }

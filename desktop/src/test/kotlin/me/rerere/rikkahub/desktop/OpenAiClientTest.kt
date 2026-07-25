@@ -108,6 +108,25 @@ class OpenAiClientTest {
     }
 
     @Test
+    fun parsesTextPartsFromNonStreamingResponse() {
+        val payload = """
+            {"choices":[{"message":{"content":[
+              {"type":"text","text":"Conversation "},
+              {"type":"text","text":"title"}
+            ]}}]}
+        """.trimIndent()
+
+        assertEquals("Conversation title", client.parseCompleteResponse(payload).content)
+    }
+
+    @Test
+    fun parsesLegacyChoiceTextFromNonStreamingResponse() {
+        val payload = """{"choices":[{"message":{"content":null},"text":"Conversation title"}]}"""
+
+        assertEquals("Conversation title", client.parseCompleteResponse(payload).content)
+    }
+
+    @Test
     fun nonStreamingRequestOmitsStreamingOptions() {
         val body = Json.parseToJsonElement(
             client.buildRequestBody(
@@ -207,6 +226,26 @@ class OpenAiClientTest {
     }
 
     @Test
+    fun serializesAudioAttachmentsUsingTheStandardInputAudioPart() {
+        val message = ChatMessage(
+            role = "user",
+            content = "",
+            attachments = listOf(
+                DesktopAttachment("voice.wav", "audio/wav", "BAUG", kind = DesktopAttachmentKind.AUDIO)
+            )
+        )
+
+        val content = Json.parseToJsonElement(
+            client.buildRequestBody(DesktopConfig(model = "test-model"), listOf(message))
+        ).jsonObject.getValue("messages").jsonArray.last().jsonObject.getValue("content").jsonArray
+        val audio = content.single().jsonObject
+
+        assertEquals("input_audio", audio.getValue("type").jsonPrimitive.content)
+        assertEquals("BAUG", audio.getValue("input_audio").jsonObject.getValue("data").jsonPrimitive.content)
+        assertEquals("wav", audio.getValue("input_audio").jsonObject.getValue("format").jsonPrimitive.content)
+    }
+
+    @Test
     fun includesWebSearchOptionsOnlyWhenEnabled() {
         val enabled = Json.parseToJsonElement(
             client.buildRequestBody(DesktopConfig(model = "test", webSearchEnabled = true), emptyList())
@@ -257,6 +296,21 @@ class OpenAiClientTest {
             body.getValue("tools").jsonArray.map {
                 it.jsonObject.getValue("function").jsonObject.getValue("name").jsonPrimitive.content
             }
+        )
+    }
+
+    @Test
+    fun declaresMemoryToolWhenMemoryIsEnabled() {
+        val body = Json.parseToJsonElement(
+            client.buildRequestBody(DesktopConfig(model = "test", memoryEnabled = true), emptyList())
+        ).jsonObject
+
+        val tool = body.getValue("tools").jsonArray.single().jsonObject.getValue("function").jsonObject
+        assertEquals(DesktopMemoryToolName, tool.getValue("name").jsonPrimitive.content)
+        assertEquals(
+            listOf("create", "edit", "delete"),
+            tool.getValue("parameters").jsonObject.getValue("properties").jsonObject
+                .getValue("action").jsonObject.getValue("enum").jsonArray.map { it.jsonPrimitive.content }
         )
     }
 

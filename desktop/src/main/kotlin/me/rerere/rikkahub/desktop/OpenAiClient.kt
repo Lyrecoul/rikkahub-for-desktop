@@ -9,6 +9,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -107,54 +109,7 @@ class OpenAiClient(
             if (config.webSearchEnabled && !config.webSearchSettings.isConfigured) {
                 putJsonObject("web_search_options") {}
             }
-            if (config.webSearchEnabled && config.webSearchSettings.isConfigured) {
-                putJsonArray("tools") {
-                    add(buildJsonObject {
-                        put("type", "function")
-                        putJsonObject("function") {
-                            put("name", DesktopWebSearchToolName)
-                            put("description", "Search the web for current information and return sources.")
-                            putJsonObject("parameters") {
-                                put("type", "object")
-                                putJsonObject("properties") {
-                                    putJsonObject("query") { put("type", "string") }
-                                }
-                                putJsonArray("required") { add(JsonPrimitive("query")) }
-                                put("additionalProperties", false)
-                            }
-                        }
-                    })
-                    if (DesktopLocalTool.CURRENT_TIME in config.localTools) {
-                        add(buildJsonObject {
-                            put("type", "function")
-                            putJsonObject("function") {
-                                put("name", DesktopCurrentTimeToolName)
-                                put("description", "Get the current local date, time, and time zone on this computer.")
-                                putJsonObject("parameters") {
-                                    put("type", "object")
-                                    putJsonObject("properties") {}
-                                    put("additionalProperties", false)
-                                }
-                            }
-                        })
-                    }
-                }
-            } else if (DesktopLocalTool.CURRENT_TIME in config.localTools) {
-                putJsonArray("tools") {
-                    add(buildJsonObject {
-                        put("type", "function")
-                        putJsonObject("function") {
-                            put("name", DesktopCurrentTimeToolName)
-                            put("description", "Get the current local date, time, and time zone on this computer.")
-                            putJsonObject("parameters") {
-                                put("type", "object")
-                                putJsonObject("properties") {}
-                                put("additionalProperties", false)
-                            }
-                        }
-                    })
-                }
-            }
+            buildDesktopToolDefinitions(config).takeIf { it.isNotEmpty() }?.let { put("tools", it) }
             putJsonArray("messages") {
                 requestMessages.forEach { message ->
                     add(buildJsonObject {
@@ -187,18 +142,21 @@ class OpenAiClient(
                                     })
                                 }
                                 message.attachments.forEach { attachment ->
-                                    if (attachment.isImage) {
-                                        add(buildJsonObject {
+                                    when (attachment.kind) {
+                                        DesktopAttachmentKind.IMAGE -> add(buildJsonObject {
                                             put("type", "image_url")
                                             putJsonObject("image_url") {
-                                                put(
-                                                    "url",
-                                                    "data:${attachment.mimeType};base64,${attachment.data}"
-                                                )
+                                                put("url", "data:${attachment.mimeType};base64,${attachment.data}")
                                             }
                                         })
-                                    } else {
-                                        add(buildJsonObject {
+                                        DesktopAttachmentKind.AUDIO -> add(buildJsonObject {
+                                            put("type", "input_audio")
+                                            putJsonObject("input_audio") {
+                                                put("data", attachment.data)
+                                                put("format", if (attachment.mimeType == "audio/wav") "wav" else "mp3")
+                                            }
+                                        })
+                                        DesktopAttachmentKind.FILE -> add(buildJsonObject {
                                             put("type", "text")
                                             put("text", "File: ${attachment.name}\n${attachment.data}")
                                         })
@@ -272,7 +230,7 @@ class OpenAiClient(
             }.getOrNull()
         }
         StreamDelta(
-            content = delta?.get("content")?.jsonPrimitive?.contentOrNull.orEmpty(),
+            content = delta?.get("content").textContent(),
             reasoning = (
                 delta?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
                     ?: delta?.get("reasoning")?.jsonPrimitive?.contentOrNull
@@ -287,8 +245,9 @@ class OpenAiClient(
     internal fun parseCompleteResponse(data: String): StreamDelta {
         val event = json.parseToJsonElement(data).jsonObject
         parseError(data)?.let { error(it) }
-        val message = event["choices"]?.jsonArray?.firstOrNull()?.jsonObject
-            ?.get("message")?.jsonObject ?: error("Response did not contain a message")
+        val choice = event["choices"]?.jsonArray?.firstOrNull()?.jsonObject
+            ?: error("Response did not contain a choice")
+        val message = choice["message"]?.jsonObject ?: error("Response did not contain a message")
         val usage = event["usage"]?.jsonObject
         val citations = message["annotations"]?.jsonArray.orEmpty().mapNotNull { annotation ->
             runCatching {
@@ -307,7 +266,7 @@ class OpenAiClient(
             }.getOrNull()
         }
         return StreamDelta(
-            content = message["content"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            content = message["content"].textContent().ifBlank { choice["text"].textContent() },
             reasoning = (
                 message["reasoning_content"]?.jsonPrimitive?.contentOrNull
                     ?: message["reasoning"]?.jsonPrimitive?.contentOrNull
@@ -319,6 +278,15 @@ class OpenAiClient(
                 DesktopToolCallDelta(index, call.id, call.name, call.arguments)
             }
         )
+    }
+
+    /** OpenAI-compatible services may return message content as text parts instead of a string. */
+    private fun JsonElement?.textContent(): String = when (this) {
+        is JsonPrimitive -> contentOrNull.orEmpty()
+        is JsonArray -> joinToString(separator = "") { part -> part.textContent() }
+        is JsonObject -> listOf(this["text"], this["content"], this["output_text"])
+            .joinToString(separator = "") { part -> part.textContent() }
+        null -> ""
     }
 
     internal fun parseError(data: String): String? = runCatching {
@@ -380,12 +348,59 @@ class OpenAiClient(
 
     internal suspend fun executeToolCalls(
         config: DesktopConfig,
-        calls: List<DesktopToolCall>
-    ): List<ChatMessage> = executeDesktopToolCalls(httpClient, config, calls)
+        calls: List<DesktopToolCall>,
+        memoryToolHandler: DesktopMemoryToolHandler? = null,
+        mcpClient: DesktopMcpClient = DesktopMcpClient()
+    ): List<ChatMessage> = executeDesktopToolCalls(httpClient, config, calls, memoryToolHandler, mcpClient)
 }
 
 internal const val DesktopWebSearchToolName = "web_search"
 internal const val DesktopCurrentTimeToolName = "current_time"
+
+private fun buildDesktopToolDefinitions(config: DesktopConfig) = buildJsonArray {
+    if (config.webSearchEnabled && config.webSearchSettings.isConfigured) {
+        add(buildJsonObject {
+            put("type", "function")
+            putJsonObject("function") {
+                put("name", DesktopWebSearchToolName)
+                put("description", "Search the web for current information and return sources.")
+                putJsonObject("parameters") {
+                    put("type", "object")
+                    putJsonObject("properties") { putJsonObject("query") { put("type", "string") } }
+                    putJsonArray("required") { add(JsonPrimitive("query")) }
+                    put("additionalProperties", false)
+                }
+            }
+        })
+    }
+    if (DesktopLocalTool.CURRENT_TIME in config.localTools) {
+        add(buildJsonObject {
+            put("type", "function")
+            putJsonObject("function") {
+                put("name", DesktopCurrentTimeToolName)
+                put("description", "Get the current local date, time, and time zone on this computer.")
+                putJsonObject("parameters") {
+                    put("type", "object")
+                    putJsonObject("properties") {}
+                    put("additionalProperties", false)
+                }
+            }
+        })
+    }
+    if (config.memoryEnabled) add(memoryToolDefinition())
+    config.mcpServers.forEach { server ->
+        server.tools.filter { it.enabled }.forEach { tool ->
+            add(buildJsonObject {
+                put("type", "function")
+                putJsonObject("function") {
+                    put("name", server.toolCallName(tool))
+                    put("description", tool.description)
+                    put("parameters", tool.openAiParameters())
+                }
+            })
+        }
+    }
+}
 
 private suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation { cancel() }

@@ -39,4 +39,39 @@ class DesktopConversationFilterTest {
         assertEquals(listOf(firstConversation), data.filteredConversations("", firstAssistant.id))
         assertEquals(emptyList(), data.filteredConversations("Kotlin", secondAssistant.id))
     }
+
+    @Test
+    fun listsOnlyFavoritesForTheSelectedAssistant() {
+        val first = DesktopAssistantProfile(id = "first")
+        val second = DesktopAssistantProfile(id = "second")
+        val favorite = ChatMessage("assistant", "saved", isFavorite = true)
+        val data = DesktopData(
+            assistants = listOf(first, second),
+            selectedAssistantId = first.id,
+            conversations = listOf(
+                DesktopConversation(assistantId = first.id, messages = listOf(favorite)),
+                DesktopConversation(assistantId = second.id, messages = listOf(ChatMessage("assistant", "other", isFavorite = true)))
+            )
+        )
+
+        assertEquals(listOf(favorite), data.favoriteMessages(first.id).map { it.second })
+    }
+
+    @Test
+    fun assistantTagsCanFilterFavoriteConversations() {
+        val work = DesktopAssistantProfile(id = "work", tags = setOf("work"))
+        val personal = DesktopAssistantProfile(id = "personal", tags = setOf("personal"))
+        val data = DesktopData(
+            assistants = listOf(work, personal),
+            conversations = listOf(
+                DesktopConversation(assistantId = work.id, messages = listOf(ChatMessage("assistant", "work", isFavorite = true))),
+                DesktopConversation(assistantId = personal.id, messages = listOf(ChatMessage("assistant", "personal", isFavorite = true)))
+            )
+        )
+
+        val workFavorites = data.favoriteMessages(null).filter { (conversation, _) ->
+            data.assistantFor(conversation).tags.contains("work")
+        }
+        assertEquals(listOf("work"), workFavorites.map { it.second.content })
+    }
 }

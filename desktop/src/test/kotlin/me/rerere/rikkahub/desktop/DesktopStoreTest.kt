@@ -79,6 +79,38 @@ class DesktopStoreTest {
     }
 
     @Test
+    fun preservesImagesWhenLoadingBackupsWrittenBeforeAttachmentKinds() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-legacy-attachments")
+        val dataFile = directory.resolve("desktop.json")
+        Files.writeString(
+            dataFile,
+            """
+            {
+              "conversations": [{
+                "id": "legacy-conversation",
+                "messages": [{
+                  "role": "user",
+                  "content": "inspect",
+                  "attachments": [{
+                    "name": "photo.png",
+                    "mimeType": "image/png",
+                    "data": "AQID",
+                    "isImage": true
+                  }]
+                }]
+              }],
+              "selectedConversationId": "legacy-conversation"
+            }
+            """.trimIndent()
+        )
+
+        val attachment = DesktopStore(dataFile).load().conversations.single().messages.single().attachments.single()
+
+        assertEquals(DesktopAttachmentKind.IMAGE, attachment.kind)
+        assertTrue(attachment.isImage)
+    }
+
+    @Test
     fun exportsAndImportsNormalizedBackup() {
         val directory = Files.createTempDirectory("rikkahub-desktop-backup")
         val store = DesktopStore(directory.resolve("desktop.json"))
@@ -185,5 +217,163 @@ class DesktopStoreTest {
 
         assertFalse(Files.readString(backup).contains("provider-secret"))
         assertTrue(secrets.values.isEmpty())
+    }
+
+    @Test
+    fun preservesMessageFavoritesAcrossPersistence() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-favorites")
+        val conversation = DesktopConversation(messages = listOf(ChatMessage("assistant", "saved", isFavorite = true)))
+        val store = DesktopStore(directory.resolve("desktop.json"), MemorySecrets())
+
+        store.save(DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id))
+
+        assertTrue(store.load().conversations.single().messages.single().isFavorite)
+    }
+
+    @Test
+    fun preservesUnsentAttachmentsWithTheirConversationDraft() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-draft-attachments")
+        val conversation = DesktopConversation(
+            draft = "Review this recording",
+            draftAttachments = listOf(
+                DesktopAttachment("voice.wav", "audio/wav", "BAUG", kind = DesktopAttachmentKind.AUDIO)
+            )
+        )
+        val store = DesktopStore(directory.resolve("desktop.json"), MemorySecrets())
+
+        store.save(DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id))
+
+        val restored = store.load().conversations.single()
+        assertEquals("Review this recording", restored.draft)
+        assertEquals(DesktopAttachmentKind.AUDIO, restored.draftAttachments.single().kind)
+    }
+
+    @Test
+    fun removesInvalidFoldersWhenLoadingOlderOrEditedBackups() {
+        val assistant = DesktopAssistantProfile(id = "assistant-1")
+        val validFolder = DesktopFolder(id = "folder-1", assistantId = assistant.id, name = "Work")
+        val normalized = DesktopData(
+            assistants = listOf(assistant),
+            selectedAssistantId = assistant.id,
+            folders = listOf(validFolder, DesktopFolder(id = "missing", assistantId = "missing", name = "Invalid")),
+            conversations = listOf(
+                DesktopConversation(assistantId = assistant.id, folderId = validFolder.id),
+                DesktopConversation(assistantId = assistant.id, folderId = "missing")
+            )
+        ).normalized()
+
+        assertEquals(listOf(validFolder), normalized.folders)
+        assertEquals(validFolder.id, normalized.conversations[0].folderId)
+        assertEquals(null, normalized.conversations[1].folderId)
+    }
+
+    @Test
+    fun deletingFolderKeepsItsConversationsAsUnfiled() {
+        val folder = DesktopFolder(id = "folder", assistantId = "assistant", name = "Work")
+        val data = DesktopData(
+            folders = listOf(folder),
+            conversations = listOf(DesktopConversation(folderId = folder.id), DesktopConversation())
+        )
+
+        val updated = data.renameFolder(folder.id, "  Renamed  ").deleteFolder(folder.id)
+
+        assertTrue(updated.folders.isEmpty())
+        assertEquals(listOf(null, null), updated.conversations.map { it.folderId })
+    }
+
+    @Test
+    fun folderOperationsKeepFoldersScopedToTheirAssistant() {
+        val firstAssistant = DesktopAssistantProfile(id = "first")
+        val secondAssistant = DesktopAssistantProfile(id = "second")
+        val conversation = DesktopConversation(id = "conversation", assistantId = firstAssistant.id)
+        val secondFolder = DesktopFolder(id = "second-folder", assistantId = secondAssistant.id, name = "Second")
+        val data = DesktopData(
+            assistants = listOf(firstAssistant, secondAssistant),
+            selectedAssistantId = firstAssistant.id,
+            folders = listOf(secondFolder),
+            conversations = listOf(conversation),
+            selectedConversationId = conversation.id
+        )
+
+        val unchanged = data.moveConversationToFolder(conversation.id, secondFolder.id)
+        val created = data.createFolder(
+            DesktopFolder(id = "first-folder", assistantId = firstAssistant.id, name = "First"),
+            conversation.id
+        )
+
+        assertEquals(null, unchanged.conversations.single().folderId)
+        assertEquals("first-folder", created.conversations.single().folderId)
+        assertEquals(2, created.folders.size)
+    }
+
+    @Test
+    fun normalizationClearsFoldersOwnedByAnotherAssistant() {
+        val firstAssistant = DesktopAssistantProfile(id = "first")
+        val secondAssistant = DesktopAssistantProfile(id = "second")
+        val folder = DesktopFolder(id = "second-folder", assistantId = secondAssistant.id, name = "Second")
+
+        val normalized = DesktopData(
+            assistants = listOf(firstAssistant, secondAssistant),
+            selectedAssistantId = firstAssistant.id,
+            folders = listOf(folder),
+            conversations = listOf(DesktopConversation(assistantId = firstAssistant.id, folderId = folder.id))
+        ).normalized()
+
+        assertEquals(null, normalized.conversations.single().folderId)
+    }
+
+    @Test
+    fun clearsFolderFilterWhenSwitchingToAnotherAssistantsScope() {
+        val firstAssistant = DesktopAssistantProfile(id = "first")
+        val secondAssistant = DesktopAssistantProfile(id = "second")
+        val firstFolder = DesktopFolder(id = "first-folder", assistantId = firstAssistant.id, name = "First")
+        val data = DesktopData(
+            assistants = listOf(firstAssistant, secondAssistant),
+            selectedAssistantId = firstAssistant.id,
+            folders = listOf(firstFolder)
+        )
+
+        assertEquals(null, data.folderFilterForAssistant(firstFolder.id, secondAssistant.id))
+        assertEquals(firstFolder.id, data.folderFilterForAssistant(firstFolder.id, firstAssistant.id))
+    }
+
+    @Test
+    fun movingConversationToAnotherAssistantClearsItsOldFolder() {
+        val firstAssistant = DesktopAssistantProfile(id = "first")
+        val secondAssistant = DesktopAssistantProfile(id = "second")
+        val firstFolder = DesktopFolder(id = "first-folder", assistantId = firstAssistant.id, name = "First")
+        val conversation = DesktopConversation(id = "conversation", assistantId = firstAssistant.id, folderId = firstFolder.id)
+        val data = DesktopData(
+            assistants = listOf(firstAssistant, secondAssistant),
+            selectedAssistantId = firstAssistant.id,
+            folders = listOf(firstFolder),
+            conversations = listOf(conversation),
+            selectedConversationId = conversation.id
+        )
+
+        val moved = data.assignAssistantToConversation(conversation.id, secondAssistant.id)
+
+        assertEquals(secondAssistant.id, moved.conversations.single().assistantId)
+        assertEquals(null, moved.conversations.single().folderId)
+    }
+
+    @Test
+    fun deletingTheLastConversationCreatesOneForTheActiveAssistant() {
+        val assistant = DesktopAssistantProfile(
+            id = "assistant",
+            presetMessages = listOf(DesktopPresetMessage(role = "assistant", content = "Welcome"))
+        )
+        val conversation = DesktopConversation(id = "conversation", assistantId = assistant.id)
+        val data = DesktopData(
+            assistants = listOf(assistant),
+            selectedAssistantId = assistant.id,
+            conversations = listOf(conversation),
+            selectedConversationId = conversation.id
+        )
+
+        val remaining = data.deleteConversation(conversation.id)
+
+        assertEquals(assistant.id, remaining.conversations.single().assistantId)
+        assertEquals("Welcome", remaining.conversations.single().messages.single().content)
     }
 }

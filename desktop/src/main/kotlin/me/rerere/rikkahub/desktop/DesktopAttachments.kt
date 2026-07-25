@@ -10,10 +10,17 @@ private val TextAttachmentExtensions = setOf(
     "txt", "md", "csv", "json", "xml", "yaml", "yml", "kt", "java", "js", "ts",
     "tsx", "jsx", "py", "rs", "go", "c", "cpp", "h", "hpp", "css", "html", "sh"
 )
+private val DocumentAttachmentExtensions = setOf("pdf", "docx", "pptx", "epub")
+private val AudioAttachmentMimeTypes = mapOf(
+    "mp3" to "audio/mpeg",
+    "wav" to "audio/wav"
+)
 
 internal fun isDesktopAttachmentSupported(file: File): Boolean {
     if (!file.isFile || file.length() > MaxAttachmentBytes) return false
     return file.extension.lowercase() in TextAttachmentExtensions ||
+        file.extension.lowercase() in DocumentAttachmentExtensions ||
+        file.extension.lowercase() in AudioAttachmentMimeTypes ||
         file.extension.lowercase() in setOf("png", "jpg", "jpeg", "gif", "webp") ||
         Files.probeContentType(file.toPath()).orEmpty().startsWith("text/")
 }
@@ -38,13 +45,22 @@ internal fun loadDesktopAttachment(file: File): DesktopAttachment {
             isImage = true
         )
     }
-    require(extension in TextAttachmentExtensions || mimeType.startsWith("text/")) {
+    AudioAttachmentMimeTypes[extension]?.let { audioMime ->
+        return DesktopAttachment(
+            name = file.name,
+            mimeType = audioMime,
+            data = Base64.getEncoder().encodeToString(file.readBytes()),
+            kind = DesktopAttachmentKind.AUDIO
+        )
+    }
+    val documentText = if (extension in DocumentAttachmentExtensions) extractDesktopDocumentText(file) else null
+    require(documentText != null || extension in TextAttachmentExtensions || mimeType.startsWith("text/")) {
         "Unsupported attachment type: ${file.name}"
     }
     return DesktopAttachment(
         name = file.name,
-        mimeType = mimeType.ifBlank { "text/plain" },
-        data = file.readText(StandardCharsets.UTF_8),
+        mimeType = if (documentText != null) "text/plain" else mimeType.ifBlank { "text/plain" },
+        data = documentText ?: file.readText(StandardCharsets.UTF_8),
         isImage = false
     )
 }

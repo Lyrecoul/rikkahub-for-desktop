@@ -26,8 +26,18 @@ jobs:
       - name: Install build tools
         run: pacman -Syu --noconfirm git jdk17-openjdk
       - uses: actions/checkout@v4
+      - name: Configure Java
+        shell: bash
+        run: |
+          java_home=/usr/lib/jvm/java-17-openjdk
+          test -x "$java_home/bin/java"
+          echo "JAVA_HOME=$java_home" >> "$GITHUB_ENV"
+          echo "$java_home/bin" >> "$GITHUB_PATH"
+          "$java_home/bin/java" -version
       - name: Build desktop distribution
-        run: ./gradlew -PdesktopOnly :desktop:createDistributable
+        run: |
+          chmod +x gradlew
+          ./gradlew -PdesktopOnly :desktop:createDistributable
       - uses: actions/upload-artifact@v4
         with:
           name: rikkahub-archlinux-x86_64

@@ -2,6 +2,7 @@ package me.rerere.rikkahub.desktop
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class DesktopAssistantProfileTest {
     private val firstProvider = DesktopProviderProfile(
@@ -85,6 +86,71 @@ class DesktopAssistantProfileTest {
             secondAssistant.copy(contextMessageSize = 2).limitContext(messages).map { it.content }
         )
         assertEquals(messages, secondAssistant.limitContext(messages))
+    }
+
+    @Test
+    fun titleGenerationUsesDedicatedModelAndDoesNotExposeChatTools() {
+        val conversation = DesktopConversation(assistantId = secondAssistant.id)
+        val titleConfig = data(conversation).copy(
+            providers = listOf(
+                secondProvider.copy(
+                    config = secondProvider.config.copy(
+                        titleModel = "title-model",
+                        localTools = setOf(DesktopLocalTool.CURRENT_TIME),
+                        memoryEnabled = true,
+                        customBodies = listOf(
+                            DesktopCustomBody("stream", "true"),
+                            DesktopCustomBody("response_format", "{\"type\":\"text\"}")
+                        )
+                    )
+                )
+            ),
+            assistants = listOf(secondAssistant.copy(enableMemory = true, mcpServerIds = setOf("server"))),
+            mcpServers = listOf(DesktopMcpServer(id = "server", name = "Server", enabled = true))
+        ).titleGenerationConfig(conversation)
+
+        assertEquals("title-model", titleConfig.model)
+        assertEquals(false, titleConfig.streamOutput)
+        assertEquals(emptySet(), titleConfig.localTools)
+        assertEquals(false, titleConfig.memoryEnabled)
+        assertEquals(emptyList(), titleConfig.mcpServers)
+        assertEquals(listOf("response_format"), titleConfig.customBodies.map { it.key })
+    }
+
+    @Test
+    fun backgroundRequestsNeverExposeChatToolsOrTransportOverrides() {
+        val config = DesktopConfig(
+            systemPrompt = "chat prompt",
+            streamOutput = true,
+            webSearchEnabled = true,
+            localTools = setOf(DesktopLocalTool.CURRENT_TIME),
+            memoryEnabled = true,
+            mcpServers = listOf(DesktopMcpServer(name = "Tools")),
+            customBodies = listOf(
+                DesktopCustomBody("tools", "[]"),
+                DesktopCustomBody("stream", "true"),
+                DesktopCustomBody("response_format", "{\"type\":\"text\"}")
+            )
+        )
+
+        val background = config.backgroundRequestConfig(maxTokens = 320)
+
+        assertEquals("", background.systemPrompt)
+        assertEquals(false, background.streamOutput)
+        assertEquals(false, background.webSearchEnabled)
+        assertEquals(emptySet(), background.localTools)
+        assertEquals(false, background.memoryEnabled)
+        assertEquals(emptyList(), background.mcpServers)
+        assertEquals(320, background.maxTokens)
+        assertEquals(listOf("response_format"), background.customBodies.map { it.key })
+    }
+
+    @Test
+    fun titlePromptUsesMobileCompatiblePlaceholders() {
+        val prompt = DesktopConfig(titlePrompt = "{locale}: {content}").titleRequest("hello")
+
+        assertTrue(prompt.endsWith(": hello"))
+        assertTrue("{locale}" !in prompt)
     }
 
     @Test
@@ -200,14 +266,11 @@ class DesktopAssistantProfileTest {
             assistants = listOf(firstAssistant, assistant)
         )
 
-        assertEquals(
-            "assistant prompt\n\nMemory:\n- User prefers concise answers\n- Project uses Kotlin",
-            source.configForAssistant(assistant).systemPrompt
-        )
-        assertEquals(
-            "Act as a reviewer\n\nMemory:\n- User prefers concise answers\n- Project uses Kotlin",
-            source.configForConversation(conversation).systemPrompt
-        )
+        val config = source.configForAssistant(assistant)
+        assertTrue(config.memoryEnabled)
+        assertTrue(config.systemPrompt.contains("<memories>[{\"id\":\"one\""))
+        assertTrue(config.systemPrompt.contains("User prefers concise answers"))
+        assertTrue(source.configForConversation(conversation).systemPrompt.startsWith("Act as a reviewer"))
     }
 
     @Test
@@ -218,6 +281,23 @@ class DesktopAssistantProfileTest {
         )
 
         assertEquals("assistant prompt", data().configForAssistant(assistant).systemPrompt)
+    }
+
+    @Test
+    fun globalMemoryScopeUsesOnlySharedMemories() {
+        val assistant = secondAssistant.copy(
+            enableMemory = true,
+            useGlobalMemory = true,
+            memories = listOf(DesktopMemory(id = "private", content = "private fact"))
+        )
+        val source = data().copy(
+            assistants = listOf(firstAssistant, assistant),
+            globalMemories = listOf(DesktopMemory(id = "global", content = "shared fact"))
+        )
+
+        val prompt = source.configForAssistant(assistant).systemPrompt
+        assertTrue(prompt.contains("shared fact"))
+        assertTrue(!prompt.contains("private fact"))
     }
 
     private fun data(conversation: DesktopConversation = DesktopConversation()) = DesktopData(

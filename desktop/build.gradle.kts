@@ -28,10 +28,18 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.modelcontextprotocol.kotlin.sdk)
     implementation(libs.lucide.icons)
+    implementation(libs.haze)
+    implementation(libs.haze.blur)
     implementation(libs.jetbrains.markdown)
     implementation(libs.pebble)
     implementation("org.scilab.forge:jlatexmath:1.0.7")
+    implementation("org.apache.pdfbox:pdfbox:3.0.3")
     testImplementation(kotlin("test"))
 }
 

@@ -151,6 +151,7 @@ internal fun DesktopData.normalized(): DesktopData {
     val validConversations = conversations.ifEmpty {
         listOf(validAssistants.first().newConversation())
     }
+    val validFolders = folders.filter { folder -> validAssistants.any { it.id == folder.assistantId } }
     val conversationId = selectedConversationId.takeIf { id -> validConversations.any { it.id == id } }
         ?: validConversations.first().id
     return copy(
@@ -158,7 +159,14 @@ internal fun DesktopData.normalized(): DesktopData {
         selectedProviderId = providerId,
         assistants = validAssistants,
         selectedAssistantId = assistantId,
-        conversations = validConversations,
+        folders = validFolders,
+        conversations = validConversations.map { conversation ->
+            val conversationAssistantId = validAssistants.firstOrNull { it.id == conversation.assistantId }?.id ?: assistantId
+            val folder = validFolders.firstOrNull { it.id == conversation.folderId }
+            if (conversation.folderId != null && (folder == null || folder.assistantId != conversationAssistantId)) {
+                conversation.copy(folderId = null)
+            } else conversation
+        },
         selectedConversationId = conversationId
     )
 }

@@ -478,7 +478,7 @@ private fun CodeBlock(block: MarkdownBlock.Code, options: MarkdownRenderOptions)
                 }
             }
             Text(
-                block.content,
+                highlightedCode(block.content, block.language),
                 if (options.codeBlockAutoWrap) {
                     Modifier.fillMaxWidth().padding(12.dp)
                 } else {

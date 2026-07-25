@@ -1,0 +1,55 @@
+package me.rerere.rikkahub.desktop
+
+import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+class DesktopToolsTest {
+    @Test
+    fun memoryToolMutatesTheSelectedMemoryScope() = runBlocking {
+        var memories = listOf(DesktopMemory(id = "one", content = "old"))
+        val handler = DesktopMemoryToolHandler(
+            create = { content -> DesktopMemory(id = "two", content = content).also { memories = memories + it } },
+            edit = { id, content ->
+                val updated = memories.first { it.id == id }.copy(content = content)
+                memories = memories.map { if (it.id == id) updated else it }
+                updated
+            },
+            delete = { id -> memories = memories.filterNot { it.id == id } }
+        )
+        val results = executeDesktopToolCalls(
+            OkHttpClient(),
+            DesktopConfig(memoryEnabled = true),
+            listOf(
+                DesktopToolCall("create", DesktopMemoryToolName, "{\"action\":\"create\",\"content\":\"new\"}"),
+                DesktopToolCall("edit", DesktopMemoryToolName, "{\"action\":\"edit\",\"id\":\"one\",\"content\":\"updated\"}"),
+                DesktopToolCall("delete", DesktopMemoryToolName, "{\"action\":\"delete\",\"id\":\"two\"}")
+            ),
+            handler
+        )
+
+        assertEquals(listOf(DesktopMemory(id = "one", content = "updated")), memories)
+        assertTrue(results[0].content.contains("\"id\":\"two\""))
+        assertTrue(results[2].content.contains("\"success\":true"))
+    }
+
+    @Test
+    fun disabledMemoryToolDoesNotInvokeTheHandler() = runBlocking {
+        var invoked = false
+        val result = executeDesktopToolCalls(
+            OkHttpClient(),
+            DesktopConfig(),
+            listOf(DesktopToolCall("call", DesktopMemoryToolName, "{\"action\":\"create\",\"content\":\"new\"}")),
+            DesktopMemoryToolHandler(
+                create = { invoked = true; DesktopMemory(content = it) },
+                edit = { _, _ -> error("unexpected") },
+                delete = { error("unexpected") }
+            )
+        ).single()
+
+        assertEquals(false, invoked)
+        assertTrue(result.content.contains("not enabled"))
+    }
+}

@@ -28,7 +28,11 @@ internal fun exportConversationMarkdown(
             appendLine()
             appendLine("### Attachments")
             message.attachments.forEach { attachment ->
-                val type = if (attachment.isImage) "Image" else "File"
+                val type = when (attachment.kind) {
+                    DesktopAttachmentKind.IMAGE -> "Image"
+                    DesktopAttachmentKind.AUDIO -> "Audio"
+                    DesktopAttachmentKind.FILE -> "File"
+                }
                 appendLine("- $type: ${attachment.name} (${attachment.mimeType})")
             }
         }
