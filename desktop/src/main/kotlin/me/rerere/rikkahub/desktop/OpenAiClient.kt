@@ -47,6 +47,7 @@ class OpenAiClient(
     private val httpClient: OkHttpClient = OkHttpClient()
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+    private val balanceCache = mutableMapOf<String, DesktopBalanceCacheEntry>()
 
     internal fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> = flow {
         require(config.apiKey.isNotBlank()) { "Configure an API key first" }
@@ -339,6 +340,21 @@ class OpenAiClient(
         }
     }
 
+    internal suspend fun getCachedBalance(config: DesktopConfig, forceRefresh: Boolean = false): String {
+        val options = config.balanceOptions
+        val key = listOf(config.baseUrl, config.apiKey.hashCode(), options.apiPath, options.resultPath).joinToString("|")
+        val now = System.currentTimeMillis()
+        synchronized(balanceCache) {
+            balanceCache[key]?.takeIf { !forceRefresh && now - it.fetchedAt < BalanceCacheTtlMillis }?.let { return it.value }
+        }
+        val value = getBalance(config)
+        synchronized(balanceCache) {
+            balanceCache[key] = DesktopBalanceCacheEntry(value, now)
+            balanceCache.entries.removeIf { now - it.value.fetchedAt >= BalanceCacheTtlMillis }
+        }
+        return value
+    }
+
     internal fun parseModels(payload: String): List<String> = runCatching {
         val body = json.parseToJsonElement(payload).jsonObject
         body["data"]?.jsonArray.orEmpty().mapNotNull { model ->
@@ -352,7 +368,13 @@ class OpenAiClient(
         memoryToolHandler: DesktopMemoryToolHandler? = null,
         mcpClient: DesktopMcpClient = DesktopMcpClient()
     ): List<ChatMessage> = executeDesktopToolCalls(httpClient, config, calls, memoryToolHandler, mcpClient)
+
+    internal suspend fun testWebSearch(settings: DesktopWebSearchSettings, query: String): ChatMessage =
+        searchWeb(httpClient, settings, query)
 }
+
+private data class DesktopBalanceCacheEntry(val value: String, val fetchedAt: Long)
+private const val BalanceCacheTtlMillis = 2 * 60 * 1000L
 
 internal const val DesktopWebSearchToolName = "web_search"
 internal const val DesktopCurrentTimeToolName = "current_time"

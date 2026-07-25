@@ -52,7 +52,19 @@ enum class DesktopLocalTool {
 @Serializable
 enum class DesktopSearchProviderType {
     SEARXNG,
-    BRAVE
+    BRAVE,
+    ZHIPU,
+    TAVILY,
+    EXA,
+    FIRECRAWL,
+    JINA,
+    BOCHA,
+    PERPLEXITY,
+    SERPER,
+    OLLAMA,
+    METASO,
+    LINKUP,
+    RIKKAHUB
 }
 
 @Serializable
@@ -65,7 +77,7 @@ data class DesktopWebSearchSettings(
 ) {
     val isConfigured: Boolean get() = when (providerType) {
         DesktopSearchProviderType.SEARXNG -> searxngUrl.isNotBlank()
-        DesktopSearchProviderType.BRAVE -> apiKey.isNotBlank()
+        else -> apiKey.isNotBlank()
     }
 }
 

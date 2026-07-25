@@ -47,6 +47,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -83,6 +84,7 @@ import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -95,6 +97,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
@@ -317,9 +320,9 @@ private fun RikkaHubDesktop(
     val generationJobs = remember { mutableStateMapOf<String, Job>() }
     val suggestionJobs = remember { mutableStateMapOf<String, Job>() }
     val generationErrors = remember { mutableStateMapOf<String, String>() }
-    val scope = rememberCoroutineScope()
     var saveJob by remember { mutableStateOf<Job?>(null) }
     val latestData by rememberUpdatedState(data)
+    val scope = rememberCoroutineScope()
 
     DisposableEffect(store) {
         onDispose {
@@ -406,6 +409,11 @@ private fun RikkaHubDesktop(
     fun selectAssistantModel(assistantId: String, providerId: String, model: String) {
         val assistant = data.assistants.firstOrNull { it.id == assistantId } ?: return
         update(data.saveAssistantProfile(assistant.copy(providerId = providerId, model = model)))
+    }
+
+    fun updateAssistantReasoningEffort(assistantId: String, effort: String) {
+        val assistant = data.assistants.firstOrNull { it.id == assistantId } ?: return
+        update(data.saveAssistantProfile(assistant.copy(reasoningEffort = effort)))
     }
 
     fun newConversation() {
@@ -1014,6 +1022,8 @@ private fun RikkaHubDesktop(
                         onProviderModelSelect = { providerId, selectedModel ->
                             selectAssistantModel(selectedAssistant.id, providerId, selectedModel)
                         },
+                        onReasoningEffortChange = { effort -> updateAssistantReasoningEffort(selectedAssistant.id, effort) },
+                        client = client,
                         onAssistantSelect = { assistantId ->
                             selectConversationAssistant(selected.id, assistantId)
                         },
@@ -1837,6 +1847,8 @@ private fun ChatPane(
     onSettings: () -> Unit,
     onAssistantSettings: () -> Unit,
     onProviderModelSelect: (String, String) -> Unit,
+    onReasoningEffortChange: (String) -> Unit,
+    client: OpenAiClient,
     onAssistantSelect: (String) -> Unit,
     onToggleWebSearch: () -> Unit,
     onRename: () -> Unit,
@@ -1870,22 +1882,27 @@ private fun ChatPane(
     var folderMenuOpen by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val hazeState = rememberHazeState()
+    var composerHeightPx by remember { mutableStateOf(164) }
+    val messageBottomPadding = with(LocalDensity.current) { composerHeightPx.toDp() + 16.dp }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     val providerName = providers.firstOrNull { it.id == assistant.providerId }?.name
         ?: providers.firstOrNull { it.id == selectedProviderId }?.name
         ?: "OpenAI"
     val lastContent = conversation.messages.lastOrNull()?.content
     val lastReasoning = conversation.messages.lastOrNull()?.reasoning
+    val displayMessages = conversation.messages.mapIndexedNotNull { index, message ->
+        (index to message).takeIf { message.role != "tool" }
+    }
     var showMessageJumper by remember(conversation.id) { mutableStateOf(false) }
     var pointerOverMessageJumper by remember(conversation.id) { mutableStateOf(false) }
     LaunchedEffect(conversation.messages.size, lastContent, lastReasoning, isGenerating) {
         if (preferences.enableAutoScroll && conversation.messages.isNotEmpty()) {
-            val targetIndex = conversation.messages.size + if (isGenerating) 1 else 0
+            val targetIndex = displayMessages.size + 1
             listState.animateScrollToItem(targetIndex)
         }
     }
     LaunchedEffect(jumpToMessageId, conversation.id) {
-        val index = conversation.messages.indexOfFirst { it.id == jumpToMessageId }
+        val index = displayMessages.indexOfFirst { (_, message) -> message.id == jumpToMessageId }
         if (index >= 0) {
             highlightedMessageId = jumpToMessageId
             listState.animateScrollToItem(index + 1)
@@ -2094,12 +2111,13 @@ private fun ChatPane(
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxHeight().widthIn(max = 920.dp).padding(horizontal = 28.dp),
-                        contentPadding = PaddingValues(bottom = 164.dp),
+                        contentPadding = PaddingValues(bottom = messageBottomPadding),
                         verticalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
                         item { Spacer(Modifier.height(22.dp)) }
-                        itemsIndexed(conversation.messages, key = { _, message -> message.id }) { index, message ->
-                            if (message.role != "tool") SoftMessageReveal(message.id) {
+                        itemsIndexed(displayMessages, key = { _, entry -> entry.second.id }) { _, entry ->
+                            val (index, message) = entry
+                            SoftMessageReveal(message.id) {
                                 MessageBlock(
                                     message = message,
                                     model = model,
@@ -2130,12 +2148,12 @@ private fun ChatPane(
                     visible = showMessageJumper && !listState.isScrollInProgress && preferences.showMessageJumper,
                     onLeft = preferences.messageJumperOnLeft,
                     state = listState,
-                    messageCount = conversation.messages.size,
+                    messageCount = displayMessages.size,
                     onPointerOverChange = { pointerOverMessageJumper = it }
                 )
             }
             Composer(
-                modifier = Modifier.align(Alignment.BottomCenter),
+                modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { composerHeightPx = it.height },
                 prompt = prompt,
                 pendingAttachments = pendingAttachments,
                 model = model,
@@ -2153,6 +2171,8 @@ private fun ChatPane(
                 selectedProviderId = selectedProviderId,
                 webSearchEnabled = webSearchEnabled,
                 onProviderModelSelect = onProviderModelSelect,
+                onReasoningEffortChange = onReasoningEffortChange,
+                client = client,
                 assistant = assistant,
                 assistants = assistants,
                 onAssistantSelect = onAssistantSelect,
@@ -2189,6 +2209,7 @@ private fun BoxScope.DesktopMessageJumper(
     val alignment = if (onLeft) Alignment.CenterStart else Alignment.CenterEnd
     val color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f)
     val horizontalOffset: (Int) -> Int = { width -> if (onLeft) -width else width }
+    val currentMessage = state.firstVisibleItemIndex.coerceIn(1, messageCount.coerceAtLeast(1))
 
     AnimatedVisibility(
         visible = visible,
@@ -2205,6 +2226,16 @@ private fun BoxScope.DesktopMessageJumper(
             }
             MessageJumperButton(Lucide.ArrowUp, "上一条消息", color) {
                 scope.launch { state.animateScrollToItem((state.firstVisibleItemIndex - 1).coerceAtLeast(0)) }
+            }
+            Surface(
+                modifier = Modifier.size(width = 40.dp, height = 28.dp),
+                shape = RoundedCornerShape(6.dp),
+                color = color,
+                tonalElevation = 2.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("$currentMessage/$messageCount", fontSize = 10.sp)
+                }
             }
             MessageJumperButton(Lucide.ArrowDown, "下一条消息", color) {
                 scope.launch {
@@ -2772,6 +2803,125 @@ private fun MessageAction(
 }
 
 @Composable
+private fun ModelPickerDialog(
+    providers: List<DesktopProviderProfile>,
+    selectedProviderId: String,
+    selectedModel: String,
+    reasoningEffort: String,
+    client: OpenAiClient,
+    onDismiss: () -> Unit,
+    onSelect: (String, String) -> Unit,
+    onReasoningEffortChange: (String) -> Unit,
+    onSettings: () -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    var balance by remember(selectedProviderId) { mutableStateOf<String?>(null) }
+    var loadingBalance by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val activeProvider = providers.firstOrNull { it.id == selectedProviderId }
+    val entries = providers.flatMap { provider ->
+        (provider.discoveredModels + provider.config.model).filter { it.isNotBlank() }.distinct().map { provider to it }
+    }.filter { (_, model) -> model.contains(query.trim(), ignoreCase = true) }
+    LaunchedEffect(activeProvider?.id, activeProvider?.config?.balanceOptions) {
+        if (activeProvider?.config?.balanceOptions?.enabled == true) {
+            loadingBalance = true
+            balance = runCatching { "余额：${client.getCachedBalance(activeProvider.config)}" }
+                .getOrElse { "余额查询失败：${it.message ?: "未知错误"}" }
+            loadingBalance = false
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("选择模型") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("筛选模型") },
+                    singleLine = true
+                )
+                if (activeProvider?.config?.balanceOptions?.enabled == true) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(balance ?: "余额未查询", Modifier.weight(1f), fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        IconButton(
+                            enabled = !loadingBalance,
+                            onClick = {
+                                loadingBalance = true
+                                scope.launch {
+                                    balance = runCatching { "余额：${client.getCachedBalance(activeProvider.config, forceRefresh = true)}" }
+                                        .getOrElse { "余额查询失败：${it.message ?: "未知错误"}" }
+                                    loadingBalance = false
+                                }
+                            }
+                        ) {
+                            if (loadingBalance) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            else Icon(Lucide.RotateCcw, "刷新余额", Modifier.size(17.dp))
+                        }
+                    }
+                }
+                Text("推理强度", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("", "low", "medium", "high").forEach { effort ->
+                        FilterChip(
+                            selected = reasoningEffort == effort,
+                            onClick = { onReasoningEffortChange(effort) },
+                            label = { Text(effort.ifBlank { "默认" }) }
+                        )
+                    }
+                }
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(entries, key = { "${it.first.id}:${it.second}" }) { (provider, availableModel) ->
+                        val selected = provider.id == selectedProviderId && availableModel == selectedModel
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().clickable { onSelect(provider.id, availableModel) },
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+                        ) {
+                            Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(availableModel, Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                    if (selected) Icon(Lucide.Sparkles, "当前模型", Modifier.size(16.dp), MaterialTheme.colorScheme.primary)
+                                }
+                                Text(provider.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                FlowRow(
+                                    Modifier.padding(top = 5.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    modelCapabilityLabels(availableModel).forEach { label ->
+                                        Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                                            Text(label, Modifier.padding(horizontal = 5.dp, vertical = 2.dp), fontSize = 10.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onSettings) { Text("管理服务商") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+    )
+}
+
+private fun modelCapabilityLabels(model: String): List<String> {
+    val normalized = model.lowercase()
+    return buildList {
+        add("文本")
+        if (listOf("gpt-4o", "gpt-4.1", "gemini", "claude", "qwen-vl", "vision").any(normalized::contains)) add("视觉")
+        if (listOf("o1", "o3", "r1", "reasoner", "thinking", "deepseek-r").any(normalized::contains)) add("推理")
+        if (!listOf("embedding", "image", "tts", "whisper").any(normalized::contains)) add("工具")
+    }
+}
+
+@Composable
 private fun Composer(
     modifier: Modifier,
     prompt: String,
@@ -2791,6 +2941,8 @@ private fun Composer(
     selectedProviderId: String,
     webSearchEnabled: Boolean,
     onProviderModelSelect: (String, String) -> Unit,
+    onReasoningEffortChange: (String) -> Unit,
+    client: OpenAiClient,
     assistant: DesktopAssistantProfile,
     assistants: List<DesktopAssistantProfile>,
     onAssistantSelect: (String) -> Unit,
@@ -2804,6 +2956,7 @@ private fun Composer(
     var assistantMenuOpen by remember { mutableStateOf(false) }
     var quickMessageMenuOpen by remember { mutableStateOf(false) }
     var fullScreenEditorOpen by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val composerShape = RoundedCornerShape(24.dp)
     val glassSurface = MaterialTheme.colorScheme.surface
     Box(
@@ -3013,48 +3166,23 @@ private fun Composer(
                             Text(model, Modifier.padding(horizontal = 7.dp), fontSize = 12.sp, maxLines = 1)
                             Icon(Lucide.ChevronDown, null, Modifier.size(14.dp))
                         }
-                        DropdownMenu(modelMenuOpen, onDismissRequest = { modelMenuOpen = false }) {
-                            providers.forEach { provider ->
-                                val models = (provider.discoveredModels + provider.config.model)
-                                    .filter { it.isNotBlank() }
-                                    .distinct()
-                                models.forEach { availableModel ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Column {
-                                                Text(availableModel, fontSize = 13.sp)
-                                                Text(
-                                                    provider.name,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    fontSize = 11.sp
-                                                )
-                                            }
-                                        },
-                                        leadingIcon = {
-                                            if (
-                                                provider.id == selectedProviderId &&
-                                                availableModel == model
-                                            ) {
-                                                Icon(Lucide.Sparkles, null, Modifier.size(17.dp))
-                                            }
-                                        },
-                                        onClick = {
-                                            modelMenuOpen = false
-                                            onProviderModelSelect(provider.id, availableModel)
-                                        }
-                                    )
-                                }
+                        if (modelMenuOpen) ModelPickerDialog(
+                            providers = providers,
+                            selectedProviderId = selectedProviderId,
+                            selectedModel = model,
+                            reasoningEffort = assistant.reasoningEffort,
+                            client = client,
+                            onDismiss = { modelMenuOpen = false },
+                            onSelect = { providerId, selectedModel ->
+                                modelMenuOpen = false
+                                onProviderModelSelect(providerId, selectedModel)
+                            },
+                            onReasoningEffortChange = onReasoningEffortChange,
+                            onSettings = {
+                                modelMenuOpen = false
+                                onSettings()
                             }
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text("管理服务商") },
-                                leadingIcon = { Icon(Lucide.Settings, null, Modifier.size(17.dp)) },
-                                onClick = {
-                                    modelMenuOpen = false
-                                    onSettings()
-                                }
-                            )
-                        }
+                        )
                     }
                     Spacer(Modifier.weight(1f))
                     val sendEnabled = isGenerating || prompt.isNotBlank() || pendingAttachments.isNotEmpty()
@@ -3066,7 +3194,7 @@ private fun Composer(
                         } else {
                             MaterialTheme.colorScheme.surfaceContainerHighest
                         }
-                    ) {
+    ) {
                         Box(
                             Modifier.fillMaxSize().combinedClickable(
                                 enabled = sendEnabled,

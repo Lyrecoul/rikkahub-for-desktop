@@ -136,6 +136,8 @@ internal fun DesktopSettingsPane(
     var assistantProviderMenuOpen by remember(selectedAssistant.id) { mutableStateOf(false) }
     var assistantModelMenuOpen by remember(selectedAssistant.id) { mutableStateOf(false) }
     var backupStatus by remember { mutableStateOf<String?>(null) }
+    var webSearchTestStatus by remember { mutableStateOf<String?>(null) }
+    var webSearchTesting by remember { mutableStateOf(false) }
     val feedbackHostState = remember { SnackbarHostState() }
     var balanceStatus by remember(selectedProvider.id) { mutableStateOf<String?>(null) }
     var resetConfirmationOpen by remember { mutableStateOf(false) }
@@ -409,17 +411,19 @@ internal fun DesktopSettingsPane(
                             description = "配置后优先使用外部搜索服务；未配置时使用模型服务商的原生搜索"
                         ) {
                             Column(Modifier.widthIn(min = 240.dp, max = 390.dp)) {
-                                SingleChoiceSegmentedButtonRow {
-                                    DesktopSearchProviderType.entries.forEachIndexed { index, provider ->
-                                        SegmentedButton(
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    DesktopSearchProviderType.entries.forEach { provider ->
+                                        FilterChip(
                                             selected = webSearchSettings.providerType == provider,
                                             onClick = {
                                                 onWebSearchSettingsChange(
                                                     webSearchSettings.copy(providerType = provider)
                                                 )
                                             },
-                                            shape = SegmentedButtonDefaults.itemShape(index, DesktopSearchProviderType.entries.size),
-                                            label = { Text(if (provider == DesktopSearchProviderType.SEARXNG) "SearXNG" else "Brave") }
+                                            label = { Text(provider.displayName) }
                                         )
                                     }
                                 }
@@ -438,8 +442,48 @@ internal fun DesktopSettingsPane(
                                         value = webSearchSettings.apiKey,
                                         onValueChange = { onWebSearchSettingsChange(webSearchSettings.copy(apiKey = it.trim())) },
                                         modifier = Modifier.fillMaxWidth(),
-                                        label = { Text("Brave Search API 密钥") },
+                                        label = { Text("${webSearchSettings.providerType.displayName} API 密钥") },
                                         singleLine = true
+                                    )
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "每次搜索返回 ${webSearchSettings.resultCount.coerceIn(1, 10)} 条结果",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp
+                                )
+                                Slider(
+                                    value = webSearchSettings.resultCount.coerceIn(1, 10).toFloat(),
+                                    onValueChange = {
+                                        onWebSearchSettingsChange(webSearchSettings.copy(resultCount = it.roundToInt()))
+                                    },
+                                    valueRange = 1f..10f,
+                                    steps = 8
+                                )
+                                OutlinedButton(
+                                    enabled = webSearchSettings.isConfigured && !webSearchTesting,
+                                    onClick = {
+                                        webSearchTesting = true
+                                        webSearchTestStatus = null
+                                        scope.launch {
+                                            webSearchTestStatus = runCatching {
+                                                client.testWebSearch(webSearchSettings, "RikkaHub")
+                                                "联网搜索连接正常"
+                                            }.getOrElse { error -> "搜索测试失败：${error.message ?: "未知错误"}" }
+                                            webSearchTesting = false
+                                        }
+                                    }
+                                ) {
+                                    if (webSearchTesting) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    else Text("测试搜索")
+                                }
+                                webSearchTestStatus?.let { status ->
+                                    Text(
+                                        status,
+                                        Modifier.padding(top = 6.dp),
+                                        color = if (status.startsWith("联网搜索")) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.error,
+                                        fontSize = 12.sp
                                     )
                                 }
                             }
@@ -1773,6 +1817,24 @@ internal fun DesktopSettingsPane(
         )
     }
 }
+
+private val DesktopSearchProviderType.displayName: String
+    get() = when (this) {
+        DesktopSearchProviderType.SEARXNG -> "SearXNG"
+        DesktopSearchProviderType.BRAVE -> "Brave"
+        DesktopSearchProviderType.ZHIPU -> "智谱"
+        DesktopSearchProviderType.TAVILY -> "Tavily"
+        DesktopSearchProviderType.EXA -> "Exa"
+        DesktopSearchProviderType.FIRECRAWL -> "Firecrawl"
+        DesktopSearchProviderType.JINA -> "Jina"
+        DesktopSearchProviderType.BOCHA -> "博查"
+        DesktopSearchProviderType.PERPLEXITY -> "Perplexity"
+        DesktopSearchProviderType.SERPER -> "Serper"
+        DesktopSearchProviderType.OLLAMA -> "Ollama"
+        DesktopSearchProviderType.METASO -> "秘塔"
+        DesktopSearchProviderType.LINKUP -> "LinkUp"
+        DesktopSearchProviderType.RIKKAHUB -> "RikkaHub"
+    }
 
 @Composable
 private fun RequestOverridesEditor(
