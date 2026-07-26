@@ -2,11 +2,16 @@ package me.rerere.rikkahub.desktop
 
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class DesktopToolsTest {
+    @TempDir
+    lateinit var workspace: Path
+
     @Test
     fun memoryToolMutatesTheSelectedMemoryScope() = runBlocking {
         var memories = listOf(DesktopMemory(id = "one", content = "old"))
@@ -65,5 +70,18 @@ class DesktopToolsTest {
         assertEquals("tool", result.role)
         assertEquals("call", result.toolCallId)
         assertEquals("{\"answers\":{\"goal\":\"Write tests\"}}", result.content)
+    }
+
+    @Test
+    fun deniedAgentToolReportsTheUserDecision() = runBlocking {
+        val result = executeDesktopToolCalls(
+            OkHttpClient(),
+            DesktopConfig(agent = DesktopAgentConfig(DesktopAgentWorkspace(workspace.toString(), DesktopAgentBackend.LOCAL))),
+            listOf(DesktopToolCall("call", DesktopAgentShellToolName, "{\"command\":\"pwd\",\"network\":false}")),
+            approvalHandler = { _, _ -> false }
+        ).single()
+
+        assertEquals(DesktopAgentApprovalDeniedResult, result.content)
+        assertTrue(result.content.contains("用户拒绝"))
     }
 }

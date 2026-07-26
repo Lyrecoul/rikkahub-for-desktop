@@ -80,9 +80,10 @@
 cd packaging/arch && makepkg -si
 ```
 
-Arch 软件包内置 Java 运行时，构建时需要 `jdk17-openjdk`。设置和会话保存在
-`$XDG_CONFIG_HOME/rikkahub/desktop.json`（默认 `~/.config/rikkahub/desktop.json`）。服务商和 Brave Search
-密钥保存于 Linux Secret Service，而非 JSON 文件。当前桌面版支持 OpenAI-compatible 聊天接口、流式响应、
+Arch 软件包内置 Java 运行时，构建时需要 `jdk17-openjdk`。设置保存在
+`$XDG_CONFIG_HOME/rikkahub/desktop.json`（默认 `~/.config/rikkahub/desktop.json`），每个会话保存在
+`conversations/` 下的独立文件中。旧版单文件数据会自动迁移并保留带时间戳的备份。服务商和 Brave Search
+密钥保存于 Linux Secret Service，而非这些 JSON 文件。当前桌面版支持 OpenAI-compatible 聊天接口、流式响应、
 结构化外部联网搜索和按需启用的本地时间工具。
 
 > [!IMPORTANT]  

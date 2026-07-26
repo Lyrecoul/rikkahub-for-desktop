@@ -197,6 +197,56 @@ class DesktopMessageBranchTest {
     }
 
     @Test
+    fun selectingEditedVariantFindsItsBranchWhenToolMessagesShiftIndexes() {
+        val user = ChatMessage("user", "original question")
+        val revisedUser = user.addVariant("revised question")
+        val toolCall = DesktopToolCall("call_1", "shell")
+        val active = DesktopConversation(
+            messages = listOf(
+                ChatMessage("assistant", "", toolCalls = listOf(toolCall)),
+                ChatMessage("tool", "output", toolCallId = toolCall.id),
+                revisedUser,
+                ChatMessage("assistant", "revised answer")
+            ),
+            branches = listOf(
+                DesktopConversationBranch(
+                    name = "编辑前历史",
+                    messages = listOf(user, ChatMessage("assistant", "original answer"))
+                )
+            )
+        )
+
+        val restored = active.selectMessageVariantAt(messageIndex = 2, variantIndex = 0)
+
+        assertEquals(listOf("original question", "original answer"), restored.messages.map { it.content })
+    }
+
+    @Test
+    fun switchingEditedMessageVariantsKeepsTheSelectedIndexInSync() {
+        val original = listOf(
+            ChatMessage("user", "original"),
+            ChatMessage("assistant", "original answer")
+        )
+        val firstEdit = DesktopConversation(messages = original).editMessageAt(0, "first edit")
+        val firstPath = firstEdit.prepareGeneration(firstEdit.messages).copy(
+            messages = listOf(firstEdit.messages.single(), ChatMessage("assistant", "first answer"))
+        )
+        val secondEdit = firstPath.editMessageAt(0, "second edit")
+        val secondPath = secondEdit.prepareGeneration(secondEdit.messages).copy(
+            messages = listOf(secondEdit.messages.single(), ChatMessage("assistant", "second answer"))
+        )
+
+        val originalPath = secondPath.selectMessageVariantAt(0, 0)
+        val firstPathRestored = originalPath.selectMessageVariantAt(0, 1)
+        val secondPathRestored = firstPathRestored.selectMessageVariantAt(0, 2)
+
+        assertEquals(0, originalPath.messages.single { it.role == "user" }.selectedVariantIndex)
+        assertEquals(1, firstPathRestored.messages.single { it.role == "user" }.selectedVariantIndex)
+        assertEquals(2, secondPathRestored.messages.single { it.role == "user" }.selectedVariantIndex)
+        assertEquals("second edit", secondPathRestored.messages.single { it.role == "user" }.content)
+    }
+
+    @Test
     fun editingTheLastMessageDoesNotCreateAnUnnecessarySnapshot() {
         val conversation = DesktopConversation(messages = listOf(ChatMessage("user", "draft")))
 

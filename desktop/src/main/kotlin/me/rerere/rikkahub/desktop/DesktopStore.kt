@@ -6,6 +6,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
+import java.security.MessageDigest
 import java.time.Instant
 
 internal class DesktopStore(
@@ -20,30 +21,25 @@ internal class DesktopStore(
 
     fun load(): DesktopData {
         if (!Files.isRegularFile(dataFile)) return DesktopData()
-        return runCatching { hydrateSecrets(json.decodeFromString<DesktopData>(Files.readString(dataFile)).normalized()) }
+        val stored = runCatching { json.decodeFromString<DesktopData>(Files.readString(dataFile)) }
             .getOrElse {
                 quarantineCorruptFile()
-                DesktopData()
+                return DesktopData()
             }
+        val data = hydrateSecrets(stored)
+        if (stored.conversations.isNotEmpty()) {
+            val legacy = data.normalized()
+            runCatching { migrateLegacyData(legacy) }
+            return legacy
+        }
+        return data.copy(
+            conversations = orderConversations(loadConversations(), stored.conversationIds),
+            conversationIds = emptyList()
+        ).normalized()
     }
 
     fun save(data: DesktopData) {
-        Files.createDirectories(dataFile.parent)
-        restrictPermissions(dataFile.parent, directory = true)
-        val temporaryFile = dataFile.resolveSibling("${dataFile.fileName}.tmp")
-        Files.writeString(temporaryFile, json.encodeToString(extractSecrets(data.normalized())))
-        restrictPermissions(temporaryFile, directory = false)
-        runCatching {
-            Files.move(
-                temporaryFile,
-                dataFile,
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING
-            )
-        }.getOrElse {
-            Files.move(temporaryFile, dataFile, StandardCopyOption.REPLACE_EXISTING)
-        }
-        restrictPermissions(dataFile, directory = false)
+        saveSplitData(data)
     }
 
     fun exportData(destination: Path, data: DesktopData) {
@@ -65,9 +61,95 @@ internal class DesktopStore(
         return json.decodeFromString<DesktopData>(Files.readString(source)).normalized()
     }
 
+    private fun saveSplitData(data: DesktopData) {
+        val sanitized = extractSecrets(data.normalized()).copy(schemaVersion = CurrentSchemaVersion)
+        Files.createDirectories(dataFile.parent)
+        restrictPermissions(dataFile.parent, directory = true)
+        Files.createDirectories(conversationsDirectory)
+        restrictPermissions(conversationsDirectory, directory = true)
+
+        sanitized.conversations.forEach { conversation ->
+            atomicWrite(conversationFile(conversation.id), json.encodeToString(conversation))
+        }
+
+        atomicWrite(
+            dataFile,
+            json.encodeToString(sanitized.copy(
+                conversations = emptyList(),
+                conversationIds = sanitized.conversations.map(DesktopConversation::id)
+            ))
+        )
+        val currentFiles = sanitized.conversations.map { conversationFile(it.id).fileName.toString() }.toSet()
+        Files.list(conversationsDirectory).use { files ->
+            files.filter { Files.isRegularFile(it) && it.fileName.toString().endsWith(".json") }
+                .filter { it.fileName.toString() !in currentFiles }
+                .forEach { Files.deleteIfExists(it) }
+        }
+    }
+
     private fun quarantineCorruptFile() {
         val corrupted = dataFile.resolveSibling("${dataFile.fileName}.corrupt-${Instant.now().toEpochMilli()}")
         runCatching { Files.move(dataFile, corrupted, StandardCopyOption.REPLACE_EXISTING) }
+    }
+
+    private fun loadConversations(): List<DesktopConversation> {
+        if (!Files.isDirectory(conversationsDirectory)) return emptyList()
+        return Files.list(conversationsDirectory).use { files ->
+            files.filter { Files.isRegularFile(it) && it.fileName.toString().endsWith(".json") }
+                .map { file ->
+                    runCatching { json.decodeFromString<DesktopConversation>(Files.readString(file)) }
+                        .getOrElse {
+                            quarantineCorruptConversationFile(file)
+                            null
+                        }
+                }
+                .filter { it != null }
+                .map { it!! }
+                .toList()
+        }
+    }
+
+    private fun orderConversations(
+        conversations: List<DesktopConversation>,
+        conversationIds: List<String>
+    ): List<DesktopConversation> {
+        val byId = conversations.associateBy(DesktopConversation::id)
+        val indexed = conversationIds.mapNotNull(byId::get)
+        val indexedIds = indexed.mapTo(mutableSetOf(), DesktopConversation::id)
+        return indexed + conversations.filter { it.id !in indexedIds }
+    }
+
+    private fun migrateLegacyData(data: DesktopData) {
+        val backup = dataFile.resolveSibling("${dataFile.fileName}.migration-${Instant.now().toEpochMilli()}")
+        Files.copy(dataFile, backup)
+        restrictPermissions(backup, directory = false)
+        saveSplitData(data)
+    }
+
+    private fun quarantineCorruptConversationFile(file: Path) {
+        val corrupted = file.resolveSibling("${file.fileName}.corrupt-${Instant.now().toEpochMilli()}")
+        runCatching { Files.move(file, corrupted, StandardCopyOption.REPLACE_EXISTING) }
+    }
+
+    private fun atomicWrite(file: Path, content: String) {
+        val temporaryFile = file.resolveSibling("${file.fileName}.tmp")
+        Files.writeString(temporaryFile, content)
+        restrictPermissions(temporaryFile, directory = false)
+        runCatching {
+            Files.move(temporaryFile, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        }.getOrElse {
+            Files.move(temporaryFile, file, StandardCopyOption.REPLACE_EXISTING)
+        }
+        restrictPermissions(file, directory = false)
+    }
+
+    private val conversationsDirectory: Path
+        get() = dataFile.resolveSibling("conversations")
+
+    private fun conversationFile(id: String): Path {
+        val digest = MessageDigest.getInstance("SHA-256").digest(id.toByteArray(Charsets.UTF_8))
+        val name = digest.joinToString("") { byte -> "%02x".format(byte) }
+        return conversationsDirectory.resolve("$name.json")
     }
 
     private fun restrictPermissions(path: Path, directory: Boolean) {
@@ -131,6 +213,7 @@ internal class DesktopStore(
 
     companion object {
         private const val braveSearchSecretId = "search:brave-api-key"
+        private const val CurrentSchemaVersion = 2
 
         fun defaultDataFile(): Path {
             val configHome = System.getenv("XDG_CONFIG_HOME")

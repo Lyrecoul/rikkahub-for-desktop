@@ -42,6 +42,39 @@ class DesktopStoreTest {
     }
 
     @Test
+    fun storesEachConversationOutsideTheSettingsFile() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-split-store")
+        val dataFile = directory.resolve("desktop.json")
+        val first = DesktopConversation(id = "first", messages = listOf(ChatMessage("user", "first message")))
+        val second = DesktopConversation(id = "second", messages = listOf(ChatMessage("user", "second message")))
+        val store = DesktopStore(dataFile, MemorySecrets())
+
+        store.save(DesktopData(conversations = listOf(first, second), selectedConversationId = second.id))
+
+        val settings = Files.readString(dataFile)
+        assertFalse(settings.contains("first message"))
+        assertFalse(settings.contains("second message"))
+        Files.list(directory.resolve("conversations")).use { files ->
+            assertEquals(2, files.count())
+        }
+        assertEquals(listOf(first, second), store.load().conversations)
+    }
+
+    @Test
+    fun deletingConversationRemovesOnlyItsStoredFile() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-split-delete")
+        val first = DesktopConversation(id = "first")
+        val second = DesktopConversation(id = "second")
+        val store = DesktopStore(directory.resolve("desktop.json"), MemorySecrets())
+        store.save(DesktopData(conversations = listOf(first, second), selectedConversationId = first.id))
+
+        store.save(DesktopData(conversations = listOf(second), selectedConversationId = second.id))
+
+        Files.list(directory.resolve("conversations")).use { files -> assertEquals(1, files.count()) }
+        assertEquals(listOf(second), store.load().conversations)
+    }
+
+    @Test
     fun loadsDataWrittenBeforeMessageIdsAndConversationMetadata() {
         val directory = Files.createTempDirectory("rikkahub-desktop-legacy-store")
         val dataFile = directory.resolve("desktop.json")
@@ -76,6 +109,11 @@ class DesktopStoreTest {
         assertTrue(loaded.conversations.single().messages.single().id.isNotBlank())
         assertEquals("", loaded.conversations.single().messages.single().reasoning)
         assertEquals(emptyList(), loaded.conversations.single().messages.single().variants)
+        assertTrue(Files.exists(directory.resolve("conversations")))
+        assertTrue(Files.list(directory).use { files ->
+            files.anyMatch { it.fileName.toString().startsWith("desktop.json.migration-") }
+        })
+        assertFalse(Files.readString(dataFile).contains("\"messages\""))
     }
 
     @Test
@@ -156,7 +194,7 @@ class DesktopStoreTest {
 
         val loaded = DesktopStore(dataFile).load()
 
-        assertEquals(1, loaded.schemaVersion)
+        assertEquals(2, loaded.schemaVersion)
         assertFalse(Files.exists(dataFile))
         Files.list(directory).use { files ->
             assertTrue(files.anyMatch { it.fileName.toString().startsWith("desktop.json.corrupt-") })
@@ -246,6 +284,25 @@ class DesktopStoreTest {
         val restored = store.load().conversations.single()
         assertEquals("Review this recording", restored.draft)
         assertEquals(DesktopAttachmentKind.AUDIO, restored.draftAttachments.single().kind)
+    }
+
+    @Test
+    fun quarantinesOnlyTheCorruptConversationFile() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-corrupt-conversation")
+        val first = DesktopConversation(id = "first")
+        val second = DesktopConversation(id = "second")
+        val store = DesktopStore(directory.resolve("desktop.json"), MemorySecrets())
+        store.save(DesktopData(conversations = listOf(first, second), selectedConversationId = first.id))
+        val conversationsDirectory = directory.resolve("conversations")
+        val corruptFile = Files.list(conversationsDirectory).use { files -> files.findFirst().orElseThrow() }
+        Files.writeString(corruptFile, "not json")
+
+        val loaded = store.load()
+
+        assertEquals(1, loaded.conversations.size)
+        assertTrue(Files.list(conversationsDirectory).use { files ->
+            files.anyMatch { it.fileName.toString().contains(".corrupt-") }
+        })
     }
 
     @Test

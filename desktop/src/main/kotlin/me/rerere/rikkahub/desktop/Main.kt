@@ -5,12 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -149,6 +144,7 @@ import com.composables.icons.lucide.Sparkles
 import com.composables.icons.lucide.Square
 import com.composables.icons.lucide.Star
 import com.composables.icons.lucide.Trash2
+import com.composables.icons.lucide.Wrench
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
@@ -210,6 +206,14 @@ private data class TranslationTarget(
     val conversationId: String,
     val messageIndex: Int,
     val content: String
+)
+
+private data class RenderedChatItem(
+    val messageIndex: Int,
+    val message: ChatMessage,
+    val executionSteps: List<DesktopExecutionStep>,
+    val timelineAfterContent: Boolean,
+    val highlighted: Boolean,
 )
 
 private val MessageTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
@@ -287,7 +291,7 @@ private fun RikkaHubDesktop(
     val conversationScrollPositions = remember { mutableMapOf<String, Pair<Int, Int>>() }
     val pendingAskUserAnswers = remember { mutableStateMapOf<String, CompletableDeferred<String>>() }
     var pendingAgentApproval by remember { mutableStateOf<PendingDesktopAgentApproval?>(null) }
-    val rememberedAgentApprovals = remember { mutableStateMapOf<String, Set<DesktopAgentApprovalKind>>() }
+    val rememberedAgentApprovals = remember { mutableStateMapOf<String, Set<DesktopAgentApprovalGrant>>() }
     val agentRuntime = remember { DesktopAgentRuntime() }
     val generationJobs = remember { mutableStateMapOf<String, Job>() }
     val suggestionJobs = remember { mutableStateMapOf<String, Job>() }
@@ -684,14 +688,16 @@ private fun RikkaHubDesktop(
                         agentRuntime = agentRuntime,
                         approvalHandler = { call, request ->
                             withContext(Dispatchers.Main) {
-                                if (request.kind in rememberedAgentApprovals[conversationId].orEmpty()) return@withContext true
+                                if (rememberedAgentApprovals[conversationId].orEmpty().approves(request)) return@withContext true
                                 val answer = CompletableDeferred<DesktopAgentApprovalDecision>()
                                 pendingAgentApproval = PendingDesktopAgentApproval(call, request, answer)
                                 try {
                                     answer.await().also { decision ->
-                                        if (decision.approved && decision.remember && request.canRemember) {
-                                            rememberedAgentApprovals[conversationId] =
-                                                rememberedAgentApprovals[conversationId].orEmpty() + request.kind
+                                        if (decision.approved && decision.autoApprove) {
+                                            request.rememberedGrant()?.let { grant ->
+                                                rememberedAgentApprovals[conversationId] =
+                                                    rememberedAgentApprovals[conversationId].orEmpty() + grant
+                                            }
                                         }
                                     }.approved
                                 } finally {
@@ -706,6 +712,7 @@ private fun RikkaHubDesktop(
                             updatedAt = System.currentTimeMillis()
                         )
                     }
+                    if (results.any { it.content == DesktopAgentApprovalDeniedResult }) break
                     val current = data.conversations.firstOrNull { it.id == conversationId } ?: break
                     request = requestAssistant.renderMessageTemplate(
                         requestAssistant.transformRequestMessages(
@@ -1352,7 +1359,7 @@ private fun RikkaHubDesktop(
     pendingAgentApproval?.let { pending ->
         DesktopAgentApprovalDialog(
             request = pending.request,
-            onApprove = { remember -> pending.answer.complete(DesktopAgentApprovalDecision(true, remember)) },
+            onApprove = { autoApprove -> pending.answer.complete(DesktopAgentApprovalDecision(true, autoApprove)) },
             onDeny = { pending.answer.complete(DesktopAgentApprovalDecision(false, false)) }
         )
     }
@@ -1365,7 +1372,7 @@ private data class PendingDesktopAgentApproval(
     val answer: CompletableDeferred<DesktopAgentApprovalDecision>
 )
 
-private data class DesktopAgentApprovalDecision(val approved: Boolean, val remember: Boolean)
+private data class DesktopAgentApprovalDecision(val approved: Boolean, val autoApprove: Boolean)
 
 @Composable
 private fun DesktopAgentApprovalDialog(
@@ -1373,7 +1380,7 @@ private fun DesktopAgentApprovalDialog(
     onApprove: (Boolean) -> Unit,
     onDeny: () -> Unit
 ) {
-    var rememberApproval by remember(request) { mutableStateOf(false) }
+    var autoApprove by remember(request) { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDeny,
         title = { Text(request.title) },
@@ -1384,11 +1391,14 @@ private fun DesktopAgentApprovalDialog(
                 Text(
                     when (request.kind) {
                         DesktopAgentApprovalKind.SHELL -> when (request.backend) {
-                            DesktopAgentBackend.DOCKER -> "将在受限 Docker 容器中执行；容器仅挂载选定工作区。"
+                            DesktopAgentBackend.DOCKER -> if (request.network) {
+                                "将在受限 Docker 容器中执行，并临时使用宿主网络；完成后恢复到无外网的隔离容器。"
+                            } else {
+                                "将在受限 Docker 容器中执行；容器仅挂载选定工作区。"
+                            }
                             DesktopAgentBackend.LOCAL -> "本机 Shell 以当前用户权限运行；请确认命令及其影响。"
                             null -> "请确认命令及其影响。"
                         }
-                        DesktopAgentApprovalKind.NETWORK -> "此命令会临时使用宿主网络；完成后恢复到无外网的隔离容器。"
                         DesktopAgentApprovalKind.IMAGE_PULL -> "将从镜像仓库下载内容到本机 Docker 缓存。"
                         DesktopAgentApprovalKind.SKILL -> "Skill 指令可能影响后续 Agent 行为。"
                         DesktopAgentApprovalKind.WRITE -> "文件修改限制在已选定的工作区目录内。"
@@ -1398,14 +1408,23 @@ private fun DesktopAgentApprovalDialog(
                 )
                 if (request.canRemember) {
                     FilterChip(
-                        selected = rememberApproval,
-                        onClick = { rememberApproval = !rememberApproval },
-                        label = { Text("本对话内记住此类操作") }
+                        selected = autoApprove,
+                        onClick = { autoApprove = !autoApprove },
+                        label = {
+                            Text(
+                                when (request.rememberedGrant()?.scope) {
+                                    DesktopAgentApprovalScope.DOCKER_SHELL -> "本对话内自动批准此工作区的 Docker 命令"
+                                    DesktopAgentApprovalScope.DOCKER_NETWORK -> "本对话内自动批准此工作区的 Docker 联网命令"
+                                    DesktopAgentApprovalScope.IMAGE_PULL -> "本对话内自动批准此工作区的此镜像下载"
+                                    else -> "本对话内自动批准此类操作"
+                                }
+                            )
+                        }
                     )
                 }
             }
         },
-        confirmButton = { Button(onClick = { onApprove(rememberApproval) }) { Text("允许") } },
+        confirmButton = { Button(onClick = { onApprove(autoApprove) }) { Text("允许") } },
         dismissButton = { TextButton(onClick = onDeny) { Text("拒绝") } }
     )
 }
@@ -2065,8 +2084,8 @@ private fun ChatPane(
         ?: "OpenAI"
     val lastContent = conversation.messages.lastOrNull()?.content
     val lastReasoning = conversation.messages.lastOrNull()?.reasoning
-    val displayMessages = conversation.messages.mapIndexedNotNull { index, message ->
-        (index to message).takeIf { message.role != "tool" }
+    val displayItems = remember(conversation.messages) {
+        buildDesktopChatDisplayItems(conversation.messages)
     }
     var showMessageJumper by remember(conversation.id) { mutableStateOf(false) }
     var pointerOverMessageJumper by remember(conversation.id) { mutableStateOf(false) }
@@ -2080,18 +2099,23 @@ private fun ChatPane(
     LaunchedEffect(conversation.id) {
         val savedPosition = conversationScrollPositions[conversation.id] ?: (0 to 0)
         listState.scrollToItem(
-            savedPosition.first.coerceIn(0, displayMessages.size),
+            savedPosition.first.coerceIn(0, displayItems.size),
             savedPosition.second
         )
     }
     LaunchedEffect(conversation.messages.size, lastContent, lastReasoning, isGenerating) {
         if (preferences.enableAutoScroll && isGenerating && conversation.messages.isNotEmpty()) {
-            val targetIndex = displayMessages.size
+            val targetIndex = displayItems.size
             listState.animateScrollToItem(targetIndex)
         }
     }
     LaunchedEffect(jumpToMessageId, conversation.id) {
-        val index = displayMessages.indexOfFirst { (_, message) -> message.id == jumpToMessageId }
+        val index = displayItems.indexOfFirst { item ->
+            when (item) {
+                is DesktopChatDisplayItem.Message -> item.message.id == jumpToMessageId
+                is DesktopChatDisplayItem.AssistantTurn -> jumpToMessageId in item.messageIds
+            }
+        }
         if (index >= 0) {
             highlightedMessageId = jumpToMessageId
             listState.animateScrollToItem(index)
@@ -2305,32 +2329,49 @@ private fun ChatPane(
                         contentPadding = PaddingValues(top = 22.dp, bottom = messageBottomPadding),
                         verticalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
-                        itemsIndexed(displayMessages, key = { _, entry -> entry.second.id }) { _, entry ->
-                            val (index, message) = entry
+                        itemsIndexed(displayItems, key = { _, item -> item.key }) { _, item ->
+                            val renderedItem = when (item) {
+                                is DesktopChatDisplayItem.Message -> RenderedChatItem(
+                                    item.messageIndex,
+                                    item.message,
+                                    emptyList(),
+                                    false,
+                                    item.message.id == highlightedMessageId,
+                                )
+                                is DesktopChatDisplayItem.AssistantTurn -> RenderedChatItem(
+                                    item.messageIndex,
+                                    item.message,
+                                    item.steps,
+                                    item.timelineAfterContent,
+                                    highlightedMessageId in item.messageIds,
+                                )
+                            }
                             Box(
                                 modifier = Modifier.fillMaxWidth(),
                                 contentAlignment = Alignment.TopCenter
                             ) {
                                 Box(Modifier.widthIn(max = 920.dp).padding(horizontal = 28.dp)) {
-                                    SoftMessageReveal(message.id) {
+                                    SoftMessageReveal(renderedItem.message.id) {
                                         MessageBlock(
-                                            message = message,
+                                            message = renderedItem.message,
                                             model = model,
                                             providerName = providerName,
                                             assistant = assistant,
                                             preferences = preferences,
-                                            toolResults = conversation.messages.filter { it.role == "tool" && it.toolCallId != null }
-                                                .associateBy { it.toolCallId!! },
-                                            generating = isGenerating && index == conversation.messages.lastIndex,
+                                            executionSteps = renderedItem.executionSteps,
+                                            timelineAfterContent = renderedItem.timelineAfterContent,
+                                            generating = isGenerating && renderedItem.messageIndex == conversation.messages.lastIndex,
                                             actionsEnabled = !isGenerating,
-                                            onEdit = { onEditMessage(index, message.content) },
-                                            onDelete = { onDeleteMessage(index) },
-                                            onToggleFavorite = { onToggleMessageFavorite(index) },
-                                            onFork = { onForkAtMessage(index) },
-                                            onTranslate = { onTranslateMessage(index) },
-                                            highlighted = message.id == highlightedMessageId,
-                                            onRegenerate = { onRegenerateMessage(index) },
-                                            onSelectVariant = { variantIndex -> onSelectMessageVariant(index, variantIndex) },
+                                            onEdit = { onEditMessage(renderedItem.messageIndex, renderedItem.message.content) },
+                                            onDelete = { onDeleteMessage(renderedItem.messageIndex) },
+                                            onToggleFavorite = { onToggleMessageFavorite(renderedItem.messageIndex) },
+                                            onFork = { onForkAtMessage(renderedItem.messageIndex) },
+                                            onTranslate = { onTranslateMessage(renderedItem.messageIndex) },
+                                            highlighted = renderedItem.highlighted,
+                                            onRegenerate = { onRegenerateMessage(renderedItem.messageIndex) },
+                                            onSelectVariant = { variantIndex ->
+                                                onSelectMessageVariant(renderedItem.messageIndex, variantIndex)
+                                            },
                                             onAskUserAnswer = { toolCall, answer ->
                                                 onAskUserAnswer(conversation.id, toolCall, answer)
                                             }
@@ -2365,7 +2406,7 @@ private fun ChatPane(
                     visible = showMessageJumper && !listState.isScrollInProgress,
                     onLeft = preferences.messageJumperOnLeft,
                     state = listState,
-                    messageCount = displayMessages.size,
+                    messageCount = displayItems.size,
                     onPointerOverChange = { pointerOverMessageJumper = it }
                 )
             }
@@ -2562,7 +2603,8 @@ private fun MessageBlock(
     providerName: String,
     assistant: DesktopAssistantProfile,
     preferences: DesktopPreferences,
-    toolResults: Map<String, ChatMessage>,
+    executionSteps: List<DesktopExecutionStep>,
+    timelineAfterContent: Boolean,
     generating: Boolean,
     actionsEnabled: Boolean,
     onEdit: () -> Unit,
@@ -2576,7 +2618,9 @@ private fun MessageBlock(
     onAskUserAnswer: (DesktopToolCall, String) -> Unit
 ) {
     val isUser = message.role == "user"
-    val isTool = message.role == "tool"
+    val hasVisibleExecutionSteps = executionSteps.any {
+        it !is DesktopExecutionStep.Reasoning || preferences.showReasoning
+    }
     val displayContent = assistant.applyRegexRules(message.content, message.role, visualOnly = true)
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
@@ -2596,9 +2640,7 @@ private fun MessageBlock(
         horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
-        if (isTool) {
-            Text("工具结果", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-        } else if (isUser || preferences.showModelIcon || preferences.showModelName || preferences.showMessageTimestamp) {
+        if (isUser || preferences.showModelIcon || preferences.showModelName || preferences.showMessageTimestamp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (!isUser) {
                     if (preferences.showModelIcon) {
@@ -2650,35 +2692,7 @@ private fun MessageBlock(
                 )
             }
         } else {
-            if (!isTool) {
-            if (message.toolCalls.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    message.toolCalls.forEach { toolCall ->
-                        ToolCallStep(toolCall, toolResults[toolCall.id], generating, onAskUserAnswer)
-                    }
-                }
-            }
-            if (preferences.showReasoning && message.reasoning.isNotBlank()) {
-                ReasoningBlock(
-                    messageId = message.id,
-                    reasoning = message.reasoning,
-                    reasoningStartedAt = message.reasoningStartedAt,
-                    reasoningDurationMillis = message.reasoningDurationMillis,
-                    generating = generating && message.content.isBlank() && message.reasoningDurationMillis == null,
-                    autoCollapse = preferences.autoCollapseReasoning,
-                    markdownOptions = markdownOptions
-                )
-            }
-            if (
-                message.content.isEmpty() &&
-                (message.reasoning.isEmpty() || !preferences.showReasoning) &&
-                generating
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp)
-                    Text("思考中...", Modifier.padding(start = 9.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            } else if (displayContent.isNotBlank()) {
+            val assistantContent: @Composable () -> Unit = {
                 if (preferences.showAssistantBubble) {
                     Surface(
                         shape = RoundedCornerShape(14.dp),
@@ -2698,6 +2712,30 @@ private fun MessageBlock(
                     )
                 }
             }
+            if (timelineAfterContent && displayContent.isNotBlank()) {
+                assistantContent()
+            }
+            if (hasVisibleExecutionSteps) {
+                DesktopExecutionTimeline(
+                    steps = executionSteps,
+                    generating = generating,
+                    autoCollapse = preferences.autoCollapseReasoning,
+                    showReasoning = preferences.showReasoning,
+                    markdownOptions = markdownOptions,
+                    onAskUserAnswer = onAskUserAnswer,
+                )
+            }
+            if (
+                message.content.isEmpty() &&
+                !hasVisibleExecutionSteps &&
+                generating
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp)
+                    Text("思考中...", Modifier.padding(start = 9.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else if (!timelineAfterContent && displayContent.isNotBlank()) {
+                assistantContent()
             }
         }
         if (message.attachments.isNotEmpty()) {
@@ -2768,14 +2806,15 @@ private fun MessageBlock(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             val variants = message.availableVariants()
-            if (!isTool && variants.size > 1) {
+            val currentVariantIndex = message.selectedVariantIndex.coerceIn(variants.indices)
+            if (variants.size > 1) {
                 MessageAction(
                     Lucide.ChevronLeft,
                     "上一个版本",
-                    enabled = actionsEnabled && message.selectedVariantIndex > 0
-                ) { onSelectVariant(message.selectedVariantIndex - 1) }
+                    enabled = actionsEnabled && currentVariantIndex > 0
+                ) { onSelectVariant(currentVariantIndex - 1) }
                 Text(
-                    "${message.selectedVariantIndex + 1}/${variants.size}",
+                    "${currentVariantIndex + 1}/${variants.size}",
                     Modifier.padding(horizontal = 3.dp).align(Alignment.CenterVertically),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp
@@ -2783,19 +2822,17 @@ private fun MessageBlock(
                 MessageAction(
                     Lucide.ChevronRight,
                     "下一个版本",
-                    enabled = actionsEnabled && message.selectedVariantIndex < variants.lastIndex
-                ) { onSelectVariant(message.selectedVariantIndex + 1) }
+                    enabled = actionsEnabled && currentVariantIndex < variants.lastIndex
+                ) { onSelectVariant(currentVariantIndex + 1) }
             }
             MessageAction(Lucide.Copy, "复制", enabled = displayContent.isNotEmpty()) {
                 clipboardScope.launch { clipboard.setClipEntry(ClipEntry(StringSelection(displayContent))) }
             }
             MessageAction(Lucide.GitFork, "从此处分支", enabled = actionsEnabled, onClick = onFork)
-            if (!isTool && !isUser) {
+            if (!isUser) {
                 MessageAction(Lucide.RotateCcw, "重新生成", enabled = actionsEnabled, onClick = onRegenerate)
             }
-            if (!isTool) {
-                MessageAction(Lucide.Languages, "翻译", enabled = actionsEnabled && displayContent.isNotBlank(), onClick = onTranslate)
-            }
+            MessageAction(Lucide.Languages, "翻译", enabled = actionsEnabled && displayContent.isNotBlank(), onClick = onTranslate)
             MessageAction(
                 if (message.isFavorite) FilledStar else Lucide.Star,
                 if (message.isFavorite) "取消收藏" else "收藏",
@@ -2860,46 +2897,211 @@ private fun MessageTimestamp(createdAt: Long) {
 }
 
 @Composable
-private fun ToolCallStep(
+private fun DesktopExecutionTimeline(
+    steps: List<DesktopExecutionStep>,
+    generating: Boolean,
+    autoCollapse: Boolean,
+    showReasoning: Boolean,
+    markdownOptions: MarkdownRenderOptions,
+    onAskUserAnswer: (DesktopToolCall, String) -> Unit,
+) {
+    val visibleSteps = steps.filter { it !is DesktopExecutionStep.Reasoning || showReasoning }
+    if (visibleSteps.isEmpty()) return
+
+    val hasPendingQuestion = visibleSteps.any {
+        it is DesktopExecutionStep.ToolCall && it.call.name == DesktopAskUserToolName && it.result == null
+    }
+    var expanded by remember(steps, generating, autoCollapse, hasPendingQuestion) {
+        mutableStateOf(generating || !autoCollapse || hasPendingQuestion)
+    }
+    val canCollapse = visibleSteps.size > 2
+    val renderedSteps = if (expanded || !canCollapse) visibleSteps else visibleSteps.takeLast(2)
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (canCollapse) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        if (expanded) Lucide.ChevronDown else Lucide.ChevronRight,
+                        if (expanded) "收起执行过程" else "展开执行过程",
+                        Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        if (expanded) "执行过程" else "展开 ${visibleSteps.size - renderedSteps.size} 个步骤",
+                        Modifier.padding(start = 7.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            renderedSteps.forEachIndexed { index, step ->
+                if (index > 0) {
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                    )
+                }
+                DesktopExecutionTimelineStep(
+                    step = step,
+                    generating = generating,
+                    markdownOptions = markdownOptions,
+                    onAskUserAnswer = onAskUserAnswer,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopExecutionTimelineStep(
+    step: DesktopExecutionStep,
+    generating: Boolean,
+    markdownOptions: MarkdownRenderOptions,
+    onAskUserAnswer: (DesktopToolCall, String) -> Unit,
+) {
+    when (step) {
+        is DesktopExecutionStep.Reasoning -> {
+            var expanded by remember(step.message.id) { mutableStateOf(generating) }
+            val message = step.message
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Lucide.Lightbulb, "思考过程", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    message.reasoningDurationMillis?.let { "思考了 ${formatReasoningDuration(it)} 秒" } ?: "思考过程",
+                    Modifier.padding(start = 7.dp).weight(1f),
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Icon(if (expanded) Lucide.ChevronDown else Lucide.ChevronRight, null, Modifier.size(15.dp))
+            }
+            if (expanded) {
+                MarkdownContent(
+                    message.reasoning,
+                    Modifier.fillMaxWidth().padding(start = 23.dp, bottom = 8.dp),
+                    markdownOptions
+                )
+            }
+        }
+
+        is DesktopExecutionStep.ToolCall -> {
+            if (step.call.name == DesktopAskUserToolName && step.result == null) {
+                AskUserToolStep(step.call, onAskUserAnswer)
+            } else {
+                DesktopToolCallTimelineStep(
+                    toolCall = step.call,
+                    result = step.result,
+                    generating = generating && step.result == null,
+                    markdownOptions = markdownOptions,
+                )
+            }
+        }
+
+        is DesktopExecutionStep.ToolResult -> DesktopToolResultTimelineStep(step.message.content, markdownOptions)
+    }
+}
+
+@Composable
+private fun DesktopToolCallTimelineStep(
     toolCall: DesktopToolCall,
     result: ChatMessage?,
     generating: Boolean,
-    onAskUserAnswer: (DesktopToolCall, String) -> Unit
+    markdownOptions: MarkdownRenderOptions,
 ) {
-    if (toolCall.name == DesktopAskUserToolName && result == null) {
-        AskUserToolStep(toolCall, onAskUserAnswer)
-        return
-    }
     var expanded by remember(toolCall.id) { mutableStateOf(false) }
-    Surface(
-        modifier = Modifier.widthIn(max = 620.dp),
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    val input = toolCall.arguments.takeIf { it.isNotBlank() && it != "{}" }
+    val output = result?.content?.takeIf { it.isNotBlank() }
+    val hasDetails = input != null || output != null
+    val status = if (generating && result == null) "正在调用" else "调用完成"
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(enabled = hasDetails) { expanded = !expanded }.padding(vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column {
-            Row(
-                Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(horizontal = 12.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                    Icon(Lucide.Sparkles, null, Modifier.padding(5.dp).size(14.dp), tint = MaterialTheme.colorScheme.primary)
+        Icon(Lucide.Wrench, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+        Text(
+            "${toolCall.displayName()} · $status",
+            Modifier.padding(start = 7.dp).weight(1f),
+            color = MaterialTheme.colorScheme.primary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (hasDetails) {
+            Icon(if (expanded) Lucide.ChevronDown else Lucide.ChevronRight, null, Modifier.size(15.dp))
+        }
+    }
+    if (expanded && hasDetails) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(start = 23.dp, bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            input?.let { value ->
+                DesktopToolDetail("输入") {
+                    Text(value, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 }
-                Column(Modifier.padding(start = 8.dp).weight(1f)) {
-                    Text(toolCall.name, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    Text(
-                        if (generating && result == null) "正在调用" else "调用完成",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp
-                    )
-                }
-                Icon(if (expanded) Lucide.ChevronDown else Lucide.ChevronRight, null, Modifier.size(16.dp))
             }
-            if (expanded && ((toolCall.arguments.isNotBlank() && toolCall.arguments != "{}") || result?.content?.isNotBlank() == true)) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-                Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (toolCall.arguments.isNotBlank() && toolCall.arguments != "{}") Text(toolCall.arguments, fontSize = 11.sp)
-                    result?.content?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 11.sp) }
+            output?.let { value ->
+                DesktopToolDetail("输出") {
+                    MarkdownContent(value, Modifier.fillMaxWidth(), markdownOptions)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopToolDetail(label: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        ) {
+            Box(Modifier.fillMaxWidth().padding(9.dp)) {
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopToolResultTimelineStep(content: String, markdownOptions: MarkdownRenderOptions) {
+    var expanded by remember(content) { mutableStateOf(false) }
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Lucide.Wrench, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+        Text(
+            "工具结果",
+            Modifier.padding(start = 7.dp).weight(1f),
+            color = MaterialTheme.colorScheme.primary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Icon(if (expanded) Lucide.ChevronDown else Lucide.ChevronRight, null, Modifier.size(15.dp))
+    }
+    if (expanded && content.isNotBlank()) {
+        Box(Modifier.fillMaxWidth().padding(start = 23.dp, bottom = 8.dp)) {
+            DesktopToolDetail("输出") {
+                MarkdownContent(content, Modifier.fillMaxWidth(), markdownOptions)
             }
         }
     }
@@ -3039,127 +3241,26 @@ private fun AskUserToolStep(toolCall: DesktopToolCall, onSubmit: (DesktopToolCal
     }
 }
 
-@Composable
-private fun ToolResultStep(content: String) {
-    var expanded by remember(content) { mutableStateOf(true) }
-    Surface(
-        modifier = Modifier.widthIn(max = 620.dp),
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow
-    ) {
-        Column {
-            Row(
-                Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(horizontal = 12.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Lucide.Sparkles, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                Text("工具结果", Modifier.padding(start = 8.dp).weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                Icon(if (expanded) Lucide.ChevronDown else Lucide.ChevronRight, null, Modifier.size(16.dp))
-            }
-            if (expanded && content.isNotBlank()) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-                Text(
-                    content,
-                    Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReasoningBlock(
-    messageId: String,
-    reasoning: String,
-    reasoningStartedAt: Long?,
-    reasoningDurationMillis: Long?,
-    generating: Boolean,
-    autoCollapse: Boolean,
-    markdownOptions: MarkdownRenderOptions
-) {
-    var expanded by remember(messageId) { mutableStateOf(generating || !autoCollapse) }
-    var elapsedMillis by remember(messageId, reasoningStartedAt) {
-        mutableStateOf(reasoningDurationMillis)
-    }
-    val pulseTransition = rememberInfiniteTransition(label = "reasoningPulse")
-    val pulseScale by pulseTransition.animateFloat(
-        initialValue = 0.9f,
-        targetValue = 1.1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 800, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "reasoningPulseScale"
-    )
-    val iconScale by animateFloatAsState(
-        targetValue = if (generating) pulseScale else 1f,
-        animationSpec = tween(durationMillis = 180),
-        label = "reasoningIconScale"
-    )
-    LaunchedEffect(generating, autoCollapse) {
-        expanded = generating || !autoCollapse
-    }
-    LaunchedEffect(generating, reasoningStartedAt, reasoningDurationMillis) {
-        if (generating && reasoningStartedAt != null && reasoningDurationMillis == null) {
-            while (true) {
-                elapsedMillis = (System.currentTimeMillis() - reasoningStartedAt).coerceAtLeast(0)
-                delay(100)
-            }
-        } else {
-            elapsedMillis = reasoningDurationMillis
-        }
-    }
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow
-    ) {
-        Column {
-            Row(
-                Modifier.fillMaxWidth().clickable { expanded = !expanded }
-                    .padding(horizontal = 12.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Lucide.Lightbulb,
-                    "思考过程",
-                    Modifier.size(17.dp).graphicsLayer {
-                        scaleX = iconScale
-                        scaleY = iconScale
-                    },
-                    tint = MaterialTheme.colorScheme.secondary
-                )
-                Text(
-                    elapsedMillis?.let { "思考了 ${formatReasoningDuration(it)} 秒" } ?: "思考过程",
-                    Modifier.padding(start = 7.dp),
-                    color = MaterialTheme.colorScheme.secondary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(Modifier.weight(1f))
-                Icon(
-                    if (expanded) Lucide.ChevronDown else Lucide.ChevronRight,
-                    if (expanded) "收起思考过程" else "展开思考过程",
-                    Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (expanded) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-                MarkdownContent(
-                    reasoning,
-                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-                    markdownOptions
-                )
-            }
-        }
-    }
-}
-
 private fun formatReasoningDuration(durationMillis: Long): String =
     String.format(java.util.Locale.getDefault(), "%.1f", durationMillis.coerceAtLeast(0) / 1_000.0)
+
+private fun DesktopToolCall.displayName(): String = when (name) {
+    DesktopWebSearchToolName -> "搜索网页"
+    DesktopCurrentTimeToolName -> "获取时间"
+    DesktopMemoryToolName -> "管理记忆"
+    DesktopAgentListFilesToolName -> "列出文件"
+    DesktopAgentSearchFilesToolName -> "搜索文件"
+    DesktopAgentReadFileToolName -> "读取文件"
+    DesktopAgentWriteFileToolName -> "写入文件"
+    DesktopAgentEditFileToolName -> "编辑文件"
+    DesktopAgentShellToolName -> "执行命令"
+    DesktopUseSkillToolName -> "使用技能"
+    else -> name
+        .substringAfterLast("__")
+        .removePrefix("agent_")
+        .removePrefix("tool_")
+        .replace('_', ' ')
+}
 
 @Composable
 private fun TranslationBlock(

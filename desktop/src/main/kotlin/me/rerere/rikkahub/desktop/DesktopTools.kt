@@ -14,6 +14,9 @@ import okhttp3.OkHttpClient
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
+internal const val DesktopAgentApprovalDeniedResult =
+    "[用户拒绝工具执行] 用户拒绝了此操作。不要重试或请求其他工具；停止当前处理并等待用户发送下一条指令。"
+
 internal fun List<DesktopToolCall>.merge(deltas: List<DesktopToolCallDelta>): List<DesktopToolCall> {
     if (deltas.isEmpty()) return this
     val calls = toMutableList()
@@ -73,7 +76,13 @@ internal suspend fun executeDesktopToolCalls(
             val agent = requireNotNull(config.agent) { "agent is not enabled for this assistant" }
             val approve = requireNotNull(approvalHandler) { "agent approval handler is unavailable" }
             agentRuntime.execute(agent, call) { request -> approve(call, request) }
-        }.getOrElse { "Agent tool failed: ${it.message ?: "unknown error"}" }
+        }.getOrElse { error ->
+            if (error is DesktopAgentApprovalDeniedException) {
+                DesktopAgentApprovalDeniedResult
+            } else {
+                "Agent tool failed: ${error.message ?: "unknown error"}"
+            }
+        }
         else -> runCatching {
             val target = config.mcpServers.asSequence()
                 .flatMap { server -> server.tools.asSequence().map { tool -> server to tool } }

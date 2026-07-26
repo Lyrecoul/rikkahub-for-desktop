@@ -29,19 +29,50 @@ internal const val DesktopAgentEditFileToolName = "agent_edit_file"
 internal const val DesktopAgentShellToolName = "agent_shell"
 internal const val DesktopUseSkillToolName = "use_skill"
 
-internal enum class DesktopAgentApprovalKind { WRITE, SHELL, NETWORK, IMAGE_PULL, SKILL }
+internal enum class DesktopAgentApprovalKind { WRITE, SHELL, IMAGE_PULL, SKILL }
+
+internal enum class DesktopAgentApprovalScope { WRITE, SKILL, DOCKER_SHELL, DOCKER_NETWORK, IMAGE_PULL }
+
+internal data class DesktopAgentApprovalGrant(
+    val scope: DesktopAgentApprovalScope,
+    val workspace: DesktopAgentWorkspace? = null
+)
 
 internal data class DesktopAgentApprovalRequest(
     val kind: DesktopAgentApprovalKind,
     val title: String,
     val detail: String,
     val backend: DesktopAgentBackend? = null,
-    val canRemember: Boolean = kind !in setOf(
-        DesktopAgentApprovalKind.SHELL,
-        DesktopAgentApprovalKind.NETWORK,
-        DesktopAgentApprovalKind.IMAGE_PULL
-    )
+    val network: Boolean = false,
+    val workspace: DesktopAgentWorkspace? = null
 )
+
+internal fun DesktopAgentApprovalRequest.rememberedGrant(): DesktopAgentApprovalGrant? = when (kind) {
+    DesktopAgentApprovalKind.WRITE -> DesktopAgentApprovalGrant(DesktopAgentApprovalScope.WRITE)
+    DesktopAgentApprovalKind.SKILL -> DesktopAgentApprovalGrant(DesktopAgentApprovalScope.SKILL)
+    DesktopAgentApprovalKind.SHELL -> workspace?.takeIf { it.backend == DesktopAgentBackend.DOCKER }?.let {
+        DesktopAgentApprovalGrant(
+            if (network) DesktopAgentApprovalScope.DOCKER_NETWORK else DesktopAgentApprovalScope.DOCKER_SHELL,
+            it
+        )
+    }
+    DesktopAgentApprovalKind.IMAGE_PULL -> workspace?.let {
+        DesktopAgentApprovalGrant(DesktopAgentApprovalScope.IMAGE_PULL, it)
+    }
+}
+
+internal val DesktopAgentApprovalRequest.canRemember: Boolean
+    get() = rememberedGrant() != null
+
+internal fun Set<DesktopAgentApprovalGrant>.approves(request: DesktopAgentApprovalRequest): Boolean {
+    val grant = request.rememberedGrant() ?: return false
+    return grant in this || (
+        grant.scope == DesktopAgentApprovalScope.DOCKER_SHELL &&
+            DesktopAgentApprovalGrant(DesktopAgentApprovalScope.DOCKER_NETWORK, grant.workspace) in this
+        )
+}
+
+internal class DesktopAgentApprovalDeniedException : IllegalArgumentException("User denied this tool operation")
 
 internal data class DesktopAgentCommandResult(
     val exitCode: Int,
@@ -129,29 +160,30 @@ internal class DesktopAgentRuntime(
             DesktopAgentSearchFilesToolName -> searchFiles(root, params.requiredString("query"), params.optionalString("path").orEmpty())
             DesktopAgentReadFileToolName -> readFile(root, params.requiredString("path"))
             DesktopAgentWriteFileToolName -> {
-                require(approve(DesktopAgentApprovalRequest(DesktopAgentApprovalKind.WRITE, "写入文件", params.requiredString("path"))))
+                requireApproval(approve(DesktopAgentApprovalRequest(DesktopAgentApprovalKind.WRITE, "写入文件", params.requiredString("path"))))
                 writeFile(root, params.requiredString("path"), params.requiredString("text"))
             }
             DesktopAgentEditFileToolName -> {
-                require(approve(DesktopAgentApprovalRequest(DesktopAgentApprovalKind.WRITE, "编辑文件", params.requiredString("path"))))
+                requireApproval(approve(DesktopAgentApprovalRequest(DesktopAgentApprovalKind.WRITE, "编辑文件", params.requiredString("path"))))
                 editFile(root, params.requiredString("path"), params.requiredString("old_text"), params.requiredString("new_text"))
             }
             DesktopAgentShellToolName -> {
                 val command = params.requiredString("command")
-                require(approve(DesktopAgentApprovalRequest(
-                    DesktopAgentApprovalKind.SHELL,
-                    "执行命令",
-                    command.take(2_000),
-                    config.workspace.backend
-                )))
                 val network = params.optionalBoolean("network") ?: false
-                if (network) require(approve(DesktopAgentApprovalRequest(DesktopAgentApprovalKind.NETWORK, "允许容器联网", command.take(2_000))))
+                requireApproval(approve(DesktopAgentApprovalRequest(
+                    DesktopAgentApprovalKind.SHELL,
+                    if (config.workspace.backend == DesktopAgentBackend.DOCKER && network) "执行联网命令" else "执行命令",
+                    command.take(2_000),
+                    config.workspace.backend,
+                    network,
+                    config.workspace
+                )))
                 shell(config.workspace, root, command, params.optionalString("cwd").orEmpty(), network, approve)
             }
             DesktopUseSkillToolName -> {
                 val name = params.requiredString("name")
                 require(name in config.enabledSkillNames) { "Skill '$name' is not enabled for this assistant" }
-                require(approve(DesktopAgentApprovalRequest(DesktopAgentApprovalKind.SKILL, "加载 Skill", name)))
+                requireApproval(approve(DesktopAgentApprovalRequest(DesktopAgentApprovalKind.SKILL, "加载 Skill", name)))
                 readSkill(name, params.optionalString("path"))
             }
             else -> error("Unsupported agent tool: ${call.name}")
@@ -252,7 +284,12 @@ internal class DesktopAgentRuntime(
         require(',' !in root.toString()) { "Docker workspaces cannot contain commas in their path" }
         val name = "rikkahub-agent-${UUID.nameUUIDFromBytes(root.toString().toByteArray()).toString().replace("-", "").take(24)}"
         if (commandRunner.run(listOf("docker", "image", "inspect", workspace.dockerImage), null, 10_000).exitCode != 0) {
-            require(approve(DesktopAgentApprovalRequest(DesktopAgentApprovalKind.IMAGE_PULL, "下载容器镜像", workspace.dockerImage)))
+            requireApproval(approve(DesktopAgentApprovalRequest(
+                DesktopAgentApprovalKind.IMAGE_PULL,
+                "下载容器镜像",
+                workspace.dockerImage,
+                workspace = workspace
+            )))
             requireDockerSuccess(commandRunner.run(listOf("docker", "pull", workspace.dockerImage), null, 600_000), "pull Docker image")
         }
         ensureDockerNetwork(DesktopAgentIsolatedNetworkName, internal = true)
@@ -357,6 +394,10 @@ internal class DesktopAgentRuntime(
 
     private fun requireDockerSuccess(result: DesktopAgentCommandResult, action: String) {
         require(result.exitCode == 0) { "Unable to $action: ${dockerFailureDetail(result)}" }
+    }
+
+    private fun requireApproval(approved: Boolean) {
+        if (!approved) throw DesktopAgentApprovalDeniedException()
     }
 
     private fun dockerFailureDetail(result: DesktopAgentCommandResult): String =

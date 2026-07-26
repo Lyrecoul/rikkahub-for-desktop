@@ -332,6 +332,7 @@ data class DesktopAttachment(
 
 @Serializable
 data class DesktopMessageVariant(
+    val id: String = UUID.randomUUID().toString(),
     val content: String,
     val reasoning: String = "",
     val reasoningStartedAt: Long? = null,
@@ -348,6 +349,7 @@ data class DesktopMessageVariant(
 fun ChatMessage.availableVariants(): List<DesktopMessageVariant> = variants.ifEmpty {
     listOf(
         DesktopMessageVariant(
+            id = id,
             content = content,
             reasoning = reasoning,
             reasoningStartedAt = reasoningStartedAt,
@@ -441,6 +443,11 @@ fun ChatMessage.selectVariant(index: Int): ChatMessage {
         variants = choices,
         selectedVariantIndex = index
     )
+}
+
+private fun ChatMessage.selectedVariant(): DesktopMessageVariant {
+    val choices = availableVariants()
+    return choices[selectedVariantIndex.coerceIn(choices.indices)]
 }
 
 fun ChatMessage.withTranslation(value: String, language: String): ChatMessage {
@@ -541,7 +548,11 @@ fun DesktopConversation.restoreBranch(branchId: String): DesktopConversation {
     val restoredMessages = branch.messages.map { restoredMessage ->
         val currentMessage = messages.firstOrNull { it.id == restoredMessage.id }
         val currentVariants = currentMessage?.takeIf { it.variants.isNotEmpty() }?.availableVariants()
-        val selectedVariantIndex = currentVariants?.indexOfFirst { it.content == restoredMessage.content } ?: -1
+        val historicalVariant = restoredMessage.selectedVariant()
+        val selectedVariantIndex = currentVariants?.indexOfFirst { it.id == historicalVariant.id }
+            ?.takeIf { it >= 0 }
+            ?: currentVariants?.indexOfFirst { it.content == restoredMessage.content }
+            ?: -1
         if (currentVariants != null && selectedVariantIndex >= 0) {
             restoredMessage.copy(
                 variants = currentVariants,
@@ -567,11 +578,26 @@ fun DesktopConversation.selectMessageVariantAt(messageIndex: Int, variantIndex: 
     val message = messages.getOrNull(messageIndex) ?: return this
     val selectedVariant = message.availableVariants().getOrNull(variantIndex) ?: return this
     val matchingBranch = branches.lastOrNull { branch ->
-        branch.messages.getOrNull(messageIndex)?.let { historicalMessage ->
-            historicalMessage.id == message.id && historicalMessage.content == selectedVariant.content
+        branch.messages.firstOrNull { it.id == message.id }?.let { historicalMessage ->
+            val historicalVariant = historicalMessage.selectedVariant()
+            historicalVariant.id == selectedVariant.id || historicalVariant.content == selectedVariant.content
         } == true
     }
-    if (matchingBranch != null) return restoreBranch(matchingBranch.id)
+    if (matchingBranch != null) {
+        val restored = restoreBranch(matchingBranch.id)
+        val restoredIndex = restored.messages.indexOfFirst { it.id == message.id }
+        if (restoredIndex < 0) return restored
+        val restoredMessage = restored.messages[restoredIndex]
+        val restoredVariantIndex = restoredMessage.availableVariants().indexOfFirst { it.id == selectedVariant.id }
+            .takeIf { it >= 0 }
+            ?: variantIndex
+        return restored.copy(
+            messages = restored.messages.mapIndexed { index, restoredMessage ->
+                if (index == restoredIndex) restoredMessage.selectVariant(restoredVariantIndex) else restoredMessage
+            },
+            updatedAt = System.currentTimeMillis()
+        )
+    }
 
     return copy(
         messages = messages.mapIndexed { index, current ->
@@ -720,7 +746,7 @@ internal fun DesktopConversation.usesPromptInjections(assistant: DesktopAssistan
 
 @Serializable
 data class DesktopData(
-    val schemaVersion: Int = 1,
+    val schemaVersion: Int = 2,
     val config: DesktopConfig = DesktopConfig(),
     val preferences: DesktopPreferences = DesktopPreferences(),
     val globalMemories: List<DesktopMemory> = emptyList(),
@@ -732,6 +758,8 @@ data class DesktopData(
     val mcpServers: List<DesktopMcpServer> = emptyList(),
     val folders: List<DesktopFolder> = emptyList(),
     val conversations: List<DesktopConversation> = listOf(DesktopConversation()),
+    /** Stored in the settings file so split conversation files retain their list order. */
+    val conversationIds: List<String> = emptyList(),
     val selectedConversationId: String = conversations.first().id
 )
 

@@ -86,9 +86,10 @@ The native desktop client can be built without the Android SDK:
 cd packaging/arch && makepkg -si
 ```
 
-The Arch package bundles a Java runtime. Building it requires `jdk17-openjdk`; runtime settings and conversations are
-stored in `$XDG_CONFIG_HOME/rikkahub/desktop.json` (or `~/.config/rikkahub/desktop.json`). Provider and Brave Search
-keys are stored in the Linux Secret Service rather than this JSON file. The current desktop client supports
+The Arch package bundles a Java runtime. Building it requires `jdk17-openjdk`; runtime settings are stored in
+`$XDG_CONFIG_HOME/rikkahub/desktop.json` (or `~/.config/rikkahub/desktop.json`) and each conversation is stored in a
+separate file under `conversations/`. Existing single-file data is migrated automatically and retained as a timestamped
+backup. Provider and Brave Search keys are stored in the Linux Secret Service rather than these JSON files. The current desktop client supports
 OpenAI-compatible chat endpoints, streaming responses, structured external web search, and the opt-in local-time tool.
 
 > [!IMPORTANT]  

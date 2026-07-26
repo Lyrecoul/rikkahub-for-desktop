@@ -10,6 +10,7 @@ import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class DesktopAgentTest {
@@ -44,8 +45,8 @@ class DesktopAgentTest {
                 DesktopToolCall("write", DesktopAgentWriteFileToolName, "{\"path\":\"new.txt\",\"text\":\"blocked\"}")
             ) { false }
             error("Expected denied write to fail")
-        } catch (_: IllegalArgumentException) {
-            // Expected.
+        } catch (error: DesktopAgentApprovalDeniedException) {
+            assertEquals("User denied this tool operation", error.message)
         }
 
         assertFalse(Files.exists(root.resolve("new.txt")))
@@ -63,6 +64,81 @@ class DesktopAgentTest {
 
         assertEquals("new", Files.readString(root.resolve("src/a.txt")))
         assertEquals(listOf(DesktopAgentApprovalKind.WRITE, DesktopAgentApprovalKind.WRITE), approvals)
+    }
+
+    @Test
+    fun dockerNetworkShellRequestsOneCombinedApproval() = runBlocking {
+        val runtime = DesktopAgentRuntime(skillsRoot = root.resolve("skills"))
+        val config = DesktopAgentConfig(DesktopAgentWorkspace(root.toString(), DesktopAgentBackend.DOCKER))
+        val requests = mutableListOf<DesktopAgentApprovalRequest>()
+
+        try {
+            runtime.execute(
+                config,
+                DesktopToolCall("shell", DesktopAgentShellToolName, "{\"command\":\"curl example.com\",\"network\":true}")
+            ) { request ->
+                requests += request
+                false
+            }
+            error("Expected denied shell to fail")
+        } catch (_: IllegalArgumentException) {
+            // Expected.
+        }
+
+        assertEquals(1, requests.size)
+        assertEquals(DesktopAgentApprovalKind.SHELL, requests.single().kind)
+        assertTrue(requests.single().network)
+        assertEquals(DesktopAgentBackend.DOCKER, requests.single().backend)
+    }
+
+    @Test
+    fun dockerNetworkGrantCoversOnlyTheSameWorkspaceShellCommands() {
+        val workspace = DesktopAgentWorkspace(root.toString(), DesktopAgentBackend.DOCKER, "ubuntu:24.04")
+        val otherWorkspace = workspace.copy(rootPath = root.resolve("other").toString())
+        val shell = DesktopAgentApprovalRequest(
+            DesktopAgentApprovalKind.SHELL,
+            "执行命令",
+            "pwd",
+            DesktopAgentBackend.DOCKER,
+            workspace = workspace
+        )
+        val networkShell = shell.copy(network = true)
+        val otherShell = shell.copy(workspace = otherWorkspace)
+        val networkGrant = requireNotNull(networkShell.rememberedGrant())
+        val shellGrant = requireNotNull(shell.rememberedGrant())
+
+        assertTrue(networkShell.canRemember)
+        assertTrue(setOf(networkGrant).approves(networkShell))
+        assertTrue(setOf(networkGrant).approves(shell))
+        assertFalse(setOf(shellGrant).approves(networkShell))
+        assertFalse(setOf(networkGrant).approves(otherShell))
+        val localShell = DesktopAgentApprovalRequest(
+            DesktopAgentApprovalKind.SHELL,
+            "执行命令",
+            "pwd",
+            DesktopAgentBackend.LOCAL
+        )
+        assertFalse(localShell.canRemember)
+        assertNull(localShell.rememberedGrant())
+    }
+
+    @Test
+    fun imagePullGrantIsBoundToTheExactWorkspaceImage() {
+        val workspace = DesktopAgentWorkspace(root.toString(), DesktopAgentBackend.DOCKER, "ubuntu:24.04")
+        val request = DesktopAgentApprovalRequest(
+            DesktopAgentApprovalKind.IMAGE_PULL,
+            "下载容器镜像",
+            workspace.dockerImage,
+            workspace = workspace
+        )
+        val differentImage = request.copy(
+            detail = "alpine:3.21",
+            workspace = workspace.copy(dockerImage = "alpine:3.21")
+        )
+        val grant = requireNotNull(request.rememberedGrant())
+
+        assertTrue(setOf(grant).approves(request))
+        assertFalse(setOf(grant).approves(differentImage))
     }
 
     @Test
