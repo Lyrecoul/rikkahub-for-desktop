@@ -133,6 +133,70 @@ class DesktopMessageBranchTest {
     }
 
     @Test
+    fun editingUserMessagePreparesANewResponseFromTheEditedPath() {
+        val original = listOf(
+            ChatMessage("user", "original question"),
+            ChatMessage("assistant", "original answer"),
+            ChatMessage("user", "follow-up")
+        )
+
+        val edited = DesktopConversation(messages = original).editMessageAt(0, "revised question")
+        val prepared = edited.prepareGeneration(edited.messages)
+
+        assertEquals(listOf("revised question", ""), prepared.messages.map { it.content })
+        assertEquals(1, prepared.branches.size)
+        assertEquals("编辑前历史", prepared.branches.single().name)
+        assertEquals(original, prepared.branches.single().messages)
+    }
+
+    @Test
+    fun selectingOriginalUserRevisionRestoresItsOriginalReply() {
+        val original = listOf(
+            ChatMessage("user", "original question"),
+            ChatMessage("assistant", "original answer")
+        )
+        val edited = DesktopConversation(messages = original).editMessageAt(0, "revised question")
+        val generated = edited.prepareGeneration(edited.messages).copy(
+            messages = listOf(
+                edited.messages.single(),
+                ChatMessage("assistant", "revised answer")
+            )
+        )
+
+        val restored = generated.selectMessageVariantAt(messageIndex = 0, variantIndex = 0)
+
+        assertEquals(listOf("original question", "original answer"), restored.messages.map { it.content })
+        assertEquals(
+            listOf("revised question", "revised answer"),
+            restored.branches.single().messages.map { it.content }
+        )
+    }
+
+    @Test
+    fun restoredOriginalUserRevisionCanSwitchBackToTheEditedPath() {
+        val original = listOf(
+            ChatMessage("user", "original question"),
+            ChatMessage("assistant", "original answer")
+        )
+        val edited = DesktopConversation(messages = original).editMessageAt(0, "revised question")
+        val generated = edited.prepareGeneration(edited.messages).copy(
+            messages = listOf(
+                edited.messages.single(),
+                ChatMessage("assistant", "revised answer")
+            )
+        )
+
+        val originalPath = generated.selectMessageVariantAt(messageIndex = 0, variantIndex = 0)
+        val revisedPath = originalPath.selectMessageVariantAt(messageIndex = 0, variantIndex = 1)
+
+        assertEquals(listOf("revised question", "revised answer"), revisedPath.messages.map { it.content })
+        assertEquals(
+            listOf("original question", "original answer"),
+            revisedPath.branches.single().messages.map { it.content }
+        )
+    }
+
+    @Test
     fun editingTheLastMessageDoesNotCreateAnUnnecessarySnapshot() {
         val conversation = DesktopConversation(messages = listOf(ChatMessage("user", "draft")))
 

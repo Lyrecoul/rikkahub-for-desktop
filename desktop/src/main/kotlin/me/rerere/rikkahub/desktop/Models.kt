@@ -498,10 +498,45 @@ fun DesktopConversation.fork(messages: List<ChatMessage>, name: String): Desktop
 fun DesktopConversation.restoreBranch(branchId: String): DesktopConversation {
     val branch = branches.firstOrNull { it.id == branchId } ?: return this
     val current = DesktopConversationBranch(name = "当前路径", messages = messages)
+    val restoredMessages = branch.messages.map { restoredMessage ->
+        val currentMessage = messages.firstOrNull { it.id == restoredMessage.id }
+        val currentVariants = currentMessage?.takeIf { it.variants.isNotEmpty() }?.availableVariants()
+        val selectedVariantIndex = currentVariants?.indexOfFirst { it.content == restoredMessage.content } ?: -1
+        if (currentVariants != null && selectedVariantIndex >= 0) {
+            restoredMessage.copy(
+                variants = currentVariants,
+                selectedVariantIndex = selectedVariantIndex
+            )
+        } else {
+            restoredMessage
+        }
+    }
     return copy(
-        messages = branch.messages,
+        messages = restoredMessages,
         branches = branches.filterNot { it.id == branchId } + current,
         suggestions = emptyList(),
+        updatedAt = System.currentTimeMillis()
+    )
+}
+
+/**
+ * Restores the matching history snapshot when a user-message revision belongs to an older path.
+ * This keeps the reply generated for that revision together with the selected user message.
+ */
+fun DesktopConversation.selectMessageVariantAt(messageIndex: Int, variantIndex: Int): DesktopConversation {
+    val message = messages.getOrNull(messageIndex) ?: return this
+    val selectedVariant = message.availableVariants().getOrNull(variantIndex) ?: return this
+    val matchingBranch = branches.lastOrNull { branch ->
+        branch.messages.getOrNull(messageIndex)?.let { historicalMessage ->
+            historicalMessage.id == message.id && historicalMessage.content == selectedVariant.content
+        } == true
+    }
+    if (matchingBranch != null) return restoreBranch(matchingBranch.id)
+
+    return copy(
+        messages = messages.mapIndexed { index, current ->
+            if (index == messageIndex) current.selectVariant(variantIndex) else current
+        },
         updatedAt = System.currentTimeMillis()
     )
 }

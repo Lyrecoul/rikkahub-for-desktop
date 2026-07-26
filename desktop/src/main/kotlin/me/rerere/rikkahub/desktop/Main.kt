@@ -1095,12 +1095,7 @@ private fun RikkaHubDesktop(
                         onSelectMessageVariant = { messageIndex, variantIndex ->
                             if (!generationJobs.containsKey(selected.id)) {
                                 updateConversation(selected.id) { conversation ->
-                                    conversation.copy(
-                                        messages = conversation.messages.mapIndexed { index, message ->
-                                            if (index == messageIndex) message.selectVariant(variantIndex) else message
-                                        },
-                                        updatedAt = System.currentTimeMillis()
-                                    )
+                                    conversation.selectMessageVariantAt(messageIndex, variantIndex)
                                 }
                             }
                         },
@@ -1162,6 +1157,10 @@ private fun RikkaHubDesktop(
                 val message = conversation?.messages?.getOrNull(target.messageIndex)
                 if (conversation != null && message != null && content.isNotBlank()) {
                     updateConversation(target.conversationId) { current -> current.editMessageAt(target.messageIndex, content) }
+                    if (message.role == "user") {
+                        val requestMessages = conversation.messages.take(target.messageIndex) + message.addVariant(content)
+                        startGeneration(target.conversationId, requestMessages)
+                    }
                     editTarget = null
                 }
             }
@@ -1781,6 +1780,7 @@ private fun ConversationRow(
 }
 
 @Composable
+@OptIn(ExperimentalComposeUiApi::class)
 private fun ChatPane(
     conversation: DesktopConversation,
     prompt: String,
@@ -1836,6 +1836,7 @@ private fun ChatPane(
     var conversationMenuOpen by remember { mutableStateOf(false) }
     var folderMenuOpen by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val conversationScrollPositions = remember { mutableMapOf<String, Pair<Int, Int>>() }
     val hazeState = rememberHazeState()
     var composerHeightPx by remember { mutableStateOf(164) }
     val messageBottomPadding = with(LocalDensity.current) { composerHeightPx.toDp() + 16.dp }
@@ -1850,9 +1851,23 @@ private fun ChatPane(
     }
     var showMessageJumper by remember(conversation.id) { mutableStateOf(false) }
     var pointerOverMessageJumper by remember(conversation.id) { mutableStateOf(false) }
+    var pointerOverMessageJumperEdge by remember(conversation.id) { mutableStateOf(false) }
+    DisposableEffect(conversation.id) {
+        onDispose {
+            conversationScrollPositions[conversation.id] =
+                listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }
+    }
+    LaunchedEffect(conversation.id) {
+        val savedPosition = conversationScrollPositions[conversation.id] ?: (0 to 0)
+        listState.scrollToItem(
+            savedPosition.first.coerceIn(0, displayMessages.size),
+            savedPosition.second
+        )
+    }
     LaunchedEffect(conversation.messages.size, lastContent, lastReasoning, isGenerating) {
-        if (preferences.enableAutoScroll && conversation.messages.isNotEmpty()) {
-            val targetIndex = displayMessages.size + 1
+        if (preferences.enableAutoScroll && isGenerating && conversation.messages.isNotEmpty()) {
+            val targetIndex = displayMessages.size
             listState.animateScrollToItem(targetIndex)
         }
     }
@@ -1860,17 +1875,19 @@ private fun ChatPane(
         val index = displayMessages.indexOfFirst { (_, message) -> message.id == jumpToMessageId }
         if (index >= 0) {
             highlightedMessageId = jumpToMessageId
-            listState.animateScrollToItem(index + 1)
+            listState.animateScrollToItem(index)
             delay(1_800)
             if (highlightedMessageId == jumpToMessageId) highlightedMessageId = null
         }
     }
-    LaunchedEffect(listState.isScrollInProgress, pointerOverMessageJumper) {
+    LaunchedEffect(listState.isScrollInProgress, pointerOverMessageJumper, pointerOverMessageJumperEdge) {
         if (listState.isScrollInProgress) {
             showMessageJumper = true
-        } else if (showMessageJumper && !pointerOverMessageJumper) {
+        } else if (showMessageJumper && !pointerOverMessageJumper && !pointerOverMessageJumperEdge) {
             delay(1_500)
-            showMessageJumper = false
+            if (!pointerOverMessageJumper && !pointerOverMessageJumperEdge) {
+                showMessageJumper = false
+            }
         }
     }
 
@@ -2066,16 +2083,9 @@ private fun ChatPane(
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = messageBottomPadding),
+                        contentPadding = PaddingValues(top = 22.dp, bottom = messageBottomPadding),
                         verticalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
-                        item {
-                            Spacer(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .height(22.dp)
-                            )
-                        }
                         itemsIndexed(displayMessages, key = { _, entry -> entry.second.id }) { _, entry ->
                             val (index, message) = entry
                             Box(
@@ -2117,9 +2127,19 @@ private fun ChatPane(
                     }
                 }
             }
-            if (conversation.messages.isNotEmpty()) {
+            if (conversation.messages.isNotEmpty() && preferences.showMessageJumper) {
+                Box(
+                    Modifier.align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .width(16.dp)
+                        .onPointerEvent(PointerEventType.Enter) {
+                            pointerOverMessageJumperEdge = true
+                            showMessageJumper = true
+                        }
+                        .onPointerEvent(PointerEventType.Exit) { pointerOverMessageJumperEdge = false }
+                )
                 DesktopMessageJumper(
-                    visible = showMessageJumper && !listState.isScrollInProgress && preferences.showMessageJumper,
+                    visible = showMessageJumper && !listState.isScrollInProgress,
                     onLeft = preferences.messageJumperOnLeft,
                     state = listState,
                     messageCount = displayMessages.size,
@@ -2183,7 +2203,7 @@ private fun BoxScope.DesktopMessageJumper(
     val alignment = if (onLeft) Alignment.CenterStart else Alignment.CenterEnd
     val color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f)
     val horizontalOffset: (Int) -> Int = { width -> if (onLeft) -width else width }
-    val currentMessage = state.firstVisibleItemIndex.coerceIn(1, messageCount.coerceAtLeast(1))
+    val currentMessage = state.firstVisibleItemIndex.coerceIn(0, messageCount.coerceAtLeast(1) - 1) + 1
 
     AnimatedVisibility(
         visible = visible,
@@ -2213,11 +2233,11 @@ private fun BoxScope.DesktopMessageJumper(
             }
             MessageJumperButton(Lucide.ArrowDown, "下一条消息", color) {
                 scope.launch {
-                    state.animateScrollToItem((state.firstVisibleItemIndex + 1).coerceAtMost(messageCount + 1))
+                    state.animateScrollToItem((state.firstVisibleItemIndex + 1).coerceAtMost(messageCount))
                 }
             }
             MessageJumperButton(Lucide.ArrowDownToLine, "跳转到底部", color) {
-                scope.launch { state.animateScrollToItem(messageCount + 1) }
+                scope.launch { state.animateScrollToItem(messageCount) }
             }
         }
     }
