@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.desktop
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -104,10 +105,10 @@ private fun Process.readAgentResult(timeoutMillis: Long): DesktopAgentCommandRes
     val finished = try {
         waitFor(timeoutMillis, TimeUnit.MILLISECONDS)
     } catch (error: InterruptedException) {
-        destroyForcibly()
+        destroyAgentProcessTree()
         throw error
     }
-    if (!finished) destroyForcibly()
+    if (!finished) destroyAgentProcessTree()
     stdout.join(1_000)
     stderr.join(1_000)
     return DesktopAgentCommandResult(
@@ -117,6 +118,14 @@ private fun Process.readAgentResult(timeoutMillis: Long): DesktopAgentCommandRes
         timedOut = !finished,
         truncated = stdout.truncated || stderr.truncated
     )
+}
+
+private fun Process.destroyAgentProcessTree() {
+    // A shell often has a separate child process. Killing only the shell leaves that command running after cancellation.
+    toHandle().descendants().use { descendants ->
+        descendants.toList().asReversed().forEach { it.destroyForcibly() }
+    }
+    destroyForcibly()
 }
 
 private class AgentStreamCollector(stream: InputStream) {
@@ -254,7 +263,7 @@ internal class DesktopAgentRuntime(
         val directory = directoryPath.toFile()
         require(directory.isDirectory) { "cwd is not a directory" }
         val result = when (workspace.backend) {
-            DesktopAgentBackend.LOCAL -> commandRunner.run(listOf("/bin/sh", "-lc", command), directory, 600_000)
+            DesktopAgentBackend.LOCAL -> runCommand(listOf("/bin/sh", "-lc", command), directory, 600_000)
             DesktopAgentBackend.DOCKER -> dockerShell(
                 workspace,
                 root,
@@ -283,17 +292,17 @@ internal class DesktopAgentRuntime(
     ): DesktopAgentCommandResult {
         require(',' !in root.toString()) { "Docker workspaces cannot contain commas in their path" }
         val name = "rikkahub-agent-${UUID.nameUUIDFromBytes(root.toString().toByteArray()).toString().replace("-", "").take(24)}"
-        if (commandRunner.run(listOf("docker", "image", "inspect", workspace.dockerImage), null, 10_000).exitCode != 0) {
+        if (runCommand(listOf("docker", "image", "inspect", workspace.dockerImage), null, 10_000).exitCode != 0) {
             requireApproval(approve(DesktopAgentApprovalRequest(
                 DesktopAgentApprovalKind.IMAGE_PULL,
                 "下载容器镜像",
                 workspace.dockerImage,
                 workspace = workspace
             )))
-            requireDockerSuccess(commandRunner.run(listOf("docker", "pull", workspace.dockerImage), null, 600_000), "pull Docker image")
+            requireDockerSuccess(runCommand(listOf("docker", "pull", workspace.dockerImage), null, 600_000), "pull Docker image")
         }
         ensureDockerNetwork(DesktopAgentIsolatedNetworkName, internal = true)
-        val existing = commandRunner.run(listOf("docker", "container", "inspect", name), null, 10_000)
+        val existing = runCommand(listOf("docker", "container", "inspect", name), null, 10_000)
         val containerImage = if (existing.exitCode == 0 && containerNeedsMigration(name)) {
             migrateLegacyContainer(name)
         } else {
@@ -301,14 +310,14 @@ internal class DesktopAgentRuntime(
         }
         if (existing.exitCode != 0 || containerImage != workspace.dockerImage) {
             val create = dockerCreateCommand(name, containerImage, DesktopAgentIsolatedNetworkName, root)
-            requireDockerSuccess(commandRunner.run(create, null, 30_000), "create Docker workspace")
+            requireDockerSuccess(runCommand(create, null, 30_000), "create Docker workspace")
         }
-        val start = commandRunner.run(listOf("docker", "start", name), null, 30_000)
+        val start = runCommand(listOf("docker", "start", name), null, 30_000)
         if (start.exitCode != 0 && !start.stderr.contains("already started", ignoreCase = true)) {
             requireDockerSuccess(start, "start Docker workspace")
         }
         if (network) return dockerShellWithHostNetwork(name, root, cwd, command)
-        return commandRunner.run(
+        return runCommand(
             listOf("docker", "exec", "-w", "/workspace/$cwd", name, "/bin/sh", "-lc", command),
             null,
             600_000
@@ -320,30 +329,44 @@ internal class DesktopAgentRuntime(
      * is the only reliable approved-network path there. Its filesystem is committed before it is
      * returned to the normal isolated container, so package installs survive the command.
      */
-    private fun dockerShellWithHostNetwork(name: String, root: Path, cwd: String, command: String): DesktopAgentCommandResult {
+    private suspend fun dockerShellWithHostNetwork(
+        name: String,
+        root: Path,
+        cwd: String,
+        command: String
+    ): DesktopAgentCommandResult {
         val snapshot = "$name-snapshot"
         val networkName = "$name-network"
-        requireDockerSuccess(commandRunner.run(listOf("docker", "commit", name, snapshot), null, 600_000), "snapshot Docker workspace")
-        requireDockerSuccess(commandRunner.run(listOf("docker", "rm", "-f", name), null, 30_000), "prepare approved network session")
+        requireDockerSuccess(
+            runCommand(listOf("docker", "commit", name, snapshot), null, 600_000),
+            "snapshot Docker workspace"
+        )
+        requireDockerSuccess(runCommand(listOf("docker", "rm", "-f", name), null, 30_000), "prepare approved network session")
         try {
             requireDockerSuccess(
-                commandRunner.run(dockerCreateCommand(networkName, snapshot, "host", root), null, 30_000),
+                runCommand(dockerCreateCommand(networkName, snapshot, "host", root), null, 30_000),
                 "create approved network session"
             )
-            requireDockerSuccess(commandRunner.run(listOf("docker", "start", networkName), null, 30_000), "start approved network session")
-            val result = commandRunner.run(
+            requireDockerSuccess(
+                runCommand(listOf("docker", "start", networkName), null, 30_000),
+                "start approved network session"
+            )
+            val result = runCommand(
                 listOf("docker", "exec", "-w", "/workspace/$cwd", networkName, "/bin/sh", "-lc", command),
                 null,
                 600_000
             )
-            requireDockerSuccess(commandRunner.run(listOf("docker", "commit", networkName, snapshot), null, 600_000), "persist approved network session")
+            requireDockerSuccess(
+                runCommand(listOf("docker", "commit", networkName, snapshot), null, 600_000),
+                "persist approved network session"
+            )
             return result
         } finally {
-            commandRunner.run(listOf("docker", "rm", "-f", networkName), null, 30_000)
-            if (commandRunner.run(listOf("docker", "container", "inspect", name), null, 10_000).exitCode != 0) {
+            runCommand(listOf("docker", "rm", "-f", networkName), null, 30_000)
+            if (runCommand(listOf("docker", "container", "inspect", name), null, 10_000).exitCode != 0) {
                 ensureDockerNetwork(DesktopAgentIsolatedNetworkName, internal = true)
                 requireDockerSuccess(
-                    commandRunner.run(dockerCreateCommand(name, snapshot, DesktopAgentIsolatedNetworkName, root), null, 30_000),
+                    runCommand(dockerCreateCommand(name, snapshot, DesktopAgentIsolatedNetworkName, root), null, 30_000),
                     "restore isolated Docker workspace"
                 )
             }
@@ -357,15 +380,15 @@ internal class DesktopAgentRuntime(
         "--mount", "type=bind,src=${root},dst=/workspace", image, "sleep", "infinity"
     )
 
-    private fun ensureDockerNetwork(name: String, internal: Boolean) {
-        val inspect = commandRunner.run(listOf("docker", "network", "inspect", name), null, 10_000)
+    private suspend fun ensureDockerNetwork(name: String, internal: Boolean) {
+        val inspect = runCommand(listOf("docker", "network", "inspect", name), null, 10_000)
         if (inspect.exitCode == 0) return
         val command = buildList {
             addAll(listOf("docker", "network", "create", "--driver", "bridge"))
             if (internal) add("--internal")
             add(name)
         }
-        val create = commandRunner.run(
+        val create = runCommand(
             command,
             null,
             30_000
@@ -375,8 +398,8 @@ internal class DesktopAgentRuntime(
         }
     }
 
-    private fun containerNeedsMigration(name: String): Boolean {
-        val result = commandRunner.run(
+    private suspend fun containerNeedsMigration(name: String): Boolean {
+        val result = runCommand(
             listOf("docker", "inspect", "--format", "{{.HostConfig.NetworkMode}}|{{json .HostConfig.CapAdd}}", name),
             null,
             10_000
@@ -385,11 +408,25 @@ internal class DesktopAgentRuntime(
         return result.exitCode == 0 && (config.startsWith("none|") || !config.contains("SETUID"))
     }
 
-    private fun migrateLegacyContainer(name: String): String {
+    private suspend fun migrateLegacyContainer(name: String): String {
         val snapshot = "${name}-snapshot"
-        requireDockerSuccess(commandRunner.run(listOf("docker", "commit", name, snapshot), null, 600_000), "snapshot legacy Docker workspace")
-        requireDockerSuccess(commandRunner.run(listOf("docker", "rm", "-f", name), null, 30_000), "migrate legacy Docker workspace")
+        requireDockerSuccess(
+            runCommand(listOf("docker", "commit", name, snapshot), null, 600_000),
+            "snapshot legacy Docker workspace"
+        )
+        requireDockerSuccess(
+            runCommand(listOf("docker", "rm", "-f", name), null, 30_000),
+            "migrate legacy Docker workspace"
+        )
         return snapshot
+    }
+
+    private suspend fun runCommand(
+        command: List<String>,
+        workingDirectory: File?,
+        timeoutMillis: Long
+    ): DesktopAgentCommandResult = runInterruptible {
+        commandRunner.run(command, workingDirectory, timeoutMillis)
     }
 
     private fun requireDockerSuccess(result: DesktopAgentCommandResult, action: String) {

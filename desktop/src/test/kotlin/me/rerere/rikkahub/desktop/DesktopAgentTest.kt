@@ -1,6 +1,10 @@
 package me.rerere.rikkahub.desktop
 
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
@@ -50,6 +54,28 @@ class DesktopAgentTest {
         }
 
         assertFalse(Files.exists(root.resolve("new.txt")))
+    }
+
+    @Test
+    fun cancellingShellCommandStopsTheToolCallPromptly() = runBlocking {
+        val runtime = DesktopAgentRuntime(skillsRoot = root.resolve("skills"))
+        val config = DesktopAgentConfig(DesktopAgentWorkspace(root.toString(), DesktopAgentBackend.LOCAL))
+        val started = root.resolve("started")
+        val job = launch {
+            runtime.execute(
+                config,
+                DesktopToolCall(
+                    "shell",
+                    DesktopAgentShellToolName,
+                    "{\"command\":\"touch started; sleep 30\",\"network\":false}"
+                )
+            ) { true }
+        }
+
+        withTimeout(5_000) {
+            while (!Files.exists(started)) delay(10)
+        }
+        withTimeout(2_000) { job.cancelAndJoin() }
     }
 
     @Test
