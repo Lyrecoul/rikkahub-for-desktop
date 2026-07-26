@@ -34,7 +34,8 @@ internal suspend fun executeDesktopToolCalls(
     config: DesktopConfig,
     calls: List<DesktopToolCall>,
     memoryToolHandler: DesktopMemoryToolHandler? = null,
-    mcpClient: DesktopMcpClient = DesktopMcpClient()
+    mcpClient: DesktopMcpClient = DesktopMcpClient(),
+    askUserHandler: (suspend (DesktopToolCall) -> String)? = null
 ): List<ChatMessage> = calls.map { call ->
     val output = when (call.name) {
         DesktopWebSearchToolName -> runCatching {
@@ -50,6 +51,11 @@ internal suspend fun executeDesktopToolCalls(
             ZonedDateTime.now().format(DateTimeFormatter.ISO_ZONED_DATE_TIME)
         } else {
             "current_time is not enabled for this assistant"
+        }
+        DesktopAskUserToolName -> if (DesktopLocalTool.ASK_USER in config.localTools && askUserHandler != null) {
+            askUserHandler(call)
+        } else {
+            "ask_user is not enabled for this assistant"
         }
         DesktopMemoryToolName -> runCatching {
             check(config.memoryEnabled && memoryToolHandler != null) { "memory_tool is not enabled for this assistant" }

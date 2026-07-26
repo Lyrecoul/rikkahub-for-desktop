@@ -52,4 +52,18 @@ class DesktopToolsTest {
         assertEquals(false, invoked)
         assertTrue(result.content.contains("not enabled"))
     }
+
+    @Test
+    fun askUserToolReturnsTheSubmittedAnswer() = runBlocking {
+        val result = executeDesktopToolCalls(
+            OkHttpClient(),
+            DesktopConfig(localTools = setOf(DesktopLocalTool.ASK_USER)),
+            listOf(DesktopToolCall("call", DesktopAskUserToolName, "{}")),
+            askUserHandler = { "{\"answers\":{\"goal\":\"Write tests\"}}" }
+        ).single()
+
+        assertEquals("tool", result.role)
+        assertEquals("call", result.toolCallId)
+        assertEquals("{\"answers\":{\"goal\":\"Write tests\"}}", result.content)
+    }
 }

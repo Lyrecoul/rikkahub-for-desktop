@@ -366,8 +366,16 @@ class OpenAiClient(
         config: DesktopConfig,
         calls: List<DesktopToolCall>,
         memoryToolHandler: DesktopMemoryToolHandler? = null,
-        mcpClient: DesktopMcpClient = DesktopMcpClient()
-    ): List<ChatMessage> = executeDesktopToolCalls(httpClient, config, calls, memoryToolHandler, mcpClient)
+        mcpClient: DesktopMcpClient = DesktopMcpClient(),
+        askUserHandler: (suspend (DesktopToolCall) -> String)? = null
+    ): List<ChatMessage> = executeDesktopToolCalls(
+        httpClient,
+        config,
+        calls,
+        memoryToolHandler,
+        mcpClient,
+        askUserHandler
+    )
 
     internal suspend fun testWebSearch(settings: DesktopWebSearchSettings, query: String): ChatMessage =
         searchWeb(httpClient, settings, query)
@@ -378,6 +386,7 @@ private const val BalanceCacheTtlMillis = 2 * 60 * 1000L
 
 internal const val DesktopWebSearchToolName = "web_search"
 internal const val DesktopCurrentTimeToolName = "current_time"
+internal const val DesktopAskUserToolName = "ask_user"
 
 private fun buildDesktopToolDefinitions(config: DesktopConfig) = buildJsonArray {
     if (config.webSearchEnabled && config.webSearchSettings.isConfigured) {
@@ -404,6 +413,52 @@ private fun buildDesktopToolDefinitions(config: DesktopConfig) = buildJsonArray 
                 putJsonObject("parameters") {
                     put("type", "object")
                     putJsonObject("properties") {}
+                    put("additionalProperties", false)
+                }
+            }
+        })
+    }
+    if (DesktopLocalTool.ASK_USER in config.localTools) {
+        add(buildJsonObject {
+            put("type", "function")
+            putJsonObject("function") {
+                put("name", DesktopAskUserToolName)
+                put(
+                    "description",
+                    "Ask the user one or more questions when clarification, additional information, or confirmation is needed. " +
+                        "Each question may provide suggested options. Answers are returned as a JSON object keyed by question id."
+                )
+                putJsonObject("parameters") {
+                    put("type", "object")
+                    putJsonObject("properties") {
+                        putJsonObject("questions") {
+                            put("type", "array")
+                            putJsonObject("items") {
+                                put("type", "object")
+                                putJsonObject("properties") {
+                                    putJsonObject("id") { put("type", "string") }
+                                    putJsonObject("question") { put("type", "string") }
+                                    putJsonObject("options") {
+                                        put("type", "array")
+                                        putJsonObject("items") { put("type", "string") }
+                                    }
+                                    putJsonObject("selection_type") {
+                                        put("type", "string")
+                                        putJsonArray("enum") {
+                                            add(JsonPrimitive("text"))
+                                            add(JsonPrimitive("single"))
+                                            add(JsonPrimitive("multi"))
+                                        }
+                                    }
+                                }
+                                putJsonArray("required") {
+                                    add(JsonPrimitive("id"))
+                                    add(JsonPrimitive("question"))
+                                }
+                            }
+                        }
+                    }
+                    putJsonArray("required") { add(JsonPrimitive("questions")) }
                     put("additionalProperties", false)
                 }
             }

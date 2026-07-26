@@ -365,6 +365,33 @@ class DesktopMessageBranchTest {
     }
 
     @Test
+    fun appliesChineseTypographyToGeneratedTitlesAndSuggestionsOnlyWhenEnabled() {
+        assertEquals("你好World", normalizeGeneratedTitle("你好World"))
+        assertEquals("你好 World", normalizeGeneratedTitle("你好World", enableChineseTypography = true))
+        assertEquals(
+            listOf("使用Kotlin"),
+            parseChatSuggestions("使用Kotlin")
+        )
+        assertEquals(
+            listOf("使用 Kotlin"),
+            parseChatSuggestions("使用Kotlin", enableChineseTypography = true)
+        )
+    }
+
+    @Test
+    fun recordsReasoningDurationOnlyOnce() {
+        val message = ChatMessage("assistant", "", reasoning = "thinking", reasoningStartedAt = 1_000)
+
+        assertEquals(2_500, message.completeReasoningDuration(now = 3_500).reasoningDurationMillis)
+        assertEquals(
+            500,
+            message.copy(reasoningDurationMillis = 500).completeReasoningDuration(now = 3_500).reasoningDurationMillis
+        )
+        assertEquals(null, ChatMessage("assistant", "").completeReasoningDuration(now = 3_500).reasoningDurationMillis)
+        assertEquals(null, ChatMessage("assistant", "", reasoning = "thinking").completeReasoningDuration(now = 3_500).reasoningDurationMillis)
+    }
+
+    @Test
     fun allowsOnlyWebUrlsForExternalCitationLinks() {
         assertEquals(true, isSafeExternalUrl("https://example.com/source"))
         assertEquals(true, isSafeExternalUrl("http://example.com/source"))

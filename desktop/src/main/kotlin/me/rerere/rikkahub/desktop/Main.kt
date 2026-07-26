@@ -5,7 +5,12 @@ import androidx.compose.foundation.border
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -13,6 +18,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +55,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -75,7 +83,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toComposeImageBitmap
@@ -117,6 +128,7 @@ import com.composables.icons.lucide.Download
 import com.composables.icons.lucide.Globe
 import com.composables.icons.lucide.GitFork
 import com.composables.icons.lucide.Languages
+import com.composables.icons.lucide.Lightbulb
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Menu
 import com.composables.icons.lucide.Maximize2
@@ -143,12 +155,21 @@ import dev.chrisbanes.haze.rememberHazeState
 import dev.chrisbanes.haze.blur.blurEffect
 import dev.chrisbanes.haze.blur.HazeColorEffect
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -269,6 +290,8 @@ private fun RikkaHubDesktop(
     var showConversationStats by remember { mutableStateOf(false) }
     var translationTarget by remember { mutableStateOf<TranslationTarget?>(null) }
     var attachmentPickerOpen by remember { mutableStateOf(false) }
+    val conversationScrollPositions = remember { mutableMapOf<String, Pair<Int, Int>>() }
+    val pendingAskUserAnswers = remember { mutableStateMapOf<String, CompletableDeferred<String>>() }
     val generationJobs = remember { mutableStateMapOf<String, Job>() }
     val suggestionJobs = remember { mutableStateMapOf<String, Job>() }
     val generationErrors = remember { mutableStateMapOf<String, String>() }
@@ -477,7 +500,7 @@ private fun RikkaHubDesktop(
                 client.stream(config, listOf(ChatMessage(role = "user", content = request))).collect { delta ->
                     result += delta.content
                 }
-                val title = normalizeGeneratedTitle(result)
+                val title = normalizeGeneratedTitle(result, data.preferences.enableChineseTypography)
                 check(title.isNotBlank()) { "标题模型没有返回内容" }
                 updateConversation(conversationId) { current ->
                     current.copy(title = title, updatedAt = System.currentTimeMillis())
@@ -517,7 +540,7 @@ private fun RikkaHubDesktop(
                 client.stream(config, listOf(ChatMessage(role = "user", content = request))).collect { delta ->
                     result += delta.content
                 }
-                val suggestions = parseChatSuggestions(result)
+                val suggestions = parseChatSuggestions(result, data.preferences.enableChineseTypography)
                 check(suggestions.isNotEmpty()) { "建议模型没有返回内容" }
                 updateConversation(conversationId) { current ->
                     current.copy(suggestions = suggestions, updatedAt = System.currentTimeMillis())
@@ -618,9 +641,18 @@ private fun RikkaHubDesktop(
                             val messages = conversation.messages.toMutableList()
                             val last = messages.lastOrNull()
                             if (last?.role == "assistant") {
+                                val receivedAt = System.currentTimeMillis()
+                                val reasoningStartedAt = last.reasoningStartedAt
+                                    ?: delta.reasoning.takeIf { it.isNotBlank() }?.let { receivedAt }
                                 messages[messages.lastIndex] = last.copy(
                                     content = last.content + delta.content,
                                     reasoning = last.reasoning + delta.reasoning,
+                                    reasoningStartedAt = reasoningStartedAt,
+                                    reasoningDurationMillis = if (delta.reasoning.isNotBlank() && reasoningStartedAt != null) {
+                                        (receivedAt - reasoningStartedAt).coerceAtLeast(0)
+                                    } else {
+                                        last.reasoningDurationMillis
+                                    },
                                     promptTokens = delta.promptTokens ?: last.promptTokens,
                                     completionTokens = delta.completionTokens ?: last.completionTokens,
                                     citations = (last.citations + delta.citations).distinctBy { it.url },
@@ -650,7 +682,16 @@ private fun RikkaHubDesktop(
                         generationConfig,
                         toolCalls,
                         memoryToolHandler(generationAssistant.id),
-                        mcpClient
+                        mcpClient,
+                        askUserHandler = { call ->
+                            val answer = CompletableDeferred<String>()
+                            pendingAskUserAnswers[call.id] = answer
+                            try {
+                                answer.await()
+                            } finally {
+                                pendingAskUserAnswers.remove(call.id, answer)
+                            }
+                        }
                     )
                     updateConversation(conversationId) { conversation ->
                         conversation.copy(
@@ -677,7 +718,7 @@ private fun RikkaHubDesktop(
                     val messages = conversation.messages.toMutableList()
                     val last = messages.lastOrNull()
                     if (last?.role == "assistant") {
-                        messages[messages.lastIndex] = generationAssistant.transformGeneratedMessage(last)
+                        messages[messages.lastIndex] = generationAssistant.transformGeneratedMessage(last.completeReasoningDuration())
                             .completeAlternative()
                     }
                     conversation.copy(messages = messages, updatedAt = System.currentTimeMillis())
@@ -697,7 +738,7 @@ private fun RikkaHubDesktop(
                     } else if (last?.role == "assistant") {
                         conversation.copy(
                             messages = conversation.messages.dropLast(1) +
-                                generationAssistant.transformGeneratedMessage(last).completeAlternative()
+                                generationAssistant.transformGeneratedMessage(last.completeReasoningDuration()).completeAlternative()
                         )
                     } else {
                         conversation
@@ -718,7 +759,7 @@ private fun RikkaHubDesktop(
                     } else if (last?.role == "assistant") {
                         conversation.copy(
                             messages = conversation.messages.dropLast(1) +
-                                generationAssistant.transformGeneratedMessage(last).completeAlternative()
+                                generationAssistant.transformGeneratedMessage(last.completeReasoningDuration()).completeAlternative()
                         )
                     } else {
                         conversation
@@ -737,6 +778,20 @@ private fun RikkaHubDesktop(
         }
         generationJobs[conversationId] = job
         job.start()
+    }
+
+    fun submitAskUserAnswer(conversationId: String, toolCall: DesktopToolCall, answer: String) {
+        if (pendingAskUserAnswers.remove(toolCall.id)?.complete(answer) == true) return
+        if (generationJobs.containsKey(conversationId)) return
+        val conversation = data.conversations.firstOrNull { it.id == conversationId } ?: return
+        if (conversation.messages.any { it.role == "tool" && it.toolCallId == toolCall.id }) return
+        updateConversation(conversationId) {
+            it.copy(
+                messages = it.messages + ChatMessage(role = "tool", content = answer, toolCallId = toolCall.id),
+                updatedAt = System.currentTimeMillis()
+            )
+        }
+        startGeneration(conversationId, data.conversations.first { it.id == conversationId }.messages)
     }
 
     fun startCompression(conversationId: String, targetTokens: Int, keepRecentMessages: Int, additionalPrompt: String) {
@@ -963,6 +1018,8 @@ private fun RikkaHubDesktop(
                         selectedProviderId = selectedAssistant.providerId.ifBlank { data.activeProvider().id },
                         webSearchEnabled = selected.webSearchEnabled ?: selectedAssistant.enableWebSearch,
                         jumpToMessageId = jumpToMessageId,
+                        conversationScrollPositions = conversationScrollPositions,
+                        onAskUserAnswer = ::submitAskUserAnswer,
                         showMenu = compact,
                         onMenu = { showSidebar = true },
                         onNew = ::newConversation,
@@ -1796,6 +1853,8 @@ private fun ChatPane(
     selectedProviderId: String,
     webSearchEnabled: Boolean,
     jumpToMessageId: String?,
+    conversationScrollPositions: MutableMap<String, Pair<Int, Int>>,
+    onAskUserAnswer: (String, DesktopToolCall, String) -> Unit,
     showMenu: Boolean,
     onMenu: () -> Unit,
     onNew: () -> Unit,
@@ -1836,7 +1895,6 @@ private fun ChatPane(
     var conversationMenuOpen by remember { mutableStateOf(false) }
     var folderMenuOpen by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    val conversationScrollPositions = remember { mutableMapOf<String, Pair<Int, Int>>() }
     val hazeState = rememberHazeState()
     var composerHeightPx by remember { mutableStateOf(164) }
     val messageBottomPadding = with(LocalDensity.current) { composerHeightPx.toDp() + 16.dp }
@@ -2111,7 +2169,10 @@ private fun ChatPane(
                                             onTranslate = { onTranslateMessage(index) },
                                             highlighted = message.id == highlightedMessageId,
                                             onRegenerate = { onRegenerateMessage(index) },
-                                            onSelectVariant = { variantIndex -> onSelectMessageVariant(index, variantIndex) }
+                                            onSelectVariant = { variantIndex -> onSelectMessageVariant(index, variantIndex) },
+                                            onAskUserAnswer = { toolCall, answer ->
+                                                onAskUserAnswer(conversation.id, toolCall, answer)
+                                            }
                                         )
                                     }
                                 }
@@ -2125,6 +2186,7 @@ private fun ChatPane(
                             )
                         }
                     }
+                    ChatContentEdgeFade()
                 }
             }
             if (conversation.messages.isNotEmpty() && preferences.showMessageJumper) {
@@ -2188,6 +2250,23 @@ private fun ChatPane(
         }
         }
     }
+}
+
+@Composable
+private fun BoxScope.ChatContentEdgeFade() {
+    val background = MaterialTheme.colorScheme.background
+    Box(
+        Modifier.align(Alignment.TopCenter)
+            .fillMaxWidth()
+            .height(36.dp)
+            .background(Brush.verticalGradient(listOf(background, background.copy(alpha = 0f))))
+    )
+    Box(
+        Modifier.align(Alignment.BottomCenter)
+            .fillMaxWidth()
+            .height(56.dp)
+            .background(Brush.verticalGradient(listOf(background.copy(alpha = 0f), background)))
+    )
 }
 
 @Composable
@@ -2332,7 +2411,8 @@ private fun MessageBlock(
     onTranslate: () -> Unit,
     highlighted: Boolean,
     onRegenerate: () -> Unit,
-    onSelectVariant: (Int) -> Unit
+    onSelectVariant: (Int) -> Unit,
+    onAskUserAnswer: (DesktopToolCall, String) -> Unit
 ) {
     val isUser = message.role == "user"
     val isTool = message.role == "tool"
@@ -2413,7 +2493,7 @@ private fun MessageBlock(
             if (message.toolCalls.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     message.toolCalls.forEach { toolCall ->
-                        ToolCallStep(toolCall, toolResults[toolCall.id], generating)
+                        ToolCallStep(toolCall, toolResults[toolCall.id], generating, onAskUserAnswer)
                     }
                 }
             }
@@ -2421,7 +2501,9 @@ private fun MessageBlock(
                 ReasoningBlock(
                     messageId = message.id,
                     reasoning = message.reasoning,
-                    generating = generating,
+                    reasoningStartedAt = message.reasoningStartedAt,
+                    reasoningDurationMillis = message.reasoningDurationMillis,
+                    generating = generating && message.content.isBlank(),
                     autoCollapse = preferences.autoCollapseReasoning,
                     markdownOptions = markdownOptions
                 )
@@ -2617,7 +2699,16 @@ private fun MessageTimestamp(createdAt: Long) {
 }
 
 @Composable
-private fun ToolCallStep(toolCall: DesktopToolCall, result: ChatMessage?, generating: Boolean) {
+private fun ToolCallStep(
+    toolCall: DesktopToolCall,
+    result: ChatMessage?,
+    generating: Boolean,
+    onAskUserAnswer: (DesktopToolCall, String) -> Unit
+) {
+    if (toolCall.name == DesktopAskUserToolName && result == null) {
+        AskUserToolStep(toolCall, onAskUserAnswer)
+        return
+    }
     var expanded by remember(toolCall.id) { mutableStateOf(false) }
     Surface(
         modifier = Modifier.widthIn(max = 620.dp),
@@ -2648,6 +2739,140 @@ private fun ToolCallStep(toolCall: DesktopToolCall, result: ChatMessage?, genera
                     if (toolCall.arguments.isNotBlank() && toolCall.arguments != "{}") Text(toolCall.arguments, fontSize = 11.sp)
                     result?.content?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 11.sp) }
                 }
+            }
+        }
+    }
+}
+
+private data class DesktopAskUserQuestion(
+    val id: String,
+    val question: String,
+    val options: List<String>,
+    val selectionType: String
+)
+
+@Composable
+private fun AskUserToolStep(toolCall: DesktopToolCall, onSubmit: (DesktopToolCall, String) -> Unit) {
+    val questions = remember(toolCall.arguments) {
+        runCatching {
+            Json.parseToJsonElement(toolCall.arguments).jsonObject["questions"]?.jsonArray.orEmpty()
+                .mapNotNull { element ->
+                    val question = element.jsonObject
+                    val id = question["id"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                    val text = question["question"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                    if (id.isBlank() || text.isBlank()) return@mapNotNull null
+                    DesktopAskUserQuestion(
+                        id = id,
+                        question = text,
+                        options = question["options"]?.jsonArray.orEmpty()
+                            .mapNotNull { it.jsonPrimitive.contentOrNull },
+                        selectionType = question["selection_type"]?.jsonPrimitive?.contentOrNull ?: "text"
+                    )
+                }
+        }.getOrDefault(emptyList())
+    }
+    val answers = remember(toolCall.id) { mutableStateMapOf<String, String>() }
+    val multiAnswers = remember(toolCall.id) { mutableStateMapOf<String, Set<String>>() }
+
+    Surface(
+        modifier = Modifier.widthIn(max = 620.dp),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("需要你的回答", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            questions.forEach { question ->
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(question.question, fontSize = 13.sp)
+                    if (question.options.isNotEmpty()) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            question.options.forEach { option ->
+                                val interactionSource = remember(question.id, option) { MutableInteractionSource() }
+                                val hovered by interactionSource.collectIsHoveredAsState()
+                                val selected = when (question.selectionType) {
+                                    "multi" -> multiAnswers[question.id]?.contains(option) == true
+                                    else -> answers[question.id] == option
+                                }
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = {
+                                        if (question.selectionType == "multi") {
+                                            val updated = multiAnswers[question.id].orEmpty().toMutableSet()
+                                            if (!updated.add(option)) updated.remove(option)
+                                            multiAnswers[question.id] = updated
+                                        } else {
+                                            answers[question.id] = option
+                                        }
+                                    },
+                                    interactionSource = interactionSource,
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = if (hovered) {
+                                            MaterialTheme.colorScheme.primaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceContainerHigh
+                                        },
+                                        labelColor = if (hovered) {
+                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        },
+                                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        enabled = true,
+                                        selected = selected,
+                                        selectedBorderColor = MaterialTheme.colorScheme.primary
+                                    ),
+                                    label = { Text(option, fontSize = 12.sp) }
+                                )
+                            }
+                        }
+                    }
+                    if (question.selectionType == "text") {
+                        OutlinedTextField(
+                            value = answers[question.id].orEmpty(),
+                            onValueChange = { answers[question.id] = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 1,
+                            maxLines = 3,
+                            textStyle = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+            Button(
+                onClick = {
+                    val answer = buildJsonObject {
+                        put("answers", buildJsonObject {
+                            questions.forEach { question ->
+                                val value = if (question.selectionType == "multi") {
+                                    multiAnswers[question.id].orEmpty().joinToString(", ")
+                                } else {
+                                    answers[question.id].orEmpty()
+                                }
+                                put(question.id, JsonPrimitive(value))
+                            }
+                        })
+                    }
+                    onSubmit(toolCall, answer.toString())
+                },
+                enabled = questions.isNotEmpty() && questions.all { question ->
+                    if (question.selectionType == "multi") {
+                        multiAnswers[question.id].orEmpty().isNotEmpty()
+                    } else {
+                        answers[question.id].orEmpty().isNotBlank()
+                    }
+                },
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text("提交")
             }
         }
     }
@@ -2687,13 +2912,43 @@ private fun ToolResultStep(content: String) {
 private fun ReasoningBlock(
     messageId: String,
     reasoning: String,
+    reasoningStartedAt: Long?,
+    reasoningDurationMillis: Long?,
     generating: Boolean,
     autoCollapse: Boolean,
     markdownOptions: MarkdownRenderOptions
 ) {
     var expanded by remember(messageId) { mutableStateOf(generating || !autoCollapse) }
+    var elapsedMillis by remember(messageId, reasoningStartedAt) {
+        mutableStateOf(reasoningDurationMillis)
+    }
+    val pulseTransition = rememberInfiniteTransition(label = "reasoningPulse")
+    val pulseScale by pulseTransition.animateFloat(
+        initialValue = 0.9f,
+        targetValue = 1.1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "reasoningPulseScale"
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (generating) pulseScale else 1f,
+        animationSpec = tween(durationMillis = 180),
+        label = "reasoningIconScale"
+    )
     LaunchedEffect(generating, autoCollapse) {
         expanded = generating || !autoCollapse
+    }
+    LaunchedEffect(generating, reasoningStartedAt, reasoningDurationMillis) {
+        if (generating && reasoningStartedAt != null) {
+            while (true) {
+                elapsedMillis = (System.currentTimeMillis() - reasoningStartedAt).coerceAtLeast(0)
+                delay(100)
+            }
+        } else {
+            elapsedMillis = reasoningDurationMillis
+        }
     }
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -2707,24 +2962,28 @@ private fun ReasoningBlock(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
+                    Lucide.Lightbulb,
+                    "思考过程",
+                    Modifier.size(17.dp).graphicsLayer {
+                        scaleX = iconScale
+                        scaleY = iconScale
+                    },
+                    tint = MaterialTheme.colorScheme.secondary
+                )
+                Text(
+                    elapsedMillis?.let { "思考了 ${formatReasoningDuration(it)} 秒" } ?: "思考过程",
+                    Modifier.padding(start = 7.dp),
+                    color = MaterialTheme.colorScheme.secondary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.weight(1f))
+                Icon(
                     if (expanded) Lucide.ChevronDown else Lucide.ChevronRight,
                     if (expanded) "收起思考过程" else "展开思考过程",
                     Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Text(
-                    if (generating) "思考中..." else "思考过程",
-                    Modifier.padding(start = 7.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                if (generating) {
-                    CircularProgressIndicator(
-                        Modifier.padding(start = 9.dp).size(12.dp),
-                        strokeWidth = 1.5.dp
-                    )
-                }
             }
             if (expanded) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
@@ -2737,6 +2996,9 @@ private fun ReasoningBlock(
         }
     }
 }
+
+private fun formatReasoningDuration(durationMillis: Long): String =
+    String.format(java.util.Locale.getDefault(), "%.1f", durationMillis.coerceAtLeast(0) / 1_000.0)
 
 @Composable
 private fun TranslationBlock(
@@ -2952,6 +3214,7 @@ private fun Composer(
     var quickMessageMenuOpen by remember { mutableStateOf(false) }
     var fullScreenEditorOpen by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val inputFocusRequester = remember { FocusRequester() }
     val composerShape = RoundedCornerShape(24.dp)
     val glassSurface = MaterialTheme.colorScheme.surface
     Box(
@@ -2990,7 +3253,10 @@ private fun Composer(
                     ) {
                         suggestions.forEach { suggestion ->
                             OutlinedButton(
-                                onClick = { onSuggestionSelect(suggestion) },
+                                onClick = {
+                                    onSuggestionSelect(suggestion)
+                                    inputFocusRequester.requestFocus()
+                                },
                                 modifier = Modifier.widthIn(max = 360.dp)
                             ) {
                                 Text(suggestion, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -3036,7 +3302,9 @@ private fun Composer(
                 TextField(
                     value = prompt,
                     onValueChange = onPromptChange,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp, max = 150.dp)
+                    modifier = Modifier.fillMaxWidth()
+                        .focusRequester(inputFocusRequester)
+                        .heightIn(min = 58.dp, max = 150.dp)
                         .onPreviewKeyEvent { event ->
                             if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isAltPressed) {
                                 onAddWithoutResponse()

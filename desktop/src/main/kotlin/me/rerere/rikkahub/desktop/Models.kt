@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.desktop
 
 import kotlinx.serialization.Serializable
+import dev.darkokoa.pangu.spacingText
 import java.net.URI
 import java.util.Locale
 import java.util.UUID
@@ -46,6 +47,7 @@ data class DesktopConfig(
 @Serializable
 enum class DesktopLocalTool {
     CURRENT_TIME,
+    ASK_USER,
     MEMORY
 }
 
@@ -252,6 +254,8 @@ data class ChatMessage(
     val role: String,
     val content: String,
     val reasoning: String = "",
+    val reasoningStartedAt: Long? = null,
+    val reasoningDurationMillis: Long? = null,
     val id: String = UUID.randomUUID().toString(),
     val createdAt: Long = System.currentTimeMillis(),
     val variants: List<DesktopMessageVariant> = emptyList(),
@@ -309,6 +313,8 @@ data class DesktopAttachment(
 data class DesktopMessageVariant(
     val content: String,
     val reasoning: String = "",
+    val reasoningStartedAt: Long? = null,
+    val reasoningDurationMillis: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val promptTokens: Int? = null,
     val completionTokens: Int? = null,
@@ -323,6 +329,8 @@ fun ChatMessage.availableVariants(): List<DesktopMessageVariant> = variants.ifEm
         DesktopMessageVariant(
             content = content,
             reasoning = reasoning,
+            reasoningStartedAt = reasoningStartedAt,
+            reasoningDurationMillis = reasoningDurationMillis,
             createdAt = createdAt,
             promptTokens = promptTokens,
             completionTokens = completionTokens,
@@ -354,6 +362,8 @@ fun ChatMessage.addVariant(content: String): ChatMessage {
 fun ChatMessage.beginAlternative(): ChatMessage = copy(
     content = "",
     reasoning = "",
+    reasoningStartedAt = null,
+    reasoningDurationMillis = null,
     promptTokens = null,
     completionTokens = null,
     citations = emptyList(),
@@ -370,6 +380,8 @@ fun ChatMessage.completeAlternative(): ChatMessage {
     val completed = DesktopMessageVariant(
         content = content,
         reasoning = reasoning,
+        reasoningStartedAt = reasoningStartedAt,
+        reasoningDurationMillis = reasoningDurationMillis,
         createdAt = createdAt,
         promptTokens = promptTokens,
         completionTokens = completionTokens,
@@ -386,12 +398,18 @@ fun ChatMessage.completeAlternative(): ChatMessage {
     return copy(variants = completedVariants, selectedVariantIndex = completedVariants.lastIndex)
 }
 
+fun ChatMessage.completeReasoningDuration(now: Long = System.currentTimeMillis()): ChatMessage =
+    if (reasoning.isBlank() || reasoningDurationMillis != null || reasoningStartedAt == null) this
+    else copy(reasoningDurationMillis = (now - reasoningStartedAt).coerceAtLeast(0))
+
 fun ChatMessage.selectVariant(index: Int): ChatMessage {
     val choices = availableVariants()
     val selected = choices.getOrNull(index) ?: return this
     return copy(
         content = selected.content,
         reasoning = selected.reasoning,
+        reasoningStartedAt = selected.reasoningStartedAt,
+        reasoningDurationMillis = selected.reasoningDurationMillis,
         createdAt = selected.createdAt,
         promptTokens = selected.promptTokens,
         completionTokens = selected.completionTokens,
@@ -625,14 +643,16 @@ internal fun List<ChatMessage>.compressionTranscript(): String = joinToString("\
     }
 }
 
-internal fun normalizeGeneratedTitle(value: String): String = value.trim()
+internal fun normalizeGeneratedTitle(value: String, enableChineseTypography: Boolean = false): String = value.trim()
     .trim('"', '\'', '`')
     .replace(Regex("\\s+"), " ")
+    .let { if (enableChineseTypography) it.spacingText() else it }
     .take(48)
 
-internal fun parseChatSuggestions(value: String): List<String> = value.lineSequence()
+internal fun parseChatSuggestions(value: String, enableChineseTypography: Boolean = false): List<String> = value.lineSequence()
     .map { it.trim().replaceFirst(Regex("^(?:[-*]|\\d+[.)])\\s*"), "") }
     .map { it.trim('"', '\'', '`') }
+    .map { if (enableChineseTypography) it.spacingText() else it }
     .filter { it.isNotBlank() }
     .distinct()
     .take(4)

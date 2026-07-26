@@ -726,6 +726,19 @@ internal fun DesktopSettingsPane(
                                 )
                             }
                             PreferenceSwitch(
+                                "主动提问",
+                                "允许模型在需要澄清信息或确认时向你提问",
+                                DesktopLocalTool.ASK_USER in draftAssistant.localTools
+                            ) { enabled ->
+                                draftAssistant = draftAssistant.copy(
+                                    localTools = if (enabled) {
+                                        draftAssistant.localTools + DesktopLocalTool.ASK_USER
+                                    } else {
+                                        draftAssistant.localTools - DesktopLocalTool.ASK_USER
+                                    }
+                                )
+                            }
+                            PreferenceSwitch(
                                 "流式输出",
                                 "实时显示回复内容，而不是等待完整回复",
                                 draftAssistant.streamOutput

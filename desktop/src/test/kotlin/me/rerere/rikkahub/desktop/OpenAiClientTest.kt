@@ -300,6 +300,26 @@ class OpenAiClientTest {
     }
 
     @Test
+    fun declaresAskUserToolWhenEnabled() {
+        val body = Json.parseToJsonElement(
+            client.buildRequestBody(
+                DesktopConfig(model = "test", localTools = setOf(DesktopLocalTool.ASK_USER)),
+                emptyList()
+            )
+        ).jsonObject
+
+        val function = body.getValue("tools").jsonArray.single().jsonObject.getValue("function").jsonObject
+        assertEquals(DesktopAskUserToolName, function.getValue("name").jsonPrimitive.content)
+        assertEquals(
+            listOf("text", "single", "multi"),
+            function.getValue("parameters").jsonObject.getValue("properties").jsonObject
+                .getValue("questions").jsonObject.getValue("items").jsonObject
+                .getValue("properties").jsonObject.getValue("selection_type").jsonObject
+                .getValue("enum").jsonArray.map { it.jsonPrimitive.content }
+        )
+    }
+
+    @Test
     fun declaresMemoryToolWhenMemoryIsEnabled() {
         val body = Json.parseToJsonElement(
             client.buildRequestBody(DesktopConfig(model = "test", memoryEnabled = true), emptyList())
