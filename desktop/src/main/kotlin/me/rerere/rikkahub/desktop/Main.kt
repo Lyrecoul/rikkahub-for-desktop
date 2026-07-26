@@ -59,8 +59,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -162,52 +160,6 @@ import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.datatransfer.StringSelection
 import java.net.URI
-
-private val SakuraLightColors = lightColorScheme(
-    primary = Color(0xFF8E4955),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFFFD9DD),
-    onPrimaryContainer = Color(0xFF72333E),
-    secondary = Color(0xFF76565A),
-    secondaryContainer = Color(0xFFFFD9DD),
-    tertiary = Color(0xFF785831),
-    background = Color(0xFFFFF8F7),
-    onBackground = Color(0xFF22191A),
-    surface = Color(0xFFFFF8F7),
-    onSurface = Color(0xFF22191A),
-    surfaceVariant = Color(0xFFF3DDDF),
-    onSurfaceVariant = Color(0xFF524345),
-    outline = Color(0xFF847374),
-    outlineVariant = Color(0xFFD7C1C3),
-    surfaceContainerLow = Color(0xFFFFF0F1),
-    surfaceContainer = Color(0xFFFBEAEB),
-    surfaceContainerHigh = Color(0xFFF6E4E5),
-    surfaceContainerHighest = Color(0xFFF0DEDF)
-)
-
-private val SakuraDarkColors = darkColorScheme(
-    primary = Color(0xFFFFB2BC),
-    onPrimary = Color(0xFF561D28),
-    primaryContainer = Color(0xFF72333E),
-    onPrimaryContainer = Color(0xFFFFD9DD),
-    secondary = Color(0xFFE5BDC1),
-    onSecondary = Color(0xFF43292D),
-    secondaryContainer = Color(0xFF5C3F43),
-    onSecondaryContainer = Color(0xFFFFD9DD),
-    tertiary = Color(0xFFEABF8F),
-    background = Color(0xFF1A1112),
-    onBackground = Color(0xFFF0DEDF),
-    surface = Color(0xFF1A1112),
-    onSurface = Color(0xFFF0DEDF),
-    surfaceVariant = Color(0xFF524345),
-    onSurfaceVariant = Color(0xFFD7C1C3),
-    outline = Color(0xFF9F8C8E),
-    outlineVariant = Color(0xFF524345),
-    surfaceContainerLow = Color(0xFF22191A),
-    surfaceContainer = Color(0xFF261D1E),
-    surfaceContainerHigh = Color(0xFF312828),
-    surfaceContainerHighest = Color(0xFF3D3233)
-)
 
 private data class MessageEditTarget(
     val conversationId: String,
@@ -891,7 +843,10 @@ private fun RikkaHubDesktop(
         DesktopColorMode.DARK -> true
     }
 
-    MaterialTheme(colorScheme = if (useDarkTheme) SakuraDarkColors else SakuraLightColors) {
+    MaterialTheme(
+        colorScheme = desktopColorScheme(data.preferences.themeColor, useDarkTheme),
+        typography = desktopTypography(data.preferences.fontFamily)
+    ) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         BoxWithConstraints(
             Modifier.fillMaxSize().onPreviewKeyEvent { event ->
@@ -2110,36 +2065,55 @@ private fun ChatPane(
                 } else {
                     LazyColumn(
                         state = listState,
-                        modifier = Modifier.fillMaxHeight().widthIn(max = 920.dp).padding(horizontal = 28.dp),
+                        modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = messageBottomPadding),
                         verticalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
-                        item { Spacer(Modifier.height(22.dp)) }
+                        item {
+                            Spacer(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(22.dp)
+                            )
+                        }
                         itemsIndexed(displayMessages, key = { _, entry -> entry.second.id }) { _, entry ->
                             val (index, message) = entry
-                            SoftMessageReveal(message.id) {
-                                MessageBlock(
-                                    message = message,
-                                    model = model,
-                                    providerName = providerName,
-                                    assistant = assistant,
-                                    preferences = preferences,
-                                    toolResults = conversation.messages.filter { it.role == "tool" && it.toolCallId != null }
-                                        .associateBy { it.toolCallId!! },
-                                    generating = isGenerating && index == conversation.messages.lastIndex,
-                                    actionsEnabled = !isGenerating,
-                                    onEdit = { onEditMessage(index, message.content) },
-                                    onDelete = { onDeleteMessage(index) },
-                                    onToggleFavorite = { onToggleMessageFavorite(index) },
-                                    onFork = { onForkAtMessage(index) },
-                                    onTranslate = { onTranslateMessage(index) },
-                                    highlighted = message.id == highlightedMessageId,
-                                    onRegenerate = { onRegenerateMessage(index) },
-                                    onSelectVariant = { variantIndex -> onSelectMessageVariant(index, variantIndex) }
-                                )
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.TopCenter
+                            ) {
+                                Box(Modifier.widthIn(max = 920.dp).padding(horizontal = 28.dp)) {
+                                    SoftMessageReveal(message.id) {
+                                        MessageBlock(
+                                            message = message,
+                                            model = model,
+                                            providerName = providerName,
+                                            assistant = assistant,
+                                            preferences = preferences,
+                                            toolResults = conversation.messages.filter { it.role == "tool" && it.toolCallId != null }
+                                                .associateBy { it.toolCallId!! },
+                                            generating = isGenerating && index == conversation.messages.lastIndex,
+                                            actionsEnabled = !isGenerating,
+                                            onEdit = { onEditMessage(index, message.content) },
+                                            onDelete = { onDeleteMessage(index) },
+                                            onToggleFavorite = { onToggleMessageFavorite(index) },
+                                            onFork = { onForkAtMessage(index) },
+                                            onTranslate = { onTranslateMessage(index) },
+                                            highlighted = message.id == highlightedMessageId,
+                                            onRegenerate = { onRegenerateMessage(index) },
+                                            onSelectVariant = { variantIndex -> onSelectMessageVariant(index, variantIndex) }
+                                        )
+                                    }
+                                }
                             }
                         }
-                        item { Spacer(Modifier.height(18.dp)) }
+                        item {
+                            Spacer(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(18.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -2347,7 +2321,8 @@ private fun MessageBlock(
     val clipboardScope = rememberCoroutineScope()
     val markdownOptions = MarkdownRenderOptions(
         fontScale = preferences.fontScale,
-        codeBlockAutoWrap = preferences.codeBlockAutoWrap
+        codeBlockAutoWrap = preferences.codeBlockAutoWrap,
+        enableChineseTypography = preferences.enableChineseTypography
     )
     Column(
         Modifier.fillMaxWidth()

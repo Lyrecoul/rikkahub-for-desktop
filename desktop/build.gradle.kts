@@ -38,6 +38,7 @@ dependencies {
     implementation(libs.haze.blur)
     implementation(libs.jetbrains.markdown)
     implementation(libs.pebble)
+    implementation("io.github.darkokoa:pangu-jvm:0.2.0")
     implementation("org.scilab.forge:jlatexmath:1.0.7")
     implementation("org.apache.pdfbox:pdfbox:3.0.3")
     testImplementation(kotlin("test"))

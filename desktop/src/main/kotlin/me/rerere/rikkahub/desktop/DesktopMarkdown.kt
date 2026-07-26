@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.desktop
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.HorizontalScrollbar
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.HorizontalDivider
@@ -35,6 +37,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.platform.ClipEntry
@@ -50,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Lucide
+import dev.darkokoa.pangu.spacingText
 import kotlinx.coroutines.launch
 import org.scilab.forge.jlatexmath.TeXConstants
 import org.scilab.forge.jlatexmath.TeXFormula
@@ -82,14 +87,15 @@ internal sealed interface MarkdownBlock {
     data class Code(val language: String, val content: String) : MarkdownBlock
     data class Quote(val blocks: List<MarkdownBlock>) : MarkdownBlock
     data class ListBlock(val ordered: Boolean, val items: List<List<MarkdownBlock>>) : MarkdownBlock
-    data class Table(val headers: List<String>, val rows: List<List<String>>) : MarkdownBlock
+    data class Table(val headers: List<List<MarkdownSpan>>, val rows: List<List<List<MarkdownSpan>>>) : MarkdownBlock
     data class Math(val latex: String) : MarkdownBlock
     data object Rule : MarkdownBlock
 }
 
 internal data class MarkdownRenderOptions(
     val fontScale: Float = 1.0f,
-    val codeBlockAutoWrap: Boolean = false
+    val codeBlockAutoWrap: Boolean = false,
+    val enableChineseTypography: Boolean = false
 )
 
 internal object DesktopMarkdownParser {
@@ -167,9 +173,9 @@ internal object DesktopMarkdownParser {
     }
 
     private fun parseTable(node: ASTNode, content: String): MarkdownBlock.Table? {
-        fun cells(row: ASTNode): List<String> = row.children
+        fun cells(row: ASTNode): List<List<MarkdownSpan>> = row.children
             .filter { it.type == GFMTokenTypes.CELL }
-            .map { it.getTextInNode(content).trim() }
+            .map { parseInline(it, content).trimWhitespace() }
 
         val header = node.children.firstOrNull { it.type == GFMElementTypes.HEADER }?.let(::cells).orEmpty()
         if (header.isEmpty()) return null
@@ -304,7 +310,11 @@ internal fun MarkdownContent(
 @Composable
 private fun MarkdownBlockView(block: MarkdownBlock, options: MarkdownRenderOptions) {
     when (block) {
-        is MarkdownBlock.Paragraph -> MarkdownText(block.spans, fontSize = 15.sp * options.fontScale)
+        is MarkdownBlock.Paragraph -> MarkdownText(
+            block.spans,
+            fontSize = 15.sp * options.fontScale,
+            enableChineseTypography = options.enableChineseTypography
+        )
         is MarkdownBlock.Heading -> {
             val fontSize = when (block.level) {
                 1 -> 25.sp
@@ -316,7 +326,8 @@ private fun MarkdownBlockView(block: MarkdownBlock, options: MarkdownRenderOptio
             MarkdownText(
                 block.spans.map { it.copy(bold = true) },
                 modifier = Modifier.padding(top = if (block.level <= 2) 8.dp else 4.dp),
-                fontSize = fontSize * options.fontScale
+                fontSize = fontSize * options.fontScale,
+                enableChineseTypography = options.enableChineseTypography
             )
         }
         is MarkdownBlock.Code -> CodeBlock(block, options)
@@ -403,22 +414,31 @@ private fun MarkdownText(
     spans: List<MarkdownSpan>,
     modifier: Modifier = Modifier,
     fontSize: androidx.compose.ui.unit.TextUnit = 15.sp,
-    fillWidth: Boolean = true
+    fillWidth: Boolean = true,
+    enableChineseTypography: Boolean = false
 ) {
-    if (spans.any { it.math }) {
+    val displaySpans = remember(spans, enableChineseTypography) {
+        spans.withChineseTypography(enableChineseTypography)
+    }
+    if (displaySpans.any { it.math }) {
         FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(3.dp), verticalArrangement = Arrangement.Center) {
-            spans.forEach { span ->
+            displaySpans.forEach { span ->
                 if (span.math) LatexFormula(span.text, fontSize.value / 15f)
-                else MarkdownText(listOf(span), fontSize = fontSize, fillWidth = false)
+                else MarkdownText(
+                    listOf(span),
+                    fontSize = fontSize,
+                    fillWidth = false,
+                    enableChineseTypography = false
+                )
             }
         }
         return
     }
     val primary = MaterialTheme.colorScheme.primary
     val codeBackground = MaterialTheme.colorScheme.surfaceContainerHighest
-    val annotated = remember(spans, primary, codeBackground) {
+    val annotated = remember(displaySpans, primary, codeBackground) {
         buildAnnotatedString {
-            spans.forEach { span ->
+            displaySpans.forEach { span ->
                 val start = length
                 append(span.text)
                 addStyle(
@@ -447,6 +467,11 @@ private fun MarkdownText(
         style = MaterialTheme.typography.bodyLarge.copy(fontSize = fontSize, lineHeight = fontSize * 1.53f)
     )
 }
+
+internal fun List<MarkdownSpan>.withChineseTypography(enabled: Boolean): List<MarkdownSpan> =
+    if (!enabled) this else map { span ->
+        if (span.code || span.math) span else span.copy(text = span.text.spacingText())
+    }
 
 @Composable
 @OptIn(ExperimentalComposeUiApi::class)
@@ -497,34 +522,75 @@ private fun CodeBlock(block: MarkdownBlock.Code, options: MarkdownRenderOptions)
 private fun MarkdownTable(table: MarkdownBlock.Table, options: MarkdownRenderOptions) {
     val columnCount = maxOf(table.headers.size, table.rows.maxOfOrNull { it.size } ?: 0)
     val shape = RoundedCornerShape(10.dp)
-    Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-        Column(
-            Modifier.width((columnCount * 160).dp).clip(shape)
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
-        ) {
-            TableRow(table.headers, columnCount, header = true, options = options)
-            table.rows.forEach { TableRow(it, columnCount, header = false, options = options) }
+    val scrollState = rememberScrollState()
+    val edgeColor = MaterialTheme.colorScheme.background
+    val canScrollBackward = scrollState.value > 0
+    val canScrollForward = scrollState.value < scrollState.maxValue
+
+    Column(Modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth()) {
+            Box(Modifier.fillMaxWidth().horizontalScroll(scrollState)) {
+                Column(
+                    Modifier.width((columnCount * 160).dp).clip(shape)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+                ) {
+                    TableRow(table.headers, columnCount, header = true, options = options)
+                    table.rows.forEach { TableRow(it, columnCount, header = false, options = options) }
+                }
+            }
+            if (canScrollBackward) {
+                Box(
+                    Modifier.matchParentSize()
+                ) {
+                    Box(
+                        Modifier.align(Alignment.CenterStart).width(48.dp).fillMaxHeight()
+                            .background(Brush.horizontalGradient(listOf(edgeColor, edgeColor.copy(alpha = 0f))))
+                    )
+                }
+            }
+            if (canScrollForward) {
+                Box(
+                    Modifier.matchParentSize()
+                ) {
+                    Box(
+                        Modifier.align(Alignment.CenterEnd).width(48.dp).fillMaxHeight()
+                            .background(Brush.horizontalGradient(listOf(edgeColor.copy(alpha = 0f), edgeColor)))
+                    )
+                }
+            }
+        }
+        if (scrollState.maxValue > 0) {
+            HorizontalScrollbar(
+                adapter = rememberScrollbarAdapter(scrollState),
+                modifier = Modifier.fillMaxWidth().height(8.dp).padding(top = 4.dp)
+            )
         }
     }
 }
 
 @Composable
 private fun TableRow(
-    cells: List<String>,
+    cells: List<List<MarkdownSpan>>,
     columnCount: Int,
     header: Boolean,
     options: MarkdownRenderOptions
 ) {
-    Row(Modifier.background(if (header) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent)) {
+    Row(
+        Modifier.height(IntrinsicSize.Min)
+            .background(if (header) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent)
+    ) {
         repeat(columnCount) { index ->
-            Text(
-                cells.getOrElse(index) { "" },
-                Modifier.width(160.dp).border(
+            MarkdownText(
+                spans = cells.getOrElse(index) { emptyList() }.map { span ->
+                    span.copy(bold = header || span.bold)
+                },
+                Modifier.width(160.dp).fillMaxHeight().border(
                     0.5.dp,
                     MaterialTheme.colorScheme.outlineVariant
                 ).padding(horizontal = 10.dp, vertical = 8.dp),
                 fontSize = 13.sp * options.fontScale,
-                fontWeight = if (header) FontWeight.SemiBold else FontWeight.Normal
+                fillWidth = false,
+                enableChineseTypography = options.enableChineseTypography
             )
         }
     }

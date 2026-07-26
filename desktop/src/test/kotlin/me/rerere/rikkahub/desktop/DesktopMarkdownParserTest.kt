@@ -42,14 +42,29 @@ class DesktopMarkdownParserTest {
         val table = assertIs<MarkdownBlock.Table>(
             DesktopMarkdownParser.parse(
                 """
-                | Name | Value |
+                | **Name** | [Value](https://example.com) |
                 | --- | --- |
-                | Rikka | 42 |
+                | *Rikka* | `42` |
                 """.trimIndent()
             ).single()
         )
 
-        assertEquals(listOf("Name", "Value"), table.headers)
-        assertEquals(listOf(listOf("Rikka", "42")), table.rows)
+        assertTrue(table.headers[0].single().text == "Name" && table.headers[0].single().bold)
+        assertTrue(table.headers[1].single().text == "Value" && table.headers[1].single().link == "https://example.com")
+        assertTrue(table.rows[0][0].single().text == "Rikka" && table.rows[0][0].single().italic)
+        assertTrue(table.rows[0][1].single().text == "42" && table.rows[0][1].single().code)
+    }
+
+    @Test
+    fun appliesChineseTypographyWithoutChangingCodeOrMath() {
+        val spans = listOf(
+            MarkdownSpan("中文RikkaHub"),
+            MarkdownSpan("代码RikkaHub", code = true),
+            MarkdownSpan("x+y", math = true)
+        ).withChineseTypography(enabled = true)
+
+        assertEquals("中文 RikkaHub", spans[0].text)
+        assertEquals("代码RikkaHub", spans[1].text)
+        assertEquals("x+y", spans[2].text)
     }
 }

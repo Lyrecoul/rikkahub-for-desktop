@@ -1,7 +1,10 @@
 package me.rerere.rikkahub.desktop
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,9 +19,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.v2.ScrollbarAdapter
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,12 +49,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
@@ -172,12 +181,25 @@ internal fun DesktopSettingsPane(
         }
     }
     val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialSection.itemIndex)
+    val scrollState = rememberScrollState()
+    val sectionScrollOffsets = remember { mutableStateMapOf<DesktopSettingsSection, Int>() }
+    var scrollViewportHeight by remember { mutableIntStateOf(0) }
+    val settingsScrollbarAdapter = remember(scrollState, scrollViewportHeight) {
+        object : ScrollbarAdapter {
+            override val scrollOffset: Double get() = scrollState.value.toDouble()
+            override val viewportSize: Double get() = scrollViewportHeight.toDouble()
+            override val contentSize: Double get() = scrollState.maxValue + viewportSize
+
+            override suspend fun scrollTo(scrollOffset: Double) {
+                scrollState.scrollTo(scrollOffset.roundToInt())
+            }
+        }
+    }
     var activeSection by remember { mutableStateOf(initialSection) }
 
-    LaunchedEffect(initialSection) {
+    LaunchedEffect(initialSection, sectionScrollOffsets.size) {
         activeSection = initialSection
-        listState.scrollToItem(initialSection.itemIndex)
+        scrollState.scrollTo(sectionScrollOffsets[initialSection] ?: 0)
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -206,7 +228,7 @@ internal fun DesktopSettingsPane(
                     activeSection = activeSection,
                     onSectionClick = { section ->
                         activeSection = section
-                        scope.launch { listState.animateScrollToItem(section.itemIndex) }
+                        scope.launch { scrollState.animateScrollTo(sectionScrollOffsets[section] ?: 0) }
                     }
                 )
                 Box(
@@ -217,21 +239,19 @@ internal fun DesktopSettingsPane(
             }
 
             Box(
-                Modifier.weight(1f).fillMaxHeight(),
+                Modifier.weight(1f).fillMaxHeight().onSizeChanged { scrollViewportHeight = it.height },
                 contentAlignment = Alignment.TopCenter
             ) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize().widthIn(max = 880.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    start = 24.dp,
-                    end = 24.dp,
-                    top = 22.dp,
-                    bottom = 36.dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                Column(
+                    modifier = Modifier.fillMaxSize().widthIn(max = 880.dp)
+                        .verticalScroll(scrollState)
+                        .padding(start = 24.dp, end = 24.dp, top = 22.dp, bottom = 36.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                item("general") {
+                Box(Modifier.onGloballyPositioned { coordinates ->
+                    sectionScrollOffsets[DesktopSettingsSection.GENERAL] =
+                        (coordinates.positionInParent().y + scrollState.value).roundToInt()
+                }) {
                     SettingsSection("通用设置", Lucide.Palette) {
                         SettingsRow(
                             title = "颜色模式",
@@ -261,6 +281,27 @@ internal fun DesktopSettingsPane(
                         }
                         SettingsDivider()
                         SettingsRow(
+                            title = "主题色",
+                            description = "为界面选择一套强调色和配套的明暗色阶"
+                        ) {
+                            ThemeColorSelector(
+                                selected = preferences.themeColor,
+                                dark = preferences.colorMode == DesktopColorMode.DARK,
+                                onSelect = { onPreferencesChange(preferences.copy(themeColor = it)) }
+                            )
+                        }
+                        SettingsDivider()
+                        SettingsRow(
+                            title = "界面字体",
+                            description = "${preferences.fontFamily.displayName}，代码块保持等宽字体"
+                        ) {
+                            FontFamilySelector(
+                                selected = preferences.fontFamily,
+                                onSelect = { onPreferencesChange(preferences.copy(fontFamily = it)) }
+                            )
+                        }
+                        SettingsDivider()
+                        SettingsRow(
                             title = "聊天字体大小",
                             description = "${(preferences.fontScale * 100).roundToInt()}%"
                         ) {
@@ -277,7 +318,7 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                item("message-display") {
+                Box {
                     SettingsSection("消息显示", Lucide.MessageSquareText) {
                         PreferenceSwitch(
                             "显示用户头像",
@@ -328,10 +369,16 @@ internal fun DesktopSettingsPane(
                             "长代码行自动换行，而不是横向滚动",
                             preferences.codeBlockAutoWrap
                         ) { onPreferencesChange(preferences.copy(codeBlockAutoWrap = it)) }
+                        SettingsDivider()
+                        PreferenceSwitch(
+                            "中文排版",
+                            "在中文与西文、数字或符号之间自动添加间距",
+                            preferences.enableChineseTypography
+                        ) { onPreferencesChange(preferences.copy(enableChineseTypography = it)) }
                     }
                 }
 
-                item("interaction") {
+                Box {
                     SettingsSection("交互", Lucide.Keyboard) {
                         PreferenceSwitch(
                             "按 Enter 发送",
@@ -361,7 +408,10 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                item("data") {
+                Box(Modifier.onGloballyPositioned { coordinates ->
+                    sectionScrollOffsets[DesktopSettingsSection.DATA] =
+                        (coordinates.positionInParent().y + scrollState.value).roundToInt()
+                }) {
                     SettingsSection("数据、备份与联网搜索", Lucide.Save) {
                         SettingsRow(
                             title = "导出备份",
@@ -491,7 +541,10 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                item("assistants") {
+                Box(Modifier.onGloballyPositioned { coordinates ->
+                    sectionScrollOffsets[DesktopSettingsSection.ASSISTANTS] =
+                        (coordinates.positionInParent().y + scrollState.value).roundToInt()
+                }) {
                     SettingsSection("助手", Lucide.Bot) {
                         FlowRow(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -1397,7 +1450,10 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                item("providers") {
+                Box(Modifier.onGloballyPositioned { coordinates ->
+                    sectionScrollOffsets[DesktopSettingsSection.PROVIDERS] =
+                        (coordinates.positionInParent().y + scrollState.value).roundToInt()
+                }) {
                     SettingsSection("模型与服务", Lucide.ServerCog) {
                         FlowRow(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -1784,13 +1840,28 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                item("back-to-chat") {
+                Box {
                     TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
                         Icon(Lucide.ChevronLeft, null, Modifier.size(17.dp))
                         Text("返回对话", Modifier.padding(start = 6.dp))
                     }
                 }
                 }
+                VerticalScrollbar(
+                    adapter = settingsScrollbarAdapter,
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .width(12.dp)
+                        .padding(vertical = 12.dp),
+                    style = ScrollbarStyle(
+                        minimalHeight = 72.dp,
+                        thickness = 12.dp,
+                        shape = RoundedCornerShape(12.dp),
+                        hoverDurationMillis = 220,
+                        unhoverColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.36f),
+                        hoverColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    )
+                )
             }
         }
     }
@@ -1817,6 +1888,100 @@ internal fun DesktopSettingsPane(
         )
     }
 }
+
+private val DesktopThemeColor.displayName: String
+    get() = when (this) {
+        DesktopThemeColor.SAKURA -> "樱花"
+        DesktopThemeColor.OCEAN -> "海洋"
+        DesktopThemeColor.FOREST -> "森林"
+        DesktopThemeColor.SUNSET -> "落日"
+        DesktopThemeColor.LAVENDER -> "薰衣草"
+        DesktopThemeColor.SLATE -> "石墨"
+    }
+
+private val DesktopFontFamily.displayName: String
+    get() = when (this) {
+        DesktopFontFamily.SYSTEM -> "系统默认"
+        DesktopFontFamily.SANS_SERIF -> "无衬线"
+        DesktopFontFamily.SERIF -> "衬线"
+        DesktopFontFamily.MONOSPACE -> "等宽"
+    }
+
+@Composable
+private fun ThemeColorSelector(
+    selected: DesktopThemeColor,
+    dark: Boolean,
+    onSelect: (DesktopThemeColor) -> Unit
+) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        DesktopThemeColor.entries.forEach { theme ->
+            val chosen = theme == selected
+            Surface(
+                modifier = Modifier
+                    .size(width = 86.dp, height = 58.dp)
+                    .border(
+                        width = if (chosen) 2.dp else 1.dp,
+                        color = if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                        shape = RoundedCornerShape(7.dp)
+                    )
+                    .clickable { onSelect(theme) },
+                shape = RoundedCornerShape(7.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer
+            ) {
+                Column(
+                    Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        theme.previewColors(dark).forEach { color ->
+                            Surface(Modifier.size(12.dp), shape = RoundedCornerShape(3.dp), color = color) {}
+                        }
+                    }
+                    Text(theme.displayName, fontSize = 11.sp, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FontFamilySelector(selected: DesktopFontFamily, onSelect: (DesktopFontFamily) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        DesktopFontFamily.entries.forEach { family ->
+            val chosen = family == selected
+            Surface(
+                modifier = Modifier
+                    .size(width = 98.dp, height = 58.dp)
+                    .border(
+                        width = if (chosen) 2.dp else 1.dp,
+                        color = if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                        shape = RoundedCornerShape(7.dp)
+                    )
+                    .clickable { onSelect(family) },
+                shape = RoundedCornerShape(7.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer
+            ) {
+                Column(Modifier.padding(horizontal = 8.dp, vertical = 7.dp)) {
+                    Text(
+                        "Aa",
+                        fontSize = 20.sp,
+                        fontFamily = family.composeFontFamily,
+                        lineHeight = 22.sp
+                    )
+                    Text(family.displayName, fontSize = 11.sp, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+private val DesktopFontFamily.composeFontFamily: FontFamily
+    get() = when (this) {
+        DesktopFontFamily.SYSTEM -> FontFamily.Default
+        DesktopFontFamily.SANS_SERIF -> FontFamily.SansSerif
+        DesktopFontFamily.SERIF -> FontFamily.Serif
+        DesktopFontFamily.MONOSPACE -> FontFamily.Monospace
+    }
 
 private val DesktopSearchProviderType.displayName: String
     get() = when (this) {

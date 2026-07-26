@@ -209,8 +209,28 @@ enum class DesktopColorMode {
 }
 
 @Serializable
+enum class DesktopThemeColor {
+    SAKURA,
+    OCEAN,
+    FOREST,
+    SUNSET,
+    LAVENDER,
+    SLATE
+}
+
+@Serializable
+enum class DesktopFontFamily {
+    SYSTEM,
+    SANS_SERIF,
+    SERIF,
+    MONOSPACE
+}
+
+@Serializable
 data class DesktopPreferences(
     val colorMode: DesktopColorMode = DesktopColorMode.SYSTEM,
+    val themeColor: DesktopThemeColor = DesktopThemeColor.SAKURA,
+    val fontFamily: DesktopFontFamily = DesktopFontFamily.SYSTEM,
     val fontScale: Float = 1.0f,
     val showUserAvatar: Boolean = true,
     val showModelIcon: Boolean = true,
@@ -220,6 +240,7 @@ data class DesktopPreferences(
     val showReasoning: Boolean = true,
     val autoCollapseReasoning: Boolean = true,
     val codeBlockAutoWrap: Boolean = false,
+    val enableChineseTypography: Boolean = false,
     val sendOnEnter: Boolean = true,
     val enableAutoScroll: Boolean = true,
     val showMessageJumper: Boolean = true,
