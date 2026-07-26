@@ -41,7 +41,24 @@ data class DesktopConfig(
     val localTools: Set<DesktopLocalTool> = emptySet(),
     val memoryEnabled: Boolean = false,
     val mcpServers: List<DesktopMcpServer> = emptyList(),
+    val agent: DesktopAgentConfig? = null,
     val balanceOptions: DesktopBalanceOptions = DesktopBalanceOptions()
+)
+
+@Serializable
+enum class DesktopAgentBackend { LOCAL, DOCKER }
+
+@Serializable
+data class DesktopAgentWorkspace(
+    val rootPath: String = "",
+    val backend: DesktopAgentBackend = DesktopAgentBackend.DOCKER,
+    val dockerImage: String = "ubuntu:24.04"
+)
+
+@Serializable
+data class DesktopAgentConfig(
+    val workspace: DesktopAgentWorkspace,
+    val enabledSkillNames: Set<String> = emptySet()
 )
 
 @Serializable
@@ -195,12 +212,16 @@ data class DesktopAssistantProfile(
     val customBodies: List<DesktopCustomBody> = emptyList(),
     val enableWebSearch: Boolean = false,
     val localTools: Set<DesktopLocalTool> = emptySet(),
+    /** Maximum tool-call rounds per response. Zero disables the limit. */
+    val maxToolRounds: Int = 8,
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
     val mcpServerIds: Set<String> = emptySet(),
     val useGlobalMemory: Boolean = false,
     val memories: List<DesktopMemory> = emptyList(),
-    val promptInjections: List<DesktopPromptInjection> = emptyList()
+    val promptInjections: List<DesktopPromptInjection> = emptyList(),
+    val agentWorkspace: DesktopAgentWorkspace? = null,
+    val enabledSkillNames: Set<String> = emptySet()
 )
 
 @Serializable
@@ -453,6 +474,7 @@ data class DesktopConversation(
     val systemPrompt: String = "",
     val webSearchEnabled: Boolean? = null,
     val promptInjectionsEnabled: Boolean? = null,
+    val agentWorkspaceOverride: DesktopAgentWorkspace? = null,
     val messages: List<ChatMessage> = emptyList(),
     val draft: String = "",
     val draftAttachments: List<DesktopAttachment> = emptyList(),
@@ -776,6 +798,9 @@ fun DesktopData.configForAssistant(assistant: DesktopAssistantProfile): DesktopC
         localTools = assistant.localTools,
         memoryEnabled = assistant.enableMemory,
         mcpServers = mcpServers.filter { it.enabled && it.id in assistant.mcpServerIds },
+        agent = assistant.agentWorkspace?.takeIf { it.rootPath.isNotBlank() }?.let { workspace ->
+            DesktopAgentConfig(workspace, assistant.enabledSkillNames)
+        },
         streamOutput = assistant.streamOutput,
         customHeaders = assistant.customHeaders + provider.config.customHeaders,
         customBodies = assistant.customBodies + provider.config.customBodies,
@@ -787,9 +812,12 @@ fun DesktopData.configForConversation(conversation: DesktopConversation): Deskto
     val assistant = assistantFor(conversation)
     val config = configForAssistant(assistant)
     val conversationConfig = config.copy(
-        webSearchEnabled = conversation.webSearchEnabled ?: assistant.enableWebSearch
+        webSearchEnabled = conversation.webSearchEnabled ?: assistant.enableWebSearch,
+        agent = conversation.agentWorkspaceOverride?.takeIf { it.rootPath.isNotBlank() }?.let { workspace ->
+            DesktopAgentConfig(workspace, assistant.enabledSkillNames)
+        } ?: config.agent
     )
-    return if (assistant.allowConversationSystemPrompt && conversation.systemPrompt.isNotBlank()) {
+    val promptResolved = if (assistant.allowConversationSystemPrompt && conversation.systemPrompt.isNotBlank()) {
         conversationConfig.copy(
             systemPrompt = listOf(conversation.systemPrompt, memoryPromptFor(assistant))
                 .filter { it.isNotBlank() }
@@ -798,6 +826,11 @@ fun DesktopData.configForConversation(conversation: DesktopConversation): Deskto
     } else {
         conversationConfig
     }
+    return promptResolved.copy(
+        systemPrompt = listOf(promptResolved.systemPrompt, agentNetworkPolicyPrompt(promptResolved.agent))
+            .filter { it.isNotBlank() }
+            .joinToString("\n\n")
+    )
 }
 
 /** Background title requests intentionally omit chat-only state such as tools, memory and web search. */

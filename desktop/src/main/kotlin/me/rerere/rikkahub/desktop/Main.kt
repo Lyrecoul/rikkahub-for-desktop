@@ -108,6 +108,7 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -247,15 +248,6 @@ private fun showOpenFileDialog(owner: Frame, title: String, multiple: Boolean): 
     return selected.ifEmpty { null }
 }
 
-private fun showSaveFileDialog(owner: Frame, title: String, suggestedName: String): File? {
-    val dialog = FileDialog(owner, title, FileDialog.SAVE).apply {
-        file = suggestedName
-        isVisible = true
-    }
-    val name = dialog.file ?: return null
-    return File(dialog.directory, name)
-}
-
 fun main() = application {
     val appIcon = rememberDesktopResourcePainter("icon.png")
     Window(
@@ -290,8 +282,13 @@ private fun RikkaHubDesktop(
     var showConversationStats by remember { mutableStateOf(false) }
     var translationTarget by remember { mutableStateOf<TranslationTarget?>(null) }
     var attachmentPickerOpen by remember { mutableStateOf(false) }
+    var markdownExportTarget by remember { mutableStateOf<DesktopConversation?>(null) }
+    var backupExportRequested by remember { mutableStateOf(false) }
     val conversationScrollPositions = remember { mutableMapOf<String, Pair<Int, Int>>() }
     val pendingAskUserAnswers = remember { mutableStateMapOf<String, CompletableDeferred<String>>() }
+    var pendingAgentApproval by remember { mutableStateOf<PendingDesktopAgentApproval?>(null) }
+    val rememberedAgentApprovals = remember { mutableStateMapOf<String, Set<DesktopAgentApprovalKind>>() }
+    val agentRuntime = remember { DesktopAgentRuntime() }
     val generationJobs = remember { mutableStateMapOf<String, Job>() }
     val suggestionJobs = remember { mutableStateMapOf<String, Job>() }
     val generationErrors = remember { mutableStateMapOf<String, String>() }
@@ -402,29 +399,12 @@ private fun RikkaHubDesktop(
     }
 
     fun exportBackup(): String? {
-        val selected = showSaveFileDialog(dialogOwner, "导出 RikkaHub 备份", "rikkahub-desktop-backup.json") ?: return null
-        val destination = if (selected.extension.equals("json", ignoreCase = true)) {
-            selected.toPath()
-        } else {
-            File(selected.parentFile, "${selected.name}.json").toPath()
-        }
-        store.exportData(destination, data)
-        return "备份已导出到 $destination"
+        backupExportRequested = true
+        return null
     }
 
-    fun exportConversation(conversation: DesktopConversation): String? {
-        val selected = showSaveFileDialog(
-            dialogOwner,
-            "将对话导出为 Markdown",
-            "${conversation.title.ifBlank { "conversation" }.take(64)}.md"
-        ) ?: return null
-        val destination = if (selected.extension.equals("md", ignoreCase = true)) {
-            selected.toPath()
-        } else {
-            File(selected.parentFile, "${selected.name}.md").toPath()
-        }
-        destination.toFile().writeText(exportConversationMarkdown(conversation, data.configForConversation(conversation).systemPrompt))
-        return "对话已导出到 $destination"
+    fun requestConversationExport(conversation: DesktopConversation) {
+        markdownExportTarget = conversation
     }
 
     fun importBackup(): String? {
@@ -665,8 +645,17 @@ private fun RikkaHubDesktop(
                     val toolCalls = data.conversations.firstOrNull { it.id == conversationId }
                         ?.messages?.lastOrNull()?.toolCalls.orEmpty()
                     if (toolCalls.isEmpty()) break
-                    if (toolRounds >= 8) {
-                        val limitMessage = "本次回复已达到 8 轮工具调用上限。请继续发送消息以开始新的处理。"
+                    // The model has finished this message. Freeze reasoning before any approval or tool wait.
+                    updateConversation(conversationId) { conversation ->
+                        val messages = conversation.messages.toMutableList()
+                        val last = messages.lastOrNull()
+                        if (last?.role == "assistant") {
+                            messages[messages.lastIndex] = last.completeReasoningDuration()
+                        }
+                        conversation.copy(messages = messages, updatedAt = System.currentTimeMillis())
+                    }
+                    if (generationAssistant.maxToolRounds > 0 && toolRounds >= generationAssistant.maxToolRounds) {
+                        val limitMessage = "本次回复已达到 ${generationAssistant.maxToolRounds} 轮工具调用上限。请继续发送消息以开始新的处理。"
                         updateConversation(conversationId) { conversation ->
                             conversation.copy(
                                 messages = conversation.messages + toolCalls.map { call ->
@@ -690,6 +679,24 @@ private fun RikkaHubDesktop(
                                 answer.await()
                             } finally {
                                 pendingAskUserAnswers.remove(call.id, answer)
+                            }
+                        },
+                        agentRuntime = agentRuntime,
+                        approvalHandler = { call, request ->
+                            withContext(Dispatchers.Main) {
+                                if (request.kind in rememberedAgentApprovals[conversationId].orEmpty()) return@withContext true
+                                val answer = CompletableDeferred<DesktopAgentApprovalDecision>()
+                                pendingAgentApproval = PendingDesktopAgentApproval(call, request, answer)
+                                try {
+                                    answer.await().also { decision ->
+                                        if (decision.approved && decision.remember && request.canRemember) {
+                                            rememberedAgentApprovals[conversationId] =
+                                                rememberedAgentApprovals[conversationId].orEmpty() + request.kind
+                                        }
+                                    }.approved
+                                } finally {
+                                    if (pendingAgentApproval?.answer === answer) pendingAgentApproval = null
+                                }
                             }
                         }
                     )
@@ -1062,11 +1069,7 @@ private fun RikkaHubDesktop(
                         onDismissError = { generationErrors.remove(selected.id) },
                         onCancel = { generationJobs[selected.id]?.cancel() },
                         onRename = { renameTarget = ConversationRenameTarget(selected.id, selected.title) },
-                        onExportConversation = {
-                            runCatching { exportConversation(selected) }.onFailure { error ->
-                                generationErrors[selected.id] = "导出失败：${error.message}"
-                            }
-                        },
+                        onExportConversation = { requestConversationExport(selected) },
                         onMoveToFolder = { folderId ->
                             update(data.moveConversationToFolder(selected.id, folderId))
                         },
@@ -1314,7 +1317,97 @@ private fun RikkaHubDesktop(
             }
         )
     }
+    markdownExportTarget?.let { conversation ->
+        DesktopSaveFileDialog(
+            title = "将对话导出为 Markdown",
+            suggestedName = "${conversation.title.ifBlank { "conversation" }.take(64)}.md",
+            requiredExtension = "md",
+            onDismiss = { markdownExportTarget = null },
+            onSave = { destination ->
+                markdownExportTarget = null
+                runCatching {
+                    destination.writeText(
+                        exportConversationMarkdown(conversation, data.configForConversation(conversation).systemPrompt)
+                    )
+                }.onFailure { error ->
+                    generationErrors[conversation.id] = "导出失败：${error.message ?: "未知错误"}"
+                }
+            }
+        )
     }
+    if (backupExportRequested) {
+        DesktopSaveFileDialog(
+            title = "导出 RikkaHub 备份",
+            suggestedName = "rikkahub-desktop-backup.json",
+            requiredExtension = "json",
+            onDismiss = { backupExportRequested = false },
+            onSave = { destination ->
+                backupExportRequested = false
+                runCatching { store.exportData(destination.toPath(), data) }.onFailure { error ->
+                    generationErrors[data.selectedConversationId] = "导出失败：${error.message ?: "未知错误"}"
+                }
+            }
+        )
+    }
+    pendingAgentApproval?.let { pending ->
+        DesktopAgentApprovalDialog(
+            request = pending.request,
+            onApprove = { remember -> pending.answer.complete(DesktopAgentApprovalDecision(true, remember)) },
+            onDeny = { pending.answer.complete(DesktopAgentApprovalDecision(false, false)) }
+        )
+    }
+    }
+}
+
+private data class PendingDesktopAgentApproval(
+    val call: DesktopToolCall,
+    val request: DesktopAgentApprovalRequest,
+    val answer: CompletableDeferred<DesktopAgentApprovalDecision>
+)
+
+private data class DesktopAgentApprovalDecision(val approved: Boolean, val remember: Boolean)
+
+@Composable
+private fun DesktopAgentApprovalDialog(
+    request: DesktopAgentApprovalRequest,
+    onApprove: (Boolean) -> Unit,
+    onDeny: () -> Unit
+) {
+    var rememberApproval by remember(request) { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDeny,
+        title = { Text(request.title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Agent 请求此操作，是否允许？")
+                Text(request.detail, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                Text(
+                    when (request.kind) {
+                        DesktopAgentApprovalKind.SHELL -> when (request.backend) {
+                            DesktopAgentBackend.DOCKER -> "将在受限 Docker 容器中执行；容器仅挂载选定工作区。"
+                            DesktopAgentBackend.LOCAL -> "本机 Shell 以当前用户权限运行；请确认命令及其影响。"
+                            null -> "请确认命令及其影响。"
+                        }
+                        DesktopAgentApprovalKind.NETWORK -> "此命令会临时使用宿主网络；完成后恢复到无外网的隔离容器。"
+                        DesktopAgentApprovalKind.IMAGE_PULL -> "将从镜像仓库下载内容到本机 Docker 缓存。"
+                        DesktopAgentApprovalKind.SKILL -> "Skill 指令可能影响后续 Agent 行为。"
+                        DesktopAgentApprovalKind.WRITE -> "文件修改限制在已选定的工作区目录内。"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp
+                )
+                if (request.canRemember) {
+                    FilterChip(
+                        selected = rememberApproval,
+                        onClick = { rememberApproval = !rememberApproval },
+                        label = { Text("本对话内记住此类操作") }
+                    )
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onApprove(rememberApproval) }) { Text("允许") } },
+        dismissButton = { TextButton(onClick = onDeny) { Text("拒绝") } }
+    )
 }
 
 @Composable
@@ -1481,6 +1574,73 @@ private fun DesktopAttachmentPickerDialog(onDismiss: () -> Unit, onSelect: (List
             Button(onClick = { onSelect(selectedPaths.map(::File)) }, enabled = selectedPaths.isNotEmpty()) {
                 Text("添加（${selectedPaths.size}）")
             }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
+}
+
+@Composable
+private fun DesktopSaveFileDialog(
+    title: String,
+    suggestedName: String,
+    requiredExtension: String,
+    onDismiss: () -> Unit,
+    onSave: (File) -> Unit
+) {
+    var directory by remember { mutableStateOf(File(System.getProperty("user.home"))) }
+    var fileName by remember(suggestedName) { mutableStateOf(suggestedName) }
+    val entries = remember(directory) {
+        directory.listFiles().orEmpty()
+            .filter { it.isDirectory || it.isFile }
+            .sortedWith(compareByDescending<File> { it.isDirectory }.thenBy { it.name.lowercase() })
+    }
+    val normalizedName = fileName.trim().let { name ->
+        if (File(name).extension.equals(requiredExtension, ignoreCase = true)) name else "$name.$requiredExtension"
+    }
+    val validName = fileName.trim().isNotBlank() && File(normalizedName).name == normalizedName
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { directory.parentFile?.let { directory = it } },
+                        enabled = directory.parentFile != null
+                    ) { Icon(Lucide.ChevronLeft, "上级目录") }
+                    Text(
+                        directory.path,
+                        Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontSize = 12.sp
+                    )
+                }
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 280.dp)) {
+                    items(entries, key = { it.absolutePath }) { entry ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                if (entry.isDirectory) directory = entry else fileName = entry.name
+                            }.padding(horizontal = 8.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(if (entry.isDirectory) Lucide.ChevronRight else Lucide.Paperclip, null, Modifier.size(17.dp))
+                            Text(entry.name, Modifier.padding(start = 9.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = fileName,
+                    onValueChange = { fileName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("文件名") },
+                    isError = fileName.isNotBlank() && !validName,
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(File(directory, normalizedName)) }, enabled = validName) { Text("保存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )
@@ -1834,6 +1994,7 @@ private fun ConversationRow(
             }
         }
     }
+
 }
 
 @Composable
@@ -2503,7 +2664,7 @@ private fun MessageBlock(
                     reasoning = message.reasoning,
                     reasoningStartedAt = message.reasoningStartedAt,
                     reasoningDurationMillis = message.reasoningDurationMillis,
-                    generating = generating && message.content.isBlank(),
+                    generating = generating && message.content.isBlank() && message.reasoningDurationMillis == null,
                     autoCollapse = preferences.autoCollapseReasoning,
                     markdownOptions = markdownOptions
                 )
@@ -2941,7 +3102,7 @@ private fun ReasoningBlock(
         expanded = generating || !autoCollapse
     }
     LaunchedEffect(generating, reasoningStartedAt, reasoningDurationMillis) {
-        if (generating && reasoningStartedAt != null) {
+        if (generating && reasoningStartedAt != null && reasoningDurationMillis == null) {
             while (true) {
                 elapsedMillis = (System.currentTimeMillis() - reasoningStartedAt).coerceAtLeast(0)
                 delay(100)

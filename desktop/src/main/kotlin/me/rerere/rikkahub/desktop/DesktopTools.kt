@@ -35,7 +35,9 @@ internal suspend fun executeDesktopToolCalls(
     calls: List<DesktopToolCall>,
     memoryToolHandler: DesktopMemoryToolHandler? = null,
     mcpClient: DesktopMcpClient = DesktopMcpClient(),
-    askUserHandler: (suspend (DesktopToolCall) -> String)? = null
+    askUserHandler: (suspend (DesktopToolCall) -> String)? = null,
+    agentRuntime: DesktopAgentRuntime = DesktopAgentRuntime(),
+    approvalHandler: (suspend (DesktopToolCall, DesktopAgentApprovalRequest) -> Boolean)? = null
 ): List<ChatMessage> = calls.map { call ->
     val output = when (call.name) {
         DesktopWebSearchToolName -> runCatching {
@@ -61,6 +63,17 @@ internal suspend fun executeDesktopToolCalls(
             check(config.memoryEnabled && memoryToolHandler != null) { "memory_tool is not enabled for this assistant" }
             executeMemoryToolCall(call.arguments, memoryToolHandler)
         }.getOrElse { "Memory update failed: ${it.message ?: "unknown error"}" }
+        DesktopAgentListFilesToolName,
+        DesktopAgentSearchFilesToolName,
+        DesktopAgentReadFileToolName,
+        DesktopAgentWriteFileToolName,
+        DesktopAgentEditFileToolName,
+        DesktopAgentShellToolName,
+        DesktopUseSkillToolName -> runCatching {
+            val agent = requireNotNull(config.agent) { "agent is not enabled for this assistant" }
+            val approve = requireNotNull(approvalHandler) { "agent approval handler is unavailable" }
+            agentRuntime.execute(agent, call) { request -> approve(call, request) }
+        }.getOrElse { "Agent tool failed: ${it.message ?: "unknown error"}" }
         else -> runCatching {
             val target = config.mcpServers.asSequence()
                 .flatMap { server -> server.tools.asSequence().map { tool -> server to tool } }

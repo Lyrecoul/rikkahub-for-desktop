@@ -738,6 +738,83 @@ internal fun DesktopSettingsPane(
                                     }
                                 )
                             }
+                            OutlinedTextField(
+                                value = draftAssistant.maxToolRounds.toString(),
+                                onValueChange = { value ->
+                                    value.toIntOrNull()?.takeIf { it >= 0 }?.let { limit ->
+                                        draftAssistant = draftAssistant.copy(maxToolRounds = limit)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("每次回复的工具调用轮数上限") },
+                                supportingText = { Text("0 表示不限制；默认值为 8") },
+                                singleLine = true
+                            )
+                            PreferenceSwitch(
+                                "Agent 工作区",
+                                "允许模型在选定目录内读写文件、执行命令并加载已启用的 Skills",
+                                draftAssistant.agentWorkspace != null
+                            ) { enabled ->
+                                draftAssistant = draftAssistant.copy(
+                                    agentWorkspace = if (enabled) DesktopAgentWorkspace() else null
+                                )
+                            }
+                            draftAssistant.agentWorkspace?.let { workspace ->
+                                OutlinedTextField(
+                                    value = workspace.rootPath,
+                                    onValueChange = { root ->
+                                        draftAssistant = draftAssistant.copy(agentWorkspace = workspace.copy(rootPath = root.trim()))
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("工作区目录") },
+                                    supportingText = { Text("仅允许 Agent 文件工具访问此目录；本地 shell 每次仍会要求确认") },
+                                    singleLine = true
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(
+                                        selected = workspace.backend == DesktopAgentBackend.DOCKER,
+                                        onClick = {
+                                            draftAssistant = draftAssistant.copy(
+                                                agentWorkspace = workspace.copy(backend = DesktopAgentBackend.DOCKER)
+                                            )
+                                        },
+                                        label = { Text("Docker 容器") }
+                                    )
+                                    FilterChip(
+                                        selected = workspace.backend == DesktopAgentBackend.LOCAL,
+                                        onClick = {
+                                            draftAssistant = draftAssistant.copy(
+                                                agentWorkspace = workspace.copy(backend = DesktopAgentBackend.LOCAL)
+                                            )
+                                        },
+                                        label = { Text("本机 Shell") }
+                                    )
+                                }
+                                if (workspace.backend == DesktopAgentBackend.DOCKER) {
+                                    OutlinedTextField(
+                                        value = workspace.dockerImage,
+                                        onValueChange = { image ->
+                                            draftAssistant = draftAssistant.copy(agentWorkspace = workspace.copy(dockerImage = image.trim()))
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        label = { Text("Docker 镜像") },
+                                        supportingText = { Text("默认断网、无特权、只挂载工作区；首次拉取需批准") },
+                                        singleLine = true
+                                    )
+                                }
+                                OutlinedTextField(
+                                    value = draftAssistant.enabledSkillNames.joinToString(", "),
+                                    onValueChange = { names ->
+                                        draftAssistant = draftAssistant.copy(
+                                            enabledSkillNames = names.split(',').map(String::trim).filter(String::isNotBlank).toSet()
+                                        )
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("已启用 Skills") },
+                                    supportingText = { Text("逗号分隔；目录位于 ~/.config/rikkahub/skills/<名称>/SKILL.md") },
+                                    singleLine = true
+                                )
+                            }
                             PreferenceSwitch(
                                 "流式输出",
                                 "实时显示回复内容，而不是等待完整回复",

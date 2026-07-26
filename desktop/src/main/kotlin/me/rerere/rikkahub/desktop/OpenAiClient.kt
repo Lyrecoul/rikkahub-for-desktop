@@ -367,14 +367,18 @@ class OpenAiClient(
         calls: List<DesktopToolCall>,
         memoryToolHandler: DesktopMemoryToolHandler? = null,
         mcpClient: DesktopMcpClient = DesktopMcpClient(),
-        askUserHandler: (suspend (DesktopToolCall) -> String)? = null
+        askUserHandler: (suspend (DesktopToolCall) -> String)? = null,
+        agentRuntime: DesktopAgentRuntime = DesktopAgentRuntime(),
+        approvalHandler: (suspend (DesktopToolCall, DesktopAgentApprovalRequest) -> Boolean)? = null
     ): List<ChatMessage> = executeDesktopToolCalls(
         httpClient,
         config,
         calls,
         memoryToolHandler,
         mcpClient,
-        askUserHandler
+        askUserHandler,
+        agentRuntime,
+        approvalHandler
     )
 
     internal suspend fun testWebSearch(settings: DesktopWebSearchSettings, query: String): ChatMessage =
@@ -477,6 +481,7 @@ private fun buildDesktopToolDefinitions(config: DesktopConfig) = buildJsonArray 
             })
         }
     }
+    agentToolDefinitions(config.agent).forEach(::add)
 }
 
 private suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { continuation ->
