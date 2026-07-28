@@ -3,8 +3,6 @@ package me.rerere.rikkahub.desktop
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.layout.Arrangement
@@ -58,12 +56,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.ArrowLeft
@@ -88,14 +91,20 @@ import com.composables.icons.lucide.ServerCog
 import com.composables.icons.lucide.Trash2
 import com.composables.icons.lucide.Upload
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import kotlinx.serialization.json.Json
 import kotlin.math.roundToInt
 
-internal enum class DesktopSettingsSection {
-    GENERAL,
-    DATA,
-    ASSISTANTS,
-    PROVIDERS
+internal enum class DesktopSettingsSection(
+    val label: String,
+    val icon: ImageVector
+) {
+    GENERAL("通用设置", Lucide.Palette),
+    MESSAGE_DISPLAY("消息显示", Lucide.MessageSquareText),
+    INTERACTION("交互", Lucide.Keyboard),
+    DATA("数据、备份与联网搜索", Lucide.Save),
+    ASSISTANTS("助手", Lucide.Bot),
+    PROVIDERS("模型与服务", Lucide.ServerCog)
 }
 
 @Composable
@@ -181,9 +190,10 @@ internal fun DesktopSettingsPane(
     }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
-    val sectionBringIntoViewRequesters = remember {
-        DesktopSettingsSection.entries.associateWith { BringIntoViewRequester() }
-    }
+    val sectionTopPadding = with(LocalDensity.current) { 22.dp.toPx() }
+    val sectionCoordinates = remember { mutableMapOf<DesktopSettingsSection, LayoutCoordinates>() }
+    var scrollViewportCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var sectionAnchorsReady by remember { mutableStateOf(false) }
     var scrollViewportHeight by remember { mutableIntStateOf(0) }
     val settingsScrollbarAdapter = remember(scrollState, scrollViewportHeight) {
         object : ScrollbarAdapter {
@@ -197,10 +207,22 @@ internal fun DesktopSettingsPane(
         }
     }
     var activeSection by remember { mutableStateOf(initialSection) }
+    var sectionNavigationJob by remember { mutableStateOf<Job?>(null) }
 
-    LaunchedEffect(initialSection) {
+    suspend fun scrollToSection(section: DesktopSettingsSection) {
+        val sectionCoordinates = sectionCoordinates[section] ?: return
+        val viewportCoordinates = scrollViewportCoordinates ?: return
+        val target = scrollState.value + sectionCoordinates.positionInRoot().y -
+            viewportCoordinates.positionInRoot().y - sectionTopPadding
+        scrollState.animateScrollTo(target.roundToInt().coerceIn(0, scrollState.maxValue))
+    }
+
+    LaunchedEffect(initialSection, scrollViewportCoordinates, sectionAnchorsReady) {
         activeSection = initialSection
-        sectionBringIntoViewRequesters.getValue(initialSection).bringIntoView()
+        sectionNavigationJob?.cancel()
+        sectionNavigationJob = launch {
+            scrollToSection(initialSection)
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -229,7 +251,10 @@ internal fun DesktopSettingsPane(
                     activeSection = activeSection,
                     onSectionClick = { section ->
                         activeSection = section
-                        scope.launch { sectionBringIntoViewRequesters.getValue(section).bringIntoView() }
+                        sectionNavigationJob?.cancel()
+                        sectionNavigationJob = scope.launch {
+                            scrollToSection(section)
+                        }
                     }
                 )
                 Box(
@@ -240,7 +265,9 @@ internal fun DesktopSettingsPane(
             }
 
             Box(
-                Modifier.weight(1f).fillMaxHeight().onSizeChanged { scrollViewportHeight = it.height },
+                Modifier.weight(1f).fillMaxHeight()
+                    .onSizeChanged { scrollViewportHeight = it.height }
+                    .onGloballyPositioned { scrollViewportCoordinates = it },
                 contentAlignment = Alignment.TopCenter
             ) {
                 Column(
@@ -249,7 +276,12 @@ internal fun DesktopSettingsPane(
                         .padding(start = 24.dp, end = 24.dp, top = 22.dp, bottom = 36.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                Box(Modifier.bringIntoViewRequester(sectionBringIntoViewRequesters.getValue(DesktopSettingsSection.GENERAL))) {
+                Box(
+                    Modifier.onGloballyPositioned { coordinates ->
+                        sectionCoordinates[DesktopSettingsSection.GENERAL] = coordinates
+                        sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
+                    }
+                ) {
                     SettingsSection("通用设置", Lucide.Palette) {
                         SettingsRow(
                             title = "颜色模式",
@@ -316,13 +348,33 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                Box {
+                Box(
+                    Modifier.onGloballyPositioned { coordinates ->
+                        sectionCoordinates[DesktopSettingsSection.MESSAGE_DISPLAY] = coordinates
+                        sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
+                    }
+                ) {
                     SettingsSection("消息显示", Lucide.MessageSquareText) {
                         PreferenceSwitch(
                             "显示用户头像",
                             "在用户消息旁显示头像",
                             preferences.showUserAvatar
                         ) { onPreferencesChange(preferences.copy(showUserAvatar = it)) }
+                        SettingsDivider()
+                        SettingsRow(
+                            title = "用户昵称",
+                            description = "显示在用户消息旁，留空时使用“你”"
+                        ) {
+                            OutlinedTextField(
+                                value = preferences.userNickname,
+                                onValueChange = { nickname ->
+                                    onPreferencesChange(preferences.copy(userNickname = nickname))
+                                },
+                                modifier = Modifier.widthIn(min = 180.dp, max = 240.dp),
+                                placeholder = { Text("你") },
+                                singleLine = true
+                            )
+                        }
                         SettingsDivider()
                         PreferenceSwitch(
                             "显示模型图标",
@@ -376,7 +428,12 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                Box {
+                Box(
+                    Modifier.onGloballyPositioned { coordinates ->
+                        sectionCoordinates[DesktopSettingsSection.INTERACTION] = coordinates
+                        sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
+                    }
+                ) {
                     SettingsSection("交互", Lucide.Keyboard) {
                         PreferenceSwitch(
                             "按 Enter 发送",
@@ -406,7 +463,12 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                Box(Modifier.bringIntoViewRequester(sectionBringIntoViewRequesters.getValue(DesktopSettingsSection.DATA))) {
+                Box(
+                    Modifier.onGloballyPositioned { coordinates ->
+                        sectionCoordinates[DesktopSettingsSection.DATA] = coordinates
+                        sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
+                    }
+                ) {
                     SettingsSection("数据、备份与联网搜索", Lucide.Save) {
                         SettingsRow(
                             title = "导出备份",
@@ -536,7 +598,12 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                Box(Modifier.bringIntoViewRequester(sectionBringIntoViewRequesters.getValue(DesktopSettingsSection.ASSISTANTS))) {
+                Box(
+                    Modifier.onGloballyPositioned { coordinates ->
+                        sectionCoordinates[DesktopSettingsSection.ASSISTANTS] = coordinates
+                        sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
+                    }
+                ) {
                     SettingsSection("助手", Lucide.Bot) {
                         FlowRow(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -1532,7 +1599,12 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                Box(Modifier.bringIntoViewRequester(sectionBringIntoViewRequesters.getValue(DesktopSettingsSection.PROVIDERS))) {
+                Box(
+                    Modifier.onGloballyPositioned { coordinates ->
+                        sectionCoordinates[DesktopSettingsSection.PROVIDERS] = coordinates
+                        sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
+                    }
+                ) {
                     SettingsSection("模型与服务", Lucide.ServerCog) {
                         FlowRow(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -2203,13 +2275,6 @@ private fun DesktopSettingsNavigation(
     activeSection: DesktopSettingsSection,
     onSectionClick: (DesktopSettingsSection) -> Unit
 ) {
-    val sections = listOf(
-        Triple(DesktopSettingsSection.GENERAL, "通用设置", Lucide.Palette),
-        Triple(DesktopSettingsSection.ASSISTANTS, "助手", Lucide.Bot),
-        Triple(DesktopSettingsSection.PROVIDERS, "模型与服务", Lucide.ServerCog),
-        Triple(DesktopSettingsSection.DATA, "数据与备份", Lucide.Save)
-    )
-
     Column(
         Modifier.widthIn(min = 196.dp, max = 196.dp).fillMaxHeight().padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -2221,7 +2286,7 @@ private fun DesktopSettingsNavigation(
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium
         )
-        sections.forEach { (section, label, icon) ->
+        DesktopSettingsSection.entries.forEach { section ->
             val selected = activeSection == section
             Surface(
                 modifier = Modifier.fillMaxWidth().clickable { onSectionClick(section) },
@@ -2237,7 +2302,7 @@ private fun DesktopSettingsNavigation(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        icon,
+                        section.icon,
                         null,
                         Modifier.size(18.dp),
                         tint = if (selected) {
@@ -2247,7 +2312,7 @@ private fun DesktopSettingsNavigation(
                         }
                     )
                     Text(
-                        label,
+                        section.label,
                         Modifier.padding(start = 10.dp),
                         color = if (selected) {
                             MaterialTheme.colorScheme.onSecondaryContainer
@@ -2355,19 +2420,22 @@ private fun DesktopMcpSettings(
                     singleLine = true,
                     isError = server.name.isNotBlank() && !server.name.matches(Regex("[A-Za-z0-9]+"))
                 )
-                SingleChoiceSegmentedButtonRow {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     DesktopMcpTransport.entries.forEachIndexed { index, transport ->
                         SegmentedButton(
                             selected = server.transport == transport,
                             onClick = { onServersChange(servers.replaceMcpServer(server.id) { it.copy(transport = transport) }) },
+                            modifier = Modifier.weight(1f),
                             shape = SegmentedButtonDefaults.itemShape(index, DesktopMcpTransport.entries.size),
                             label = {
                                 Text(
                                     when (transport) {
-                                        DesktopMcpTransport.STREAMABLE_HTTP -> "Streamable HTTP"
+                                        DesktopMcpTransport.STREAMABLE_HTTP -> "Stream HTTP"
                                         DesktopMcpTransport.SSE -> "SSE"
                                         DesktopMcpTransport.STDIO -> "Stdio"
-                                    }
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip
                                 )
                             }
                         )

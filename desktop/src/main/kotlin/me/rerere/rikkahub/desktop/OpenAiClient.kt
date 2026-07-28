@@ -37,8 +37,10 @@ import kotlin.coroutines.resumeWithException
 internal data class StreamDelta(
     val content: String = "",
     val reasoning: String = "",
+    val modelId: String? = null,
     val promptTokens: Int? = null,
     val completionTokens: Int? = null,
+    val cachedTokens: Int? = null,
     val citations: List<DesktopCitation> = emptyList(),
     val toolCallDeltas: List<DesktopToolCallDelta> = emptyList()
 )
@@ -86,6 +88,7 @@ class OpenAiClient(
                 parseDelta(data)?.takeUnless {
                     it.content.isEmpty() && it.reasoning.isEmpty() &&
                         it.promptTokens == null && it.completionTokens == null
+                        && it.cachedTokens == null && it.modelId == null
                         && it.citations.isEmpty() && it.toolCallDeltas.isEmpty()
                 }?.let { emit(it) }
             }
@@ -236,8 +239,10 @@ class OpenAiClient(
                 delta?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
                     ?: delta?.get("reasoning")?.jsonPrimitive?.contentOrNull
                 ).orEmpty(),
+            modelId = event["model"]?.jsonPrimitive?.contentOrNull,
             promptTokens = usage?.get("prompt_tokens")?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
             completionTokens = usage?.get("completion_tokens")?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
+            cachedTokens = usage?.cachedTokens(),
             citations = citations,
             toolCallDeltas = toolCalls
         )
@@ -272,8 +277,10 @@ class OpenAiClient(
                 message["reasoning_content"]?.jsonPrimitive?.contentOrNull
                     ?: message["reasoning"]?.jsonPrimitive?.contentOrNull
                 ).orEmpty(),
+            modelId = event["model"]?.jsonPrimitive?.contentOrNull,
             promptTokens = usage?.get("prompt_tokens")?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
             completionTokens = usage?.get("completion_tokens")?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
+            cachedTokens = usage?.cachedTokens(),
             citations = citations,
             toolCallDeltas = toolCalls.mapIndexed { index, call ->
                 DesktopToolCallDelta(index, call.id, call.name, call.arguments)
@@ -288,6 +295,15 @@ class OpenAiClient(
         is JsonObject -> listOf(this["text"], this["content"], this["output_text"])
             .joinToString(separator = "") { part -> part.textContent() }
         null -> ""
+    }
+
+    private fun JsonObject.cachedTokens(): Int? = tokenCount("cached_tokens", "cache_read_tokens")
+        ?: listOf("prompt_tokens_details", "input_tokens_details").firstNotNullOfOrNull { field ->
+            (this[field] as? JsonObject)?.tokenCount("cached_tokens", "cache_read_tokens")
+        }
+
+    private fun JsonObject.tokenCount(vararg keys: String): Int? = keys.firstNotNullOfOrNull { key ->
+        this[key]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
     }
 
     internal fun parseError(data: String): String? = runCatching {

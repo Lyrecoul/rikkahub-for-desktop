@@ -46,6 +46,31 @@ class OpenAiClientTest {
     }
 
     @Test
+    fun parsesResponseModelAndCachedTokens() {
+        val payload = """
+            {
+              "model": "gpt-4.1-mini-2026-07-28",
+              "choices": [],
+              "usage": {
+                "prompt_tokens": 120,
+                "completion_tokens": 45,
+                "prompt_tokens_details": {"cached_tokens": 96}
+              }
+            }
+        """.trimIndent()
+
+        assertEquals(
+            StreamDelta(
+                modelId = "gpt-4.1-mini-2026-07-28",
+                promptTokens = 120,
+                completionTokens = 45,
+                cachedTokens = 96
+            ),
+            client.parseDelta(payload)
+        )
+    }
+
+    @Test
     fun parsesStreamingUrlCitations() {
         val payload = """
             {

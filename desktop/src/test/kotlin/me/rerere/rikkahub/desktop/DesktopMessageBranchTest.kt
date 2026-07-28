@@ -392,7 +392,8 @@ class DesktopMessageBranchTest {
 
         val fork = source.forkAtMessage(1)
 
-        assertEquals("Project（分支）", fork.title)
+        assertEquals("Project", fork.title)
+        assertEquals(source.id, fork.parentConversationId)
         assertEquals(source.assistantId, fork.assistantId)
         assertEquals(source.folderId, fork.folderId)
         assertEquals(source.systemPrompt, fork.systemPrompt)
@@ -460,7 +461,7 @@ class DesktopMessageBranchTest {
         )
 
         assertEquals(
-            DesktopConversationStats(2, 1, 1, 1, "questionanswerthinking".length, 12, 8),
+            DesktopConversationStats(2, 1, 1, 1, "questionanswerthinking".length, 12, 8, 0),
             conversation.stats()
         )
     }

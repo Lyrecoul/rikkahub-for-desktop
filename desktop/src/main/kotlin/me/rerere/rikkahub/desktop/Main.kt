@@ -3,6 +3,7 @@ package me.rerere.rikkahub.desktop
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -11,6 +12,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -37,6 +39,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -119,7 +122,9 @@ import com.composables.icons.lucide.ArrowUpToLine
 import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronLeft
 import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Copy
+import com.composables.icons.lucide.Database
 import com.composables.icons.lucide.Download
 import com.composables.icons.lucide.Globe
 import com.composables.icons.lucide.GitFork
@@ -144,6 +149,8 @@ import com.composables.icons.lucide.Sparkles
 import com.composables.icons.lucide.Square
 import com.composables.icons.lucide.Star
 import com.composables.icons.lucide.Trash2
+import com.composables.icons.lucide.Upload
+import com.composables.icons.lucide.UserRound
 import com.composables.icons.lucide.Wrench
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeEffect
@@ -168,8 +175,10 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 import java.util.Base64
 import java.io.File
@@ -611,7 +620,12 @@ private fun RikkaHubDesktop(
         }
         generationErrors.remove(conversationId)
         updateConversation(conversationId) { conversation ->
-            conversation.prepareGeneration(requestMessages, alternativeTarget, title)
+            conversation.prepareGeneration(
+                requestMessages = requestMessages,
+                alternativeTarget = alternativeTarget,
+                title = title,
+                modelId = generationConfig.model
+            )
         }
 
         val job = scope.launch(start = CoroutineStart.LAZY) {
@@ -637,8 +651,10 @@ private fun RikkaHubDesktop(
                                     } else {
                                         last.reasoningDurationMillis
                                     },
+                                    modelId = delta.modelId ?: last.modelId,
                                     promptTokens = delta.promptTokens ?: last.promptTokens,
                                     completionTokens = delta.completionTokens ?: last.completionTokens,
+                                    cachedTokens = delta.cachedTokens ?: last.cachedTokens,
                                     citations = (last.citations + delta.citations).distinctBy { it.url },
                                     toolCalls = last.toolCalls.merge(delta.toolCallDeltas)
                                 )
@@ -723,7 +739,11 @@ private fun RikkaHubDesktop(
                     )
                     updateConversation(conversationId) { conversation ->
                         conversation.copy(
-                            messages = conversation.messages + ChatMessage(role = "assistant", content = ""),
+                            messages = conversation.messages + ChatMessage(
+                                role = "assistant",
+                                content = "",
+                                modelId = generationConfig.model
+                            ),
                             updatedAt = System.currentTimeMillis()
                         )
                     }
@@ -962,6 +982,9 @@ private fun RikkaHubDesktop(
                     onPin = { id ->
                         updateConversation(id) { it.copy(isPinned = !it.isPinned, updatedAt = System.currentTimeMillis()) }
                     },
+                    onMoveToFolder = { conversationId, folderId ->
+                        update(data.moveConversationToFolder(conversationId, folderId))
+                    },
                     onRenameFolder = { folderId, name ->
                         update(data.renameFolder(folderId, name))
                     },
@@ -970,6 +993,9 @@ private fun RikkaHubDesktop(
                     },
                     onCreateFolder = { assistantId ->
                         folderCreateTarget = FolderCreateTarget(assistantId = assistantId)
+                    },
+                    onConversationSortChange = { sort ->
+                        update(data.copy(preferences = data.preferences.copy(conversationSort = sort)))
                     },
                     onSettings = {
                         settingsSection = DesktopSettingsSection.GENERAL
@@ -1498,6 +1524,7 @@ private fun ConversationStatsDialog(conversation: DesktopConversation, onDismiss
                 ConversationStatRow("文本与思维链字符", stats.characterCount.toString())
                 ConversationStatRow("输入 Token", stats.promptTokens.toString())
                 ConversationStatRow("输出 Token", stats.completionTokens.toString())
+                ConversationStatRow("缓存 Token", stats.cachedTokens.toString())
                 ConversationStatRow("创建时间", MessageTimeFormatter.format(Instant.ofEpochMilli(conversation.createdAt)))
                 ConversationStatRow("更新时间", MessageTimeFormatter.format(Instant.ofEpochMilli(conversation.updatedAt)))
             }
@@ -1675,12 +1702,15 @@ private fun ConversationSidebar(
     onNew: () -> Unit,
     onDelete: (String) -> Unit,
     onPin: (String) -> Unit,
+    onMoveToFolder: (String, String?) -> Unit,
     onRenameFolder: (String, String) -> Unit,
     onDeleteFolder: (String) -> Unit,
     onCreateFolder: (String) -> Unit,
+    onConversationSortChange: (DesktopConversationSort) -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val appIcon = rememberDesktopResourcePainter("icon.png")
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var assistantFilterId by remember { mutableStateOf<String?>(null) }
@@ -1688,14 +1718,19 @@ private fun ConversationSidebar(
     var tagFilter by remember { mutableStateOf<String?>(null) }
     var tagFilterOpen by remember { mutableStateOf(false) }
     var folderFilterId by remember { mutableStateOf<String?>(null) }
-    var folderFilterOpen by remember { mutableStateOf(false) }
-    var folderManagerOpen by remember { mutableStateOf(false) }
     var renameFolder by remember { mutableStateOf<DesktopFolder?>(null) }
     var showFavorites by remember { mutableStateOf(false) }
+    var sortMenuOpen by remember { mutableStateOf(false) }
+    val availableFolders = data.folders.filter { folder ->
+        assistantFilterId == null || folder.assistantId == assistantFilterId
+    }
     val conversations = data.filteredConversations(query, assistantFilterId).filter {
         (folderFilterId == null || it.folderId == folderFilterId) &&
             (tagFilter == null || data.assistantFor(it).tags.any { tag -> tag.equals(tagFilter, ignoreCase = true) })
+    }.let { filtered ->
+        if (folderFilterId == null) filtered.sortedByDescending { it.updatedAt } else filtered
     }
+    val conversationRows = conversations.asConversationTree()
     val favorites = data.favoriteMessages(assistantFilterId).filter { (conversation, _) ->
         tagFilter == null || data.assistantFor(conversation).tags.any { tag ->
             tag.equals(tagFilter, ignoreCase = true)
@@ -1708,8 +1743,12 @@ private fun ConversationSidebar(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                    Icon(Lucide.Sparkles, null, Modifier.padding(9.dp).size(19.dp), tint = MaterialTheme.colorScheme.primary)
+                if (appIcon != null) {
+                    Image(appIcon, "RikkaHub", Modifier.size(38.dp))
+                } else {
+                    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                        Icon(Lucide.Sparkles, null, Modifier.padding(9.dp).size(19.dp), tint = MaterialTheme.colorScheme.primary)
+                    }
                 }
                 Column(Modifier.padding(start = 10.dp)) {
                     Text("RikkaHub", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
@@ -1794,62 +1833,61 @@ private fun ConversationSidebar(
                     }
                 }
             }
-            Box {
-                val availableFolders = data.folders.filter { folder ->
-                    assistantFilterId == null || folder.assistantId == assistantFilterId
-                }
-                val folder = availableFolders.firstOrNull { it.id == folderFilterId }
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                        .clickable { folderFilterOpen = true }
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Lucide.Menu, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        folder?.name ?: "全部文件夹",
-                        Modifier.padding(start = 9.dp).weight(1f),
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Icon(Lucide.ChevronDown, null, Modifier.size(15.dp))
-                }
-                DropdownMenu(folderFilterOpen, onDismissRequest = { folderFilterOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("全部文件夹") },
-                        onClick = {
-                            folderFilterId = null
-                            folderFilterOpen = false
-                        }
-                    )
-                    availableFolders.forEach { availableFolder ->
-                        DropdownMenuItem(
-                            text = { Text(availableFolder.name) },
-                            onClick = {
-                                folderFilterId = availableFolder.id
-                                folderFilterOpen = false
-                            }
-                        )
+            if (!showFavorites) {
+                FolderCapsuleBar(
+                    folders = availableFolders,
+                    selectedFolderId = folderFilterId,
+                    onSelect = { folderFilterId = it },
+                    onCreate = { onCreateFolder(assistantFilterId ?: data.activeAssistant().id) },
+                    onRename = { renameFolder = it },
+                    onDelete = { folder ->
+                        onDeleteFolder(folder.id)
+                        if (folderFilterId == folder.id) folderFilterId = null
                     }
-                    HorizontalDivider()
-                    DropdownMenuItem(
-                        text = { Text("管理文件夹") },
-                        leadingIcon = { Icon(Lucide.Settings, null, Modifier.size(17.dp)) },
-                        onClick = {
-                            folderFilterOpen = false
-                            folderManagerOpen = true
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(start = 10.dp, top = 18.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (showFavorites) "收藏消息" else "对话",
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (!showFavorites && folderFilterId != null) {
+                    Box {
+                        TextButton(onClick = { sortMenuOpen = true }) {
+                            Text(
+                                if (data.preferences.conversationSort == DesktopConversationSort.RECENT) {
+                                    "最近"
+                                } else {
+                                    "最常用"
+                                },
+                                fontSize = 12.sp
+                            )
+                            Icon(Lucide.ChevronDown, null, Modifier.padding(start = 3.dp).size(14.dp))
                         }
-                    )
+                        DropdownMenu(sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
+                            DesktopConversationSort.entries.forEach { sort ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (sort == DesktopConversationSort.RECENT) "按最近时间" else "按使用频率"
+                                        )
+                                    },
+                                    onClick = {
+                                        onConversationSortChange(sort)
+                                        sortMenuOpen = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
-            Text(
-                if (showFavorites) "收藏消息" else "对话",
-                modifier = Modifier.padding(start = 10.dp, top = 22.dp, bottom = 8.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold
-            )
             LazyColumn(verticalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.weight(1f)) {
                 if (showFavorites) {
                     items(favorites, key = { (conversation, message) -> "${conversation.id}:${message.id}" }) {
@@ -1871,15 +1909,31 @@ private fun ConversationSidebar(
                         }
                     }
                 } else {
-                    items(conversations, key = { it.id }) { conversation ->
+                    var previousTimelineLabel: String? = null
+                    conversationRows.forEach { item ->
+                        val conversation = item.conversation
+                        if (folderFilterId == null && item.branchDepth == 0) {
+                            val timelineLabel = conversationTimelineLabel(conversation.updatedAt)
+                            if (timelineLabel != previousTimelineLabel) {
+                                item(key = "timeline:$timelineLabel") {
+                                    ConversationTimelineHeader(timelineLabel)
+                                }
+                                previousTimelineLabel = timelineLabel
+                            }
+                        }
+                        item(key = conversation.id) {
                         ConversationRow(
                             conversation = conversation,
+                            branchDepth = item.branchDepth,
                             selected = !settingsSelected && conversation.id == data.selectedConversationId,
                             generating = conversation.id in generatingConversationIds,
                             onClick = { onSelect(conversation.id) },
                             onPin = { onPin(conversation.id) },
-                            onDelete = { onDelete(conversation.id) }
+                            onDelete = { onDelete(conversation.id) },
+                            folders = data.folders.filter { it.assistantId == data.assistantFor(conversation).id },
+                            onMoveToFolder = { folderId -> onMoveToFolder(conversation.id, folderId) }
                         )
+                        }
                     }
                 }
             }
@@ -1904,41 +1958,6 @@ private fun ConversationSidebar(
             }
         }
     }
-    if (folderManagerOpen) {
-        AlertDialog(
-            onDismissRequest = { folderManagerOpen = false },
-            title = { Text("管理文件夹") },
-            text = {
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
-                    items(data.folders, key = { it.id }) { folder ->
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(folder.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            IconButton(onClick = { renameFolder = folder }, modifier = Modifier.size(36.dp)) {
-                                Icon(Lucide.Pencil, "重命名文件夹", Modifier.size(17.dp))
-                            }
-                            IconButton(
-                                onClick = {
-                                    onDeleteFolder(folder.id)
-                                    if (folderFilterId == folder.id) folderFilterId = null
-                                },
-                                modifier = Modifier.size(36.dp)
-                            ) { Icon(Lucide.Trash2, "删除文件夹", Modifier.size(17.dp)) }
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { folderManagerOpen = false }) { Text("完成") } },
-            dismissButton = {
-                TextButton(onClick = {
-                    folderManagerOpen = false
-                    onCreateFolder(assistantFilterId ?: data.activeAssistant().id)
-                }) { Text("新建文件夹") }
-            }
-        )
-    }
     renameFolder?.let { folder ->
         TextEditDialog(
             title = "重命名文件夹",
@@ -1950,6 +1969,124 @@ private fun ConversationSidebar(
                 renameFolder = null
             }
         )
+    }
+}
+
+@Composable
+private fun FolderCapsuleBar(
+    folders: List<DesktopFolder>,
+    selectedFolderId: String?,
+    onSelect: (String?) -> Unit,
+    onCreate: () -> Unit,
+    onRename: (DesktopFolder) -> Unit,
+    onDelete: (DesktopFolder) -> Unit
+) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        item {
+            FolderCapsule(
+                label = "聊天",
+                selected = selectedFolderId == null,
+                onClick = { onSelect(null) }
+            )
+        }
+        items(folders, key = { it.id }) { folder ->
+            var menuOpen by remember(folder.id) { mutableStateOf(false) }
+            Box {
+                FolderCapsule(
+                    label = folder.name,
+                    selected = selectedFolderId == folder.id,
+                    icon = Lucide.Folder,
+                    onClick = { onSelect(folder.id) },
+                    onLongClick = { menuOpen = true }
+                )
+                DropdownMenu(menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("重命名") },
+                        leadingIcon = { Icon(Lucide.Pencil, null, Modifier.size(17.dp)) },
+                        onClick = {
+                            menuOpen = false
+                            onRename(folder)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("删除") },
+                        leadingIcon = { Icon(Lucide.Trash2, null, Modifier.size(17.dp)) },
+                        onClick = {
+                            menuOpen = false
+                            onDelete(folder)
+                        }
+                    )
+                }
+            }
+        }
+        item {
+            FolderCapsule(
+                label = "新建",
+                selected = false,
+                icon = Lucide.Plus,
+                onClick = onCreate
+            )
+        }
+    }
+}
+
+@Composable
+private fun FolderCapsule(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    icon: ImageVector? = null,
+    onLongClick: (() -> Unit)? = null
+) {
+    Surface(
+        shape = CircleShape,
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerHighest,
+        modifier = Modifier.clip(CircleShape).combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick ?: {}
+        )
+    ) {
+        Row(
+            Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            icon?.let { Icon(it, null, Modifier.size(14.dp)) }
+            Text(
+                label,
+                Modifier.padding(start = if (icon == null) 0.dp else 5.dp).widthIn(max = 120.dp),
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConversationTimelineHeader(label: String) {
+    Text(
+        label,
+        modifier = Modifier.fillMaxWidth().padding(start = 10.dp, top = 12.dp, bottom = 3.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold
+    )
+}
+
+private fun conversationTimelineLabel(updatedAt: Long, today: LocalDate = LocalDate.now()): String {
+    val date = Instant.ofEpochMilli(updatedAt).atZone(ZoneId.systemDefault()).toLocalDate()
+    val daysAgo = ChronoUnit.DAYS.between(date, today)
+    return when (daysAgo) {
+        0L -> "今天"
+        1L -> "昨天"
+        2L -> "前天"
+        in 3L..30L -> "$daysAgo 天前"
+        else -> "${date.monthValue} 月 ${date.dayOfMonth} 日"
     }
 }
 
@@ -1968,19 +2105,30 @@ private fun DrawerAction(icon: androidx.compose.ui.graphics.vector.ImageVector, 
 @Composable
 private fun ConversationRow(
     conversation: DesktopConversation,
+    branchDepth: Int,
     selected: Boolean,
     generating: Boolean,
     onClick: () -> Unit,
     onPin: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    folders: List<DesktopFolder>,
+    onMoveToFolder: (String?) -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val color = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(color).clickable(onClick = onClick)
-            .padding(start = 12.dp, end = 3.dp, top = 4.dp, bottom = 4.dp),
+            .padding(start = 12.dp + (16.dp * branchDepth), end = 3.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (branchDepth > 0) {
+            Icon(
+                Lucide.GitFork,
+                "对话分支",
+                Modifier.padding(end = 7.dp).size(15.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Text(conversation.title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
         if (generating) {
             CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
@@ -2002,6 +2150,26 @@ private fun ConversationRow(
                         onPin()
                     }
                 )
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("移至聊天") },
+                    leadingIcon = { Icon(Lucide.Folder, null, Modifier.size(18.dp)) },
+                    onClick = {
+                        menuOpen = false
+                        onMoveToFolder(null)
+                    }
+                )
+                folders.forEach { folder ->
+                    DropdownMenuItem(
+                        text = { Text("移至 ${folder.name}") },
+                        leadingIcon = { Icon(Lucide.Folder, null, Modifier.size(18.dp)) },
+                        onClick = {
+                            menuOpen = false
+                            onMoveToFolder(folder.id)
+                        }
+                    )
+                }
+                HorizontalDivider()
                 DropdownMenuItem(
                     text = { Text("删除") },
                     leadingIcon = { Icon(Lucide.Trash2, null, Modifier.size(18.dp)) },
@@ -2449,6 +2617,24 @@ private fun ChatPane(
                     TextButton(onClick = onDismissError) { Text("关闭") }
                 }
             }
+            DropdownMenu(folderMenuOpen, onDismissRequest = { folderMenuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("聊天") },
+                    onClick = {
+                        folderMenuOpen = false
+                        onMoveToFolder(null)
+                    }
+                )
+                folders.forEach { folder ->
+                    DropdownMenuItem(
+                        text = { Text(folder.name) },
+                        onClick = {
+                            folderMenuOpen = false
+                            onMoveToFolder(folder.id)
+                        }
+                    )
+                }
+            }
         }
         }
     }
@@ -2618,12 +2804,23 @@ private fun MessageBlock(
     onAskUserAnswer: (DesktopToolCall, String) -> Unit
 ) {
     val isUser = message.role == "user"
+    val configuredUserNickname = preferences.userNickname.trim()
+    val userNickname = configuredUserNickname.ifBlank { "你" }
     val hasVisibleExecutionSteps = executionSteps.any {
         it !is DesktopExecutionStep.Reasoning || preferences.showReasoning
     }
     val displayContent = assistant.applyRegexRules(message.content, message.role, visualOnly = true)
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
+    var copyVersion by remember(message.id) { mutableStateOf(0) }
+    var copied by remember(message.id) { mutableStateOf(false) }
+    LaunchedEffect(copyVersion) {
+        if (copyVersion > 0) {
+            copied = true
+            delay(1_000)
+            copied = false
+        }
+    }
     val markdownOptions = MarkdownRenderOptions(
         fontScale = preferences.fontScale,
         codeBlockAutoWrap = preferences.codeBlockAutoWrap,
@@ -2648,7 +2845,7 @@ private fun MessageBlock(
                     }
                     if (preferences.showModelName) {
                         Text(
-                            model,
+                            message.modelId ?: model,
                             Modifier.padding(start = if (preferences.showModelIcon) 9.dp else 0.dp),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold
@@ -2661,19 +2858,24 @@ private fun MessageBlock(
                     if (preferences.showMessageTimestamp) {
                         MessageTimestamp(message.createdAt)
                     }
-                    Text("你", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text(userNickname, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                     if (preferences.showUserAvatar) {
                         Surface(
-                            modifier = Modifier.padding(start = 8.dp),
+                            modifier = Modifier.padding(start = 8.dp).size(28.dp),
                             shape = CircleShape,
                             color = MaterialTheme.colorScheme.secondaryContainer
                         ) {
-                            Text(
-                                "Y",
-                                Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 12.sp
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                if (configuredUserNickname.isBlank()) {
+                                    Icon(Lucide.UserRound, "用户头像", Modifier.size(16.dp))
+                                } else {
+                                    Text(
+                                        userNickname.take(1),
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -2791,18 +2993,54 @@ private fun MessageBlock(
                 }
             }
         }
-        if (!generating && !isUser && (message.promptTokens != null || message.completionTokens != null)) {
-            val total = (message.promptTokens ?: 0) + (message.completionTokens ?: 0)
-            Text(
-                buildString {
-                    message.promptTokens?.let { append("输入 $it") }
-                    if (message.promptTokens != null && message.completionTokens != null) append(" · ")
-                    message.completionTokens?.let { append("输出 $it") }
-                    append(" · 共 $total tokens")
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
+        if (!generating && !isUser && (
+                message.promptTokens != null || message.completionTokens != null || message.cachedTokens != null
             )
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                message.promptTokens?.let { tokens ->
+                    Icon(
+                        Lucide.Upload,
+                        "输入 Token",
+                        Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "$tokens tokens",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp
+                    )
+                }
+                message.completionTokens?.let { tokens ->
+                    Icon(
+                        Lucide.Download,
+                        "输出 Token",
+                        Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "$tokens tokens",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp
+                    )
+                }
+                message.cachedTokens?.let { tokens ->
+                    Icon(
+                        Lucide.Database,
+                        "缓存 Token",
+                        Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "$tokens cached",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp
+                    )
+                }
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             val variants = message.availableVariants()
@@ -2825,8 +3063,11 @@ private fun MessageBlock(
                     enabled = actionsEnabled && currentVariantIndex < variants.lastIndex
                 ) { onSelectVariant(currentVariantIndex + 1) }
             }
-            MessageAction(Lucide.Copy, "复制", enabled = displayContent.isNotEmpty()) {
-                clipboardScope.launch { clipboard.setClipEntry(ClipEntry(StringSelection(displayContent))) }
+            MessageAction(if (copied) Lucide.Check else Lucide.Copy, "复制", enabled = displayContent.isNotEmpty()) {
+                clipboardScope.launch {
+                    clipboard.setClipEntry(ClipEntry(StringSelection(displayContent)))
+                    copyVersion++
+                }
             }
             MessageAction(Lucide.GitFork, "从此处分支", enabled = actionsEnabled, onClick = onFork)
             if (!isUser) {
@@ -3317,7 +3558,13 @@ private fun MessageAction(
     onClick: () -> Unit
 ) {
     IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(32.dp)) {
-        Icon(icon, description, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        AnimatedContent(
+            targetState = icon,
+            transitionSpec = { fadeIn(tween(150)) togetherWith fadeOut(tween(150)) },
+            label = "messageActionIcon"
+        ) { currentIcon ->
+            Icon(currentIcon, description, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

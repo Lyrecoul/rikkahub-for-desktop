@@ -250,12 +250,19 @@ enum class DesktopFontFamily {
 }
 
 @Serializable
+enum class DesktopConversationSort {
+    RECENT,
+    MOST_ACTIVE
+}
+
+@Serializable
 data class DesktopPreferences(
     val colorMode: DesktopColorMode = DesktopColorMode.SYSTEM,
     val themeColor: DesktopThemeColor = DesktopThemeColor.SAKURA,
     val fontFamily: DesktopFontFamily = DesktopFontFamily.SYSTEM,
     val fontScale: Float = 1.0f,
     val showUserAvatar: Boolean = true,
+    val userNickname: String = "",
     val showModelIcon: Boolean = true,
     val showModelName: Boolean = true,
     val showAssistantBubble: Boolean = false,
@@ -267,7 +274,8 @@ data class DesktopPreferences(
     val sendOnEnter: Boolean = true,
     val enableAutoScroll: Boolean = true,
     val showMessageJumper: Boolean = true,
-    val messageJumperOnLeft: Boolean = false
+    val messageJumperOnLeft: Boolean = false,
+    val conversationSort: DesktopConversationSort = DesktopConversationSort.RECENT
 )
 
 @Serializable
@@ -282,8 +290,10 @@ data class ChatMessage(
     val variants: List<DesktopMessageVariant> = emptyList(),
     val selectedVariantIndex: Int = 0,
     val attachments: List<DesktopAttachment> = emptyList(),
+    val modelId: String? = null,
     val promptTokens: Int? = null,
     val completionTokens: Int? = null,
+    val cachedTokens: Int? = null,
     val citations: List<DesktopCitation> = emptyList(),
     val toolCalls: List<DesktopToolCall> = emptyList(),
     val toolCallId: String? = null,
@@ -338,8 +348,10 @@ data class DesktopMessageVariant(
     val reasoningStartedAt: Long? = null,
     val reasoningDurationMillis: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
+    val modelId: String? = null,
     val promptTokens: Int? = null,
     val completionTokens: Int? = null,
+    val cachedTokens: Int? = null,
     val citations: List<DesktopCitation> = emptyList(),
     val toolCalls: List<DesktopToolCall> = emptyList(),
     val translation: String = "",
@@ -355,8 +367,10 @@ fun ChatMessage.availableVariants(): List<DesktopMessageVariant> = variants.ifEm
             reasoningStartedAt = reasoningStartedAt,
             reasoningDurationMillis = reasoningDurationMillis,
             createdAt = createdAt,
+            modelId = modelId,
             promptTokens = promptTokens,
             completionTokens = completionTokens,
+            cachedTokens = cachedTokens,
             citations = citations,
             toolCalls = toolCalls,
             translation = translation,
@@ -387,8 +401,10 @@ fun ChatMessage.beginAlternative(): ChatMessage = copy(
     reasoning = "",
     reasoningStartedAt = null,
     reasoningDurationMillis = null,
+    modelId = null,
     promptTokens = null,
     completionTokens = null,
+    cachedTokens = null,
     citations = emptyList(),
     toolCalls = emptyList(),
     toolCallId = null,
@@ -406,8 +422,10 @@ fun ChatMessage.completeAlternative(): ChatMessage {
         reasoningStartedAt = reasoningStartedAt,
         reasoningDurationMillis = reasoningDurationMillis,
         createdAt = createdAt,
+        modelId = modelId,
         promptTokens = promptTokens,
         completionTokens = completionTokens,
+        cachedTokens = cachedTokens,
         citations = citations,
         toolCalls = toolCalls,
         translation = translation,
@@ -434,8 +452,10 @@ fun ChatMessage.selectVariant(index: Int): ChatMessage {
         reasoningStartedAt = selected.reasoningStartedAt,
         reasoningDurationMillis = selected.reasoningDurationMillis,
         createdAt = selected.createdAt,
+        modelId = selected.modelId,
         promptTokens = selected.promptTokens,
         completionTokens = selected.completionTokens,
+        cachedTokens = selected.cachedTokens,
         citations = selected.citations,
         toolCalls = selected.toolCalls,
         translation = selected.translation,
@@ -478,6 +498,8 @@ data class DesktopConversation(
     val title: String = "新对话",
     val assistantId: String = "",
     val folderId: String? = null,
+    /** The conversation from which this one was forked, when it is a conversation branch. */
+    val parentConversationId: String? = null,
     val systemPrompt: String = "",
     val webSearchEnabled: Boolean? = null,
     val promptInjectionsEnabled: Boolean? = null,
@@ -515,7 +537,8 @@ internal data class DesktopConversationStats(
     val attachmentCount: Int,
     val characterCount: Int,
     val promptTokens: Int,
-    val completionTokens: Int
+    val completionTokens: Int,
+    val cachedTokens: Int
 )
 
 internal fun DesktopConversation.stats(): DesktopConversationStats = DesktopConversationStats(
@@ -525,7 +548,8 @@ internal fun DesktopConversation.stats(): DesktopConversationStats = DesktopConv
     attachmentCount = messages.sumOf { it.attachments.size },
     characterCount = messages.sumOf { it.content.length + it.reasoning.length },
     promptTokens = messages.sumOf { it.promptTokens ?: 0 },
-    completionTokens = messages.sumOf { it.completionTokens ?: 0 }
+    completionTokens = messages.sumOf { it.completionTokens ?: 0 },
+    cachedTokens = messages.sumOf { it.cachedTokens ?: 0 }
 )
 
 /**
@@ -657,10 +681,11 @@ fun DesktopConversation.deleteMessageAt(messageIndex: Int): DesktopConversation 
 fun DesktopConversation.prepareGeneration(
     requestMessages: List<ChatMessage>,
     alternativeTarget: ChatMessage? = null,
-    title: String? = null
+    title: String? = null,
+    modelId: String? = null
 ): DesktopConversation {
-    val nextMessages = requestMessages + (alternativeTarget?.beginAlternative()
-        ?: ChatMessage(role = "assistant", content = ""))
+    val nextMessages = requestMessages + (alternativeTarget?.beginAlternative()?.copy(modelId = modelId)
+        ?: ChatMessage(role = "assistant", content = "", modelId = modelId))
     val preservedMessageCount = requestMessages.size + if (alternativeTarget == null) 0 else 1
     val hasDiscardedMessages = messages.size > preservedMessageCount
     return copy(
@@ -730,15 +755,48 @@ fun DesktopConversation.forkAtMessage(messageIndex: Int): DesktopConversation {
     val branchMessages = messages.take(messageIndex + 1)
     require(branchMessages.isNotEmpty()) { "Cannot fork an empty conversation" }
     return DesktopConversation(
-        title = "$title（分支）",
+        title = title,
         assistantId = assistantId,
         folderId = folderId,
+        parentConversationId = id,
         systemPrompt = systemPrompt,
         webSearchEnabled = webSearchEnabled,
         promptInjectionsEnabled = promptInjectionsEnabled,
         messages = branchMessages,
         isPinned = false
     )
+}
+
+internal data class DesktopConversationListItem(
+    val conversation: DesktopConversation,
+    val branchDepth: Int
+)
+
+/**
+ * Keeps independently stored forked conversations adjacent to their source conversation.
+ * Entries whose parent is filtered out, missing, or cyclic remain visible as top-level rows.
+ */
+internal fun List<DesktopConversation>.asConversationTree(): List<DesktopConversationListItem> {
+    val conversationsById = associateBy { it.id }
+    val childrenByParent = groupBy { it.parentConversationId }
+    val result = mutableListOf<DesktopConversationListItem>()
+    val visited = mutableSetOf<String>()
+
+    fun append(conversation: DesktopConversation, depth: Int, ancestors: Set<String>) {
+        if (!visited.add(conversation.id)) return
+        result += DesktopConversationListItem(conversation, depth)
+        childrenByParent[conversation.id].orEmpty().forEach { child ->
+            if (child.id !in ancestors) append(child, depth + 1, ancestors + conversation.id)
+        }
+    }
+
+    filter { it.parentConversationId == null || it.parentConversationId !in conversationsById }
+        .forEach { append(it, 0, emptySet()) }
+    // A malformed cyclic relationship must not hide conversations from the sidebar.
+    forEach { conversation ->
+        if (conversation.id !in visited) append(conversation, 0, emptySet())
+    }
+    return result
 }
 
 internal fun DesktopConversation.usesPromptInjections(assistant: DesktopAssistantProfile): Boolean =
@@ -776,7 +834,11 @@ fun DesktopData.activeAssistant(): DesktopAssistantProfile =
 fun DesktopData.assistantFor(conversation: DesktopConversation): DesktopAssistantProfile =
     assistants.firstOrNull { it.id == conversation.assistantId } ?: activeAssistant()
 
-fun DesktopData.filteredConversations(query: String, assistantId: String?): List<DesktopConversation> =
+fun DesktopData.filteredConversations(
+    query: String,
+    assistantId: String?,
+    sort: DesktopConversationSort = preferences.conversationSort
+): List<DesktopConversation> =
     conversations.filter { conversation ->
         val matchesAssistant = assistantId == null || assistantFor(conversation).id == assistantId
         val matchesQuery = query.isBlank() || conversation.title.contains(query, ignoreCase = true) ||
@@ -787,7 +849,14 @@ fun DesktopData.filteredConversations(query: String, assistantId: String?): List
             }
         matchesAssistant && matchesQuery
     }.sortedWith(
-        compareByDescending<DesktopConversation> { it.isPinned }.thenByDescending { it.updatedAt }
+        compareByDescending<DesktopConversation> { it.isPinned }
+            .thenByDescending {
+                when (sort) {
+                    DesktopConversationSort.RECENT -> it.updatedAt
+                    DesktopConversationSort.MOST_ACTIVE -> it.messages.size.toLong()
+                }
+            }
+            .thenByDescending { it.updatedAt }
     )
 
 fun DesktopData.favoriteMessages(assistantId: String? = null): List<Pair<DesktopConversation, ChatMessage>> =
@@ -1082,8 +1151,17 @@ fun DesktopData.moveConversationToFolder(conversationId: String, folderId: Strin
     val conversation = conversations.firstOrNull { it.id == conversationId } ?: return this
     val folder = folderId?.let { id -> folders.firstOrNull { it.id == id } }
     if (folderId != null && (folder == null || folder.assistantId != assistantFor(conversation).id)) return this
+    val branchIds = mutableSetOf(conversationId)
+    var changed = true
+    while (changed) {
+        changed = false
+        conversations.forEach { candidate ->
+            if (candidate.parentConversationId in branchIds && branchIds.add(candidate.id)) changed = true
+        }
+    }
+    val now = System.currentTimeMillis()
     return copy(conversations = conversations.map {
-        if (it.id == conversationId) it.copy(folderId = folderId, updatedAt = System.currentTimeMillis()) else it
+        if (it.id in branchIds) it.copy(folderId = folderId, updatedAt = now) else it
     })
 }
 
@@ -1110,7 +1188,15 @@ fun DesktopData.assignAssistantToConversation(conversationId: String, assistantI
 
 fun DesktopData.deleteConversation(conversationId: String): DesktopData {
     if (conversations.none { it.id == conversationId }) return this
+    val deleted = conversations.first { it.id == conversationId }
     val remaining = conversations.filterNot { it.id == conversationId }
+        .map { conversation ->
+            if (conversation.parentConversationId == conversationId) {
+                conversation.copy(parentConversationId = deleted.parentConversationId)
+            } else {
+                conversation
+            }
+        }
         .ifEmpty { listOf(activeAssistant().newConversation()) }
     return copy(
         conversations = remaining,

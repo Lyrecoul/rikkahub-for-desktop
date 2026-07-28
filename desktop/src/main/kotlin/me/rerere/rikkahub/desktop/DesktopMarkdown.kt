@@ -3,8 +3,12 @@ package me.rerere.rikkahub.desktop
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.HorizontalScrollbar
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -33,8 +37,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Alignment
@@ -53,9 +61,11 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.Copy
+import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Lucide
 import dev.darkokoa.pangu.spacingText
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import org.scilab.forge.jlatexmath.TeXConstants
 import org.scilab.forge.jlatexmath.TeXFormula
 import org.intellij.markdown.MarkdownElementTypes
@@ -434,6 +444,38 @@ private fun MarkdownText(
         }
         return
     }
+    if (displaySpans.any { it.code }) {
+        FlowRow(
+            modifier = if (fillWidth) modifier.fillMaxWidth() else modifier,
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            displaySpans.forEach { span ->
+                if (span.code) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest
+                    ) {
+                        Text(
+                            span.text,
+                            Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = fontSize,
+                            lineHeight = fontSize * 1.53f
+                        )
+                    }
+                } else {
+                    MarkdownText(
+                        spans = listOf(span),
+                        fontSize = fontSize,
+                        fillWidth = false,
+                        enableChineseTypography = false
+                    )
+                }
+            }
+        }
+        return
+    }
     val primary = MaterialTheme.colorScheme.primary
     val codeBackground = MaterialTheme.colorScheme.surfaceContainerHighest
     val annotated = remember(displaySpans, primary, codeBackground) {
@@ -478,6 +520,15 @@ internal fun List<MarkdownSpan>.withChineseTypography(enabled: Boolean): List<Ma
 private fun CodeBlock(block: MarkdownBlock.Code, options: MarkdownRenderOptions) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
+    var copyVersion by remember(block.content) { mutableStateOf(0) }
+    var copied by remember(block.content) { mutableStateOf(false) }
+    LaunchedEffect(copyVersion) {
+        if (copyVersion > 0) {
+            copied = true
+            delay(1_000)
+            copied = false
+        }
+    }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(10.dp),
@@ -496,10 +547,21 @@ private fun CodeBlock(block: MarkdownBlock.Code, options: MarkdownRenderOptions)
                     fontSize = 12.sp
                 )
                 androidx.compose.material3.IconButton(
-                    onClick = { scope.launch { clipboard.setClipEntry(ClipEntry(StringSelection(block.content))) } },
+                    onClick = {
+                        scope.launch {
+                            clipboard.setClipEntry(ClipEntry(StringSelection(block.content)))
+                            copyVersion++
+                        }
+                    },
                     modifier = Modifier.size(32.dp)
                 ) {
-                    androidx.compose.material3.Icon(Lucide.Copy, "复制代码", Modifier.size(16.dp))
+                    AnimatedContent(
+                        targetState = if (copied) Lucide.Check else Lucide.Copy,
+                        transitionSpec = { fadeIn(tween(150)) togetherWith fadeOut(tween(150)) },
+                        label = "codeCopyIcon"
+                    ) { icon ->
+                        androidx.compose.material3.Icon(icon, "复制代码", Modifier.size(16.dp))
+                    }
                 }
             }
             Text(
