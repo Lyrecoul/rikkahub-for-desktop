@@ -91,6 +91,8 @@ internal val EnglishDesktopTranslations = mapOf(
         "settings.send_on_enter_description" to "When off, Ctrl+Enter sends and Enter adds a new line",
         "settings.auto_scroll" to "Auto-scroll",
         "settings.auto_scroll_description" to "Follow new reasoning and response content while generating",
+        "settings.smooth_scroll" to "Smooth scrolling",
+        "settings.smooth_scroll_description" to "Animate mouse-wheel scrolling in the chat view",
         "settings.message_navigation" to "Message navigation",
         "settings.message_navigation_description" to "Show buttons for the top, previous, next, and bottom after scrolling",
         "settings.message_navigation_left" to "Message navigation on the left",

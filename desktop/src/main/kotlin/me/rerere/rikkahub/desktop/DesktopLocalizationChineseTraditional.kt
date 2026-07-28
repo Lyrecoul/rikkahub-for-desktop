@@ -48,6 +48,7 @@ internal val TraditionalChineseDesktopTranslations = mapOf(
         "settings.chinese_typography" to "中文排版最佳化", "settings.chinese_typography_description" to "在中文與西文、數字或符號之間自動新增間距",
         "settings.send_on_enter" to "按 Enter 傳送", "settings.send_on_enter_description" to "關閉後，Ctrl+Enter 傳送，Enter 換行",
         "settings.auto_scroll" to "自動捲動", "settings.auto_scroll_description" to "生成時跟隨新的推理和回覆內容",
+        "settings.smooth_scroll" to "平滑捲動", "settings.smooth_scroll_description" to "在聊天介面為滑鼠滾輪捲動加入動畫效果",
         "settings.message_navigation" to "訊息導航", "settings.message_navigation_description" to "捲動訊息後顯示跳至頂端、上一個、下一個和底部的按鈕",
         "settings.message_navigation_left" to "訊息導航置左", "settings.message_navigation_left_description" to "預設顯示在訊息區域右側",
         "settings.export_backup" to "匯出備份", "settings.export_backup_description" to "將服務商、助手、偏好設定和對話儲存為 JSON",

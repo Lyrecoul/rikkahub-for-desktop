@@ -48,6 +48,7 @@ internal val GermanDesktopTranslations = mapOf(
         "settings.chinese_typography" to "Chinesische Typografie", "settings.chinese_typography_description" to "Abstände zwischen chinesischem und lateinischem Text, Zahlen oder Symbolen einfügen",
         "settings.send_on_enter" to "Mit Enter senden", "settings.send_on_enter_description" to "Wenn aus: Strg+Enter sendet, Enter fügt eine neue Zeile ein",
         "settings.auto_scroll" to "Automatisch scrollen", "settings.auto_scroll_description" to "Neuem Denk- und Antwortinhalt während der Generierung folgen",
+        "settings.smooth_scroll" to "Sanftes Scrollen", "settings.smooth_scroll_description" to "Mausrad-Scrollen in der Chatansicht animieren",
         "settings.message_navigation" to "Nachrichtennavigation", "settings.message_navigation_description" to "Zeigt nach dem Scrollen Schaltflächen für Anfang, Zurück, Weiter und Ende an",
         "settings.message_navigation_left" to "Nachrichtennavigation links", "settings.message_navigation_left_description" to "Standardmäßig auf der rechten Seite des Nachrichtenbereichs",
         "settings.export_backup" to "Sicherung exportieren", "settings.export_backup_description" to "Anbieter, Assistenten, Einstellungen und Chats als JSON speichern",

@@ -48,6 +48,7 @@ internal val RussianDesktopTranslations = mapOf(
         "settings.chinese_typography" to "Китайская типографика", "settings.chinese_typography_description" to "Добавлять пробелы между китайским и латинским текстом, числами или символами",
         "settings.send_on_enter" to "Отправлять по Enter", "settings.send_on_enter_description" to "Когда выключено: Ctrl+Enter отправляет, Enter — новая строка",
         "settings.auto_scroll" to "Автопрокрутка", "settings.auto_scroll_description" to "Следовать за новым содержанием рассуждений и ответом при генерации",
+        "settings.smooth_scroll" to "Плавная прокрутка", "settings.smooth_scroll_description" to "Анимировать прокрутку колесом мыши в окне чата",
         "settings.message_navigation" to "Навигация по сообщениям", "settings.message_navigation_description" to "Показывать кнопки вверх, предыдущее, следующее и вниз после прокрутки",
         "settings.message_navigation_left" to "Навигация по сообщениям слева", "settings.message_navigation_left_description" to "По умолчанию отображается справа от области сообщений",
         "settings.export_backup" to "Экспорт резервной копии", "settings.export_backup_description" to "Сохранить провайдеров, ассистентов, настройки и чаты как JSON",

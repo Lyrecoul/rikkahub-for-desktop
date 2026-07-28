@@ -48,6 +48,7 @@ internal val JapaneseDesktopTranslations = mapOf(
         "settings.chinese_typography" to "中国語組版", "settings.chinese_typography_description" to "中国語とラテン文字、数字、記号の間に間隔を追加します",
         "settings.send_on_enter" to "Enter で送信", "settings.send_on_enter_description" to "オフの場合、Ctrl+Enter で送信、Enter で改行",
         "settings.auto_scroll" to "自動スクロール", "settings.auto_scroll_description" to "生成中に新しい推論と応答を追います",
+        "settings.smooth_scroll" to "スムーズスクロール", "settings.smooth_scroll_description" to "チャット画面のマウスホイール操作をアニメーション表示します",
         "settings.message_navigation" to "メッセージナビゲーション", "settings.message_navigation_description" to "スクロール後に先頭、前、次、末尾ボタンを表示",
         "settings.message_navigation_left" to "メッセージナビゲーションを左に表示", "settings.message_navigation_left_description" to "デフォルトではメッセージ領域の右側に表示されます",
         "settings.export_backup" to "バックアップをエクスポート", "settings.export_backup_description" to "プロバイダー、アシスタント、設定、チャットを JSON で保存",

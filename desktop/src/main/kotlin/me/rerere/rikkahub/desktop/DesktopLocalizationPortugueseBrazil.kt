@@ -48,6 +48,7 @@ internal val PortugueseBrazilDesktopTranslations = mapOf(
         "settings.chinese_typography" to "Tipografia chinesa", "settings.chinese_typography_description" to "Adicionar espaçamento entre texto chinês e latino, números ou símbolos",
         "settings.send_on_enter" to "Enviar com Enter", "settings.send_on_enter_description" to "Quando desligado, Ctrl+Enter envia e Enter adiciona uma nova linha",
         "settings.auto_scroll" to "Rolagem automática", "settings.auto_scroll_description" to "Acompanhar novo conteúdo de raciocínio e resposta durante a geração",
+        "settings.smooth_scroll" to "Rolagem suave", "settings.smooth_scroll_description" to "Animar a rolagem da roda do mouse na conversa",
         "settings.message_navigation" to "Navegação de mensagens", "settings.message_navigation_description" to "Mostrar botões para topo, anterior, próximo e final após rolar",
         "settings.message_navigation_left" to "Navegação de mensagens à esquerda", "settings.message_navigation_left_description" to "Por padrão, exibida no lado direito da área de mensagens",
         "settings.export_backup" to "Exportar backup", "settings.export_backup_description" to "Salvar provedores, assistentes, preferências e chats como JSON",

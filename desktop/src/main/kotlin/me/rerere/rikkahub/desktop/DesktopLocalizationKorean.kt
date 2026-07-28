@@ -48,6 +48,7 @@ internal val KoreanDesktopTranslations = mapOf(
         "settings.chinese_typography" to "중국어 조판", "settings.chinese_typography_description" to "중국어와 라틴 문자, 숫자, 기호 사이에 간격을 추가합니다",
         "settings.send_on_enter" to "Enter로 전송", "settings.send_on_enter_description" to "꺼져 있으면 Ctrl+Enter 전송, Enter 줄바꿈",
         "settings.auto_scroll" to "자동 스크롤", "settings.auto_scroll_description" to "생성 중에 새로운 추론과 응답을 따라갑니다",
+        "settings.smooth_scroll" to "부드러운 스크롤", "settings.smooth_scroll_description" to "채팅 화면의 마우스 휠 스크롤을 애니메이션으로 표시합니다",
         "settings.message_navigation" to "메시지 탐색", "settings.message_navigation_description" to "스크롤 후 맨 위, 이전, 다음, 맨 아래 버튼을 표시합니다",
         "settings.message_navigation_left" to "메시지 탐색을 왼쪽에 표시", "settings.message_navigation_left_description" to "기본적으로 메시지 영역 오른쪽에 표시됩니다",
         "settings.export_backup" to "백업 내보내기", "settings.export_backup_description" to "제공업체, 어시스턴트, 기본 설정, 채팅을 JSON으로 저장",

@@ -209,6 +209,7 @@ internal fun DesktopSettingsPane(
     }
     var activeSection by remember { mutableStateOf(initialSection) }
     var sectionNavigationJob by remember { mutableStateOf<Job?>(null) }
+    var initialSectionApplied by remember { mutableStateOf<DesktopSettingsSection?>(null) }
 
     suspend fun scrollToSection(section: DesktopSettingsSection) {
         val sectionCoordinates = sectionCoordinates[section] ?: return
@@ -219,11 +220,28 @@ internal fun DesktopSettingsPane(
     }
 
     LaunchedEffect(initialSection, scrollViewportCoordinates, sectionAnchorsReady) {
-        activeSection = initialSection
-        sectionNavigationJob?.cancel()
-        sectionNavigationJob = launch {
-            scrollToSection(initialSection)
+        if (
+            scrollViewportCoordinates != null &&
+            sectionAnchorsReady &&
+            initialSectionApplied != initialSection
+        ) {
+            activeSection = initialSection
+            initialSectionApplied = initialSection
+            sectionNavigationJob?.cancel()
+            sectionNavigationJob = launch {
+                scrollToSection(initialSection)
+            }
         }
+    }
+
+    LaunchedEffect(scrollState.value, scrollViewportCoordinates, sectionAnchorsReady) {
+        val viewportCoordinates = scrollViewportCoordinates ?: return@LaunchedEffect
+        if (!sectionAnchorsReady) return@LaunchedEffect
+
+        val activationY = viewportCoordinates.positionInRoot().y + sectionTopPadding
+        activeSection = DesktopSettingsSection.entries.lastOrNull { section ->
+            sectionCoordinates[section]?.positionInRoot()?.y?.let { it <= activationY } == true
+        } ?: DesktopSettingsSection.GENERAL
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -461,6 +479,12 @@ internal fun DesktopSettingsPane(
                             desktopText(preferences.language, "settings.auto_scroll_description"),
                             preferences.enableAutoScroll
                         ) { onPreferencesChange(preferences.copy(enableAutoScroll = it)) }
+                        SettingsDivider()
+                        PreferenceSwitch(
+                            desktopText(preferences.language, "settings.smooth_scroll"),
+                            desktopText(preferences.language, "settings.smooth_scroll_description"),
+                            preferences.enableSmoothScroll
+                        ) { onPreferencesChange(preferences.copy(enableSmoothScroll = it)) }
                         SettingsDivider()
                         PreferenceSwitch(
                             desktopText(preferences.language, "settings.message_navigation"),

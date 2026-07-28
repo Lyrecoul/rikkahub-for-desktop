@@ -91,6 +91,8 @@ internal val SimplifiedChineseDesktopTranslations = mapOf(
         "settings.send_on_enter_description" to "关闭后，Ctrl+Enter 发送，Enter 换行",
         "settings.auto_scroll" to "自动滚动",
         "settings.auto_scroll_description" to "生成时跟随新的推理和回复内容",
+        "settings.smooth_scroll" to "平滑滚动",
+        "settings.smooth_scroll_description" to "在聊天界面为鼠标滚轮滚动添加动画效果",
         "settings.message_navigation" to "消息导航",
         "settings.message_navigation_description" to "滚动消息后显示跳转到顶部、上一条、下一条和底部的按钮",
         "settings.message_navigation_left" to "消息导航置左",

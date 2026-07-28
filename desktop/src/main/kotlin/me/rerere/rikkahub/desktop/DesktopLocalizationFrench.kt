@@ -48,6 +48,7 @@ internal val FrenchDesktopTranslations = mapOf(
         "settings.chinese_typography" to "Typographie chinoise", "settings.chinese_typography_description" to "Ajouter un espacement entre le texte chinois et latin, les nombres ou les symboles",
         "settings.send_on_enter" to "Envoyer avec Entrée", "settings.send_on_enter_description" to "Lorsque désactivé, Ctrl+Entrée envoie et Entrée ajoute une nouvelle ligne",
         "settings.auto_scroll" to "Défilement automatique", "settings.auto_scroll_description" to "Suivre le nouveau contenu de raisonnement et de réponse pendant la génération",
+        "settings.smooth_scroll" to "Défilement fluide", "settings.smooth_scroll_description" to "Animer le défilement à la molette dans la discussion",
         "settings.message_navigation" to "Navigation des messages", "settings.message_navigation_description" to "Afficher les boutons pour le haut, le précédent, le suivant et le bas après avoir fait défiler",
         "settings.message_navigation_left" to "Navigation des messages à gauche", "settings.message_navigation_left_description" to "Affiché par défaut sur le côté droit de la zone de messages",
         "settings.export_backup" to "Exporter la sauvegarde", "settings.export_backup_description" to "Enregistrer les fournisseurs, assistants, préférences et chats en JSON",

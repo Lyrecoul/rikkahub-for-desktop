@@ -15,6 +15,9 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -106,7 +109,9 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
@@ -193,7 +198,35 @@ import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.datatransfer.StringSelection
 import java.net.URI
+import kotlin.math.exp
+import kotlin.math.min
 import kotlin.math.roundToInt
+
+private const val SmoothScrollAnimationTimeMillis = 400L
+private const val SmoothScrollFrameDelayMillis = 7L
+private const val SmoothScrollAccelerationDeltaMillis = 50L
+private const val SmoothScrollAccelerationMax = 3f
+
+private data class SmoothScrollImpulse(
+    val distance: Float,
+    val startTimeNanos: Long,
+    var appliedDistance: Float = 0f
+)
+
+private fun smoothScrollPulse(progress: Float): Float {
+    fun pulse(value: Float): Float {
+        var scaledValue = value * 4f
+        return if (scaledValue < 1f) {
+            scaledValue - (1f - exp(-scaledValue))
+        } else {
+            scaledValue -= 1f
+            val initialValue = exp(-1f)
+            initialValue + (1f - exp(-scaledValue)) * (1f - initialValue)
+        }
+    }
+
+    return pulse(progress.coerceIn(0f, 1f)) / pulse(1f)
+}
 
 private data class ConversationRenameTarget(
     val conversationId: String,
@@ -282,6 +315,7 @@ fun main() = application {
 }
 
 @Composable
+@OptIn(ExperimentalComposeUiApi::class)
 private fun RikkaHubDesktop(
     dialogOwner: Frame,
     store: DesktopStore = remember { DesktopStore() },
@@ -294,10 +328,13 @@ private fun RikkaHubDesktop(
     var showSettings by remember { mutableStateOf(false) }
     var settingsSection by remember { mutableStateOf(DesktopSettingsSection.GENERAL) }
     var showSidebar by remember { mutableStateOf(true) }
+    var sidebarPreferredWidth by remember { mutableStateOf(292.dp) }
+    var sidebarResizeHovered by remember { mutableStateOf(false) }
     var jumpToMessageId by remember { mutableStateOf<String?>(null) }
     var renameTarget by remember { mutableStateOf<ConversationRenameTarget?>(null) }
     var conversationPromptTarget by remember { mutableStateOf<ConversationPromptTarget?>(null) }
     var folderCreateTarget by remember { mutableStateOf<FolderCreateTarget?>(null) }
+    var folderRenameTarget by remember { mutableStateOf<DesktopFolder?>(null) }
     var compressionTarget by remember { mutableStateOf<CompressionTarget?>(null) }
     var showConversationStats by remember { mutableStateOf(false) }
     var translationTarget by remember { mutableStateOf<TranslationTarget?>(null) }
@@ -969,7 +1006,9 @@ private fun RikkaHubDesktop(
             }
         ) {
         val compact = maxWidth < 850.dp
-        val sidebarWidth = if (compact) maxWidth else 292.dp
+        val maxSidebarWidth = minOf(480.dp, maxWidth - 420.dp)
+        val sidebarWidth = if (compact) maxWidth else sidebarPreferredWidth.coerceIn(240.dp, maxSidebarWidth)
+        val density = LocalDensity.current
         Row(Modifier.fillMaxSize()) {
             if (!compact || showSidebar) {
                 ConversationSidebar(
@@ -1005,12 +1044,6 @@ private fun RikkaHubDesktop(
                     onMoveToFolder = { conversationId, folderId ->
                         update(data.moveConversationToFolder(conversationId, folderId))
                     },
-                    onRenameFolder = { folderId, name ->
-                        update(data.renameFolder(folderId, name))
-                    },
-                    onDeleteFolder = { folderId ->
-                        update(data.deleteFolder(folderId))
-                    },
                     onCreateFolder = { assistantId ->
                         folderCreateTarget = FolderCreateTarget(assistantId = assistantId)
                     },
@@ -1024,6 +1057,33 @@ private fun RikkaHubDesktop(
                     },
                     modifier = Modifier.width(sidebarWidth)
                 )
+                if (!compact) {
+                    Box(
+                        Modifier.fillMaxHeight().width(8.dp)
+                            .onPointerEvent(PointerEventType.Enter) { sidebarResizeHovered = true }
+                            .onPointerEvent(PointerEventType.Exit) { sidebarResizeHovered = false }
+                            .pointerInput(maxSidebarWidth) {
+                                detectDragGestures(
+                                    onDragStart = { sidebarResizeHovered = true },
+                                    onDragEnd = { sidebarResizeHovered = false },
+                                    onDragCancel = { sidebarResizeHovered = false }
+                                ) { _, dragAmount ->
+                                    sidebarPreferredWidth = (sidebarPreferredWidth + with(density) { dragAmount.x.toDp() })
+                                        .coerceIn(240.dp, maxSidebarWidth)
+                                }
+                            }
+                    ) {
+                        Box(
+                            Modifier.align(Alignment.Center).fillMaxHeight()
+                                .width(if (sidebarResizeHovered) 2.dp else 1.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.outlineVariant.copy(
+                                        alpha = if (sidebarResizeHovered) 0.9f else 0.45f
+                                    )
+                                )
+                        )
+                    }
+                }
             }
             if (!compact || !showSidebar) {
                 if (showSettings) {
@@ -1143,6 +1203,8 @@ private fun RikkaHubDesktop(
                         onCreateFolder = {
                             folderCreateTarget = FolderCreateTarget(selected.id, selectedAssistant.id)
                         },
+                        onRenameFolder = { folder -> folderRenameTarget = folder },
+                        onDeleteFolder = { folder -> update(data.deleteFolder(folder.id)) },
                         onCompress = { compressionTarget = CompressionTarget(selected.id) },
                         onGenerateTitle = { startTitleGeneration(selected.id) },
                         onShowStats = { showConversationStats = true },
@@ -1326,6 +1388,19 @@ private fun RikkaHubDesktop(
                     update(data.createFolder(folder, target.conversationId))
                     folderCreateTarget = null
                 }
+            }
+        )
+    }
+    folderRenameTarget?.let { folder ->
+        TextEditDialog(
+            title = desktopText(data.preferences.language, "sidebar.rename_folder"),
+            language = data.preferences.language,
+            initialValue = folder.name,
+            singleLine = true,
+            onDismiss = { folderRenameTarget = null },
+            onSave = { name ->
+                if (name.isNotBlank()) update(data.renameFolder(folder.id, name))
+                folderRenameTarget = null
             }
         )
     }
@@ -1752,8 +1827,6 @@ private fun ConversationSidebar(
     onDelete: (String) -> Unit,
     onPin: (String) -> Unit,
     onMoveToFolder: (String, String?) -> Unit,
-    onRenameFolder: (String, String) -> Unit,
-    onDeleteFolder: (String) -> Unit,
     onCreateFolder: (String) -> Unit,
     onConversationSortChange: (DesktopConversationSort) -> Unit,
     onSettings: () -> Unit,
@@ -1768,7 +1841,6 @@ private fun ConversationSidebar(
     var tagFilter by remember { mutableStateOf<String?>(null) }
     var tagFilterOpen by remember { mutableStateOf(false) }
     var folderFilterId by remember { mutableStateOf<String?>(null) }
-    var renameFolder by remember { mutableStateOf<DesktopFolder?>(null) }
     var showFavorites by remember { mutableStateOf(false) }
     var sortMenuOpen by remember { mutableStateOf(false) }
     val availableFolders = data.folders.filter { folder ->
@@ -1784,6 +1856,12 @@ private fun ConversationSidebar(
     val favorites = data.favoriteMessages(assistantFilterId).filter { (conversation, _) ->
         tagFilter == null || data.assistantFor(conversation).tags.any { tag ->
             tag.equals(tagFilter, ignoreCase = true)
+        }
+    }
+
+    LaunchedEffect(folderFilterId, data.folders) {
+        if (folderFilterId != null && data.folders.none { it.id == folderFilterId }) {
+            folderFilterId = null
         }
     }
 
@@ -1889,12 +1967,7 @@ private fun ConversationSidebar(
                     selectedFolderId = folderFilterId,
                     language = language,
                     onSelect = { folderFilterId = it },
-                    onCreate = { onCreateFolder(assistantFilterId ?: data.activeAssistant().id) },
-                    onRename = { renameFolder = it },
-                    onDelete = { folder ->
-                        onDeleteFolder(folder.id)
-                        if (folderFilterId == folder.id) folderFilterId = null
-                    }
+                    onCreate = { onCreateFolder(assistantFilterId ?: data.activeAssistant().id) }
                 )
             }
             Row(
@@ -2013,80 +2086,101 @@ private fun ConversationSidebar(
             }
         }
     }
-    renameFolder?.let { folder ->
-        TextEditDialog(
-            title = desktopText(language, "sidebar.rename_folder"),
-            language = language,
-            initialValue = folder.name,
-            singleLine = true,
-            onDismiss = { renameFolder = null },
-            onSave = { name ->
-                if (name.isNotBlank()) onRenameFolder(folder.id, name)
-                renameFolder = null
-            }
-        )
-    }
 }
 
 @Composable
+@OptIn(ExperimentalComposeUiApi::class)
 private fun FolderCapsuleBar(
     folders: List<DesktopFolder>,
     selectedFolderId: String?,
     language: DesktopLanguage,
     onSelect: (String?) -> Unit,
-    onCreate: () -> Unit,
-    onRename: (DesktopFolder) -> Unit,
-    onDelete: (DesktopFolder) -> Unit
+    onCreate: () -> Unit
 ) {
-    LazyRow(
-        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        item {
-            FolderCapsule(
-                label = desktopText(language, "sidebar.chats"),
-                selected = selectedFolderId == null,
-                onClick = { onSelect(null) }
-            )
-        }
-        items(folders, key = { it.id }) { folder ->
-            var menuOpen by remember(folder.id) { mutableStateOf(false) }
-            Box {
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val scrollDistance = with(LocalDensity.current) { 180.dp.toPx() }
+    val wheelScrollDistance = with(LocalDensity.current) { 48.dp.toPx() }
+    Box(modifier = Modifier.fillMaxWidth().height(40.dp).padding(top = 4.dp)) {
+        LazyRow(
+            state = listState,
+            modifier = Modifier.fillMaxWidth().onPointerEvent(PointerEventType.Scroll) { event ->
+                val scrollDelta = event.changes.firstOrNull()?.scrollDelta ?: return@onPointerEvent
+                val horizontalDelta = scrollDelta.y.takeIf { it != 0f } ?: scrollDelta.x
+                if (horizontalDelta != 0f) {
+                    event.changes.forEach { it.consume() }
+                    scope.launch { listState.animateScrollBy(horizontalDelta * wheelScrollDistance) }
+                }
+            },
+            contentPadding = PaddingValues(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            item {
+                FolderCapsule(
+                    label = desktopText(language, "sidebar.chats"),
+                    selected = selectedFolderId == null,
+                    onClick = { onSelect(null) }
+                )
+            }
+            items(folders, key = { it.id }) { folder ->
                 FolderCapsule(
                     label = folder.name,
                     selected = selectedFolderId == folder.id,
                     icon = Lucide.Folder,
-                    onClick = { onSelect(folder.id) },
-                    onLongClick = { menuOpen = true }
+                    onClick = { onSelect(folder.id) }
                 )
-                DropdownMenu(menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text(desktopText(language, "chat.rename")) },
-                        leadingIcon = { Icon(Lucide.Pencil, null, Modifier.size(17.dp)) },
-                        onClick = {
-                            menuOpen = false
-                            onRename(folder)
-                        }
+            }
+            item {
+                FolderCapsule(
+                    label = desktopText(language, "common.new"),
+                    selected = false,
+                    icon = Lucide.Plus,
+                    onClick = onCreate
+                )
+            }
+        }
+        if (listState.canScrollBackward) {
+            Box(
+                Modifier.align(Alignment.CenterStart).fillMaxHeight().width(42.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.surfaceContainerLow,
+                                MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.76f),
+                                Color.Transparent
+                            )
+                        )
                     )
-                    DropdownMenuItem(
-                        text = { Text(desktopText(language, "message.delete")) },
-                        leadingIcon = { Icon(Lucide.Trash2, null, Modifier.size(17.dp)) },
-                        onClick = {
-                            menuOpen = false
-                            onDelete(folder)
-                        }
-                    )
+            ) {
+                IconButton(
+                    onClick = { scope.launch { listState.animateScrollBy(-scrollDistance) } },
+                    modifier = Modifier.align(Alignment.CenterStart).size(36.dp)
+                ) {
+                    Icon(Lucide.ChevronLeft, desktopText(language, "sidebar.chats"))
                 }
             }
         }
-        item {
-            FolderCapsule(
-                label = desktopText(language, "common.new"),
-                selected = false,
-                icon = Lucide.Plus,
-                onClick = onCreate
-            )
+        if (listState.canScrollForward) {
+            Box(
+                Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(42.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                Color.Transparent,
+                                MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.76f),
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            )
+                        )
+                    )
+            ) {
+                IconButton(
+                    onClick = { scope.launch { listState.animateScrollBy(scrollDistance) } },
+                    modifier = Modifier.align(Alignment.CenterEnd).size(36.dp)
+                ) {
+                    Icon(Lucide.ChevronRight, desktopText(language, "sidebar.chats"))
+                }
+            }
         }
     }
 }
@@ -2096,16 +2190,14 @@ private fun FolderCapsule(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
-    icon: ImageVector? = null,
-    onLongClick: (() -> Unit)? = null
+    icon: ImageVector? = null
 ) {
     Surface(
         shape = CircleShape,
         color = if (selected) MaterialTheme.colorScheme.secondaryContainer
         else MaterialTheme.colorScheme.surfaceContainerHighest,
         modifier = Modifier.clip(CircleShape).combinedClickable(
-            onClick = onClick,
-            onLongClick = onLongClick ?: {}
+            onClick = onClick
         )
     ) {
         Row(
@@ -2284,6 +2376,8 @@ private fun ChatPane(
     onExportConversation: () -> Unit,
     onMoveToFolder: (String?) -> Unit,
     onCreateFolder: () -> Unit,
+    onRenameFolder: (DesktopFolder) -> Unit,
+    onDeleteFolder: (DesktopFolder) -> Unit,
     onCompress: () -> Unit,
     onGenerateTitle: () -> Unit,
     onShowStats: () -> Unit,
@@ -2311,7 +2405,13 @@ private fun ChatPane(
     var folderMenuOpen by remember { mutableStateOf(false) }
     val language = preferences.language
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val hazeState = rememberHazeState()
+    val smoothScrollStepSize = with(LocalDensity.current) { 100.dp.toPx() }
+    val smoothScrollQueue = remember { mutableListOf<SmoothScrollImpulse>() }
+    var smoothScrollInProgress by remember { mutableStateOf(false) }
+    var smoothScrollDirection by remember { mutableStateOf(0) }
+    var lastSmoothScrollTimeMillis by remember { mutableStateOf(0L) }
     var composerHeightPx by remember { mutableStateOf(164) }
     val messageBottomPadding = with(LocalDensity.current) { composerHeightPx.toDp() + 16.dp }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
@@ -2541,6 +2641,29 @@ private fun ChatPane(
                     folders.forEach { folder ->
                         DropdownMenuItem(
                             text = { Text(folder.name) },
+                            leadingIcon = { Icon(Lucide.Folder, null, Modifier.size(18.dp)) },
+                            trailingIcon = {
+                                Row {
+                                    IconButton(
+                                        onClick = {
+                                            folderMenuOpen = false
+                                            onRenameFolder(folder)
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(Lucide.Pencil, desktopText(language, "chat.rename"), Modifier.size(16.dp))
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            folderMenuOpen = false
+                                            onDeleteFolder(folder)
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(Lucide.Trash2, desktopText(language, "message.delete"), Modifier.size(16.dp))
+                                    }
+                                }
+                            },
                                          onClick = {
                                              folderMenuOpen = false
                                              onMoveToFolder(folder.id)
@@ -2574,7 +2697,65 @@ private fun ChatPane(
                 } else {
                     LazyColumn(
                         state = listState,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().onPointerEvent(
+                            PointerEventType.Scroll,
+                            PointerEventPass.Initial
+                        ) { event ->
+                            if (!preferences.enableSmoothScroll) return@onPointerEvent
+
+                            val scrollDelta = event.changes.firstOrNull()?.scrollDelta?.y ?: return@onPointerEvent
+                            if (scrollDelta != 0f) {
+                                event.changes.forEach { it.consume() }
+                                val direction = if (scrollDelta > 0f) 1 else -1
+                                val currentTimeMillis = System.currentTimeMillis()
+                                if (smoothScrollDirection != direction) {
+                                    smoothScrollDirection = direction
+                                    smoothScrollQueue.clear()
+                                }
+                                val elapsedMillis = currentTimeMillis - lastSmoothScrollTimeMillis
+                                val acceleration = if (elapsedMillis in 1 until SmoothScrollAccelerationDeltaMillis) {
+                                    min(
+                                        (1f + SmoothScrollAccelerationDeltaMillis.toFloat() / elapsedMillis) / 2f,
+                                        SmoothScrollAccelerationMax
+                                    )
+                                } else {
+                                    1f
+                                }
+                                lastSmoothScrollTimeMillis = currentTimeMillis
+                                smoothScrollQueue += SmoothScrollImpulse(
+                                    distance = scrollDelta * smoothScrollStepSize * acceleration,
+                                    startTimeNanos = System.nanoTime()
+                                )
+                                if (smoothScrollInProgress) return@onPointerEvent
+
+                                smoothScrollInProgress = true
+                                scope.launch {
+                                    try {
+                                        while (smoothScrollQueue.isNotEmpty()) {
+                                            val currentTimeNanos = System.nanoTime()
+                                            var scrollDistance = 0f
+                                            val impulses = smoothScrollQueue.iterator()
+                                            while (impulses.hasNext()) {
+                                                val impulse = impulses.next()
+                                                val elapsed = (currentTimeNanos - impulse.startTimeNanos) / 1_000_000f
+                                                val completed = elapsed >= SmoothScrollAnimationTimeMillis
+                                                val progress = if (completed) 1f else {
+                                                    smoothScrollPulse(elapsed / SmoothScrollAnimationTimeMillis)
+                                                }
+                                                val distance = (impulse.distance * progress - impulse.appliedDistance).toInt().toFloat()
+                                                scrollDistance += distance
+                                                impulse.appliedDistance += distance
+                                                if (completed) impulses.remove()
+                                            }
+                                            if (scrollDistance != 0f) listState.scrollBy(scrollDistance)
+                                            if (smoothScrollQueue.isNotEmpty()) delay(SmoothScrollFrameDelayMillis)
+                                        }
+                                    } finally {
+                                        smoothScrollInProgress = false
+                                    }
+                                }
+                            }
+                        },
                         contentPadding = PaddingValues(top = 22.dp, bottom = messageBottomPadding),
                         verticalArrangement = Arrangement.spacedBy(24.dp)
                     ) {

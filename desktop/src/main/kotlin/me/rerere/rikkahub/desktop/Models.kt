@@ -301,6 +301,7 @@ data class DesktopPreferences(
     val enableChineseTypography: Boolean = false,
     val sendOnEnter: Boolean = true,
     val enableAutoScroll: Boolean = true,
+    val enableSmoothScroll: Boolean = true,
     val showMessageJumper: Boolean = true,
     val messageJumperOnLeft: Boolean = false,
     val conversationSort: DesktopConversationSort = DesktopConversationSort.RECENT
