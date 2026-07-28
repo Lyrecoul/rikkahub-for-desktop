@@ -19,6 +19,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -61,6 +63,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -70,6 +74,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -133,6 +138,7 @@ import com.composables.icons.lucide.Lightbulb
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Menu
 import com.composables.icons.lucide.Maximize2
+import com.composables.icons.lucide.Minimize2
 import com.composables.icons.lucide.Ellipsis
 import com.composables.icons.lucide.ExternalLink
 import com.composables.icons.lucide.Folder
@@ -187,12 +193,7 @@ import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.datatransfer.StringSelection
 import java.net.URI
-
-private data class MessageEditTarget(
-    val conversationId: String,
-    val messageIndex: Int,
-    val content: String
-)
+import kotlin.math.roundToInt
 
 private data class ConversationRenameTarget(
     val conversationId: String,
@@ -224,6 +225,13 @@ private data class RenderedChatItem(
     val timelineAfterContent: Boolean,
     val highlighted: Boolean,
 )
+
+private enum class McpAvailability {
+    UNKNOWN,
+    CHECKING,
+    AVAILABLE,
+    UNAVAILABLE
+}
 
 private val MessageTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
     .withZone(ZoneId.systemDefault())
@@ -287,7 +295,6 @@ private fun RikkaHubDesktop(
     var settingsSection by remember { mutableStateOf(DesktopSettingsSection.GENERAL) }
     var showSidebar by remember { mutableStateOf(true) }
     var jumpToMessageId by remember { mutableStateOf<String?>(null) }
-    var editTarget by remember { mutableStateOf<MessageEditTarget?>(null) }
     var renameTarget by remember { mutableStateOf<ConversationRenameTarget?>(null) }
     var conversationPromptTarget by remember { mutableStateOf<ConversationPromptTarget?>(null) }
     var folderCreateTarget by remember { mutableStateOf<FolderCreateTarget?>(null) }
@@ -1055,6 +1062,8 @@ private fun RikkaHubDesktop(
                         preferences = data.preferences,
                         providers = data.providers.ifEmpty { listOf(data.activeProvider()) },
                         folders = data.folders.filter { it.assistantId == selectedAssistant.id },
+                        mcpServers = data.mcpServers,
+                        mcpClient = mcpClient,
                         selectedProviderId = selectedAssistant.providerId.ifBlank { data.activeProvider().id },
                         webSearchEnabled = selected.webSearchEnabled ?: selectedAssistant.enableWebSearch,
                         jumpToMessageId = jumpToMessageId,
@@ -1078,6 +1087,14 @@ private fun RikkaHubDesktop(
                         client = client,
                         onAssistantSelect = { assistantId ->
                             selectConversationAssistant(selected.id, assistantId)
+                        },
+                        onMcpServersChange = { servers -> update(data.copy(mcpServers = servers)) },
+                        onAssistantMcpServerIdsChange = { serverIds ->
+                            saveAssistant(selectedAssistant.copy(mcpServerIds = serverIds))
+                        },
+                        onMcpSettings = {
+                            settingsSection = DesktopSettingsSection.PROVIDERS
+                            showSettings = true
                         },
                         onToggleWebSearch = {
                             updateConversation(selected.id) { conversation ->
@@ -1139,8 +1156,14 @@ private fun RikkaHubDesktop(
                         onEditSystemPrompt = {
                             conversationPromptTarget = ConversationPromptTarget(selected.id, selected.systemPrompt)
                         },
-                        onEditMessage = { index, content ->
-                            editTarget = MessageEditTarget(selected.id, index, content)
+                        onSaveMessageEdit = { index, content ->
+                            val message = selected.messages.getOrNull(index) ?: return@ChatPane
+                            if (content.isBlank()) return@ChatPane
+                            updateConversation(selected.id) { conversation -> conversation.editMessageAt(index, content) }
+                            if (message.role == "user") {
+                                val requestMessages = selected.messages.take(index) + message.addVariant(content)
+                                startGeneration(selected.id, requestMessages)
+                            }
                         },
                         onDeleteMessage = { index ->
                             if (!generationJobs.containsKey(selected.id)) {
@@ -1239,26 +1262,6 @@ private fun RikkaHubDesktop(
         }
     }
         }
-
-    editTarget?.let { target ->
-        TextEditDialog(
-            title = "编辑消息",
-            initialValue = target.content,
-            onDismiss = { editTarget = null },
-            onSave = { content ->
-                val conversation = data.conversations.firstOrNull { it.id == target.conversationId }
-                val message = conversation?.messages?.getOrNull(target.messageIndex)
-                if (conversation != null && message != null && content.isNotBlank()) {
-                    updateConversation(target.conversationId) { current -> current.editMessageAt(target.messageIndex, content) }
-                    if (message.role == "user") {
-                        val requestMessages = conversation.messages.take(target.messageIndex) + message.addVariant(content)
-                        startGeneration(target.conversationId, requestMessages)
-                    }
-                    editTarget = null
-                }
-            }
-        )
-    }
 
     renameTarget?.let { target ->
         TextEditDialog(
@@ -2198,6 +2201,8 @@ private fun ChatPane(
     preferences: DesktopPreferences,
     providers: List<DesktopProviderProfile>,
     folders: List<DesktopFolder>,
+    mcpServers: List<DesktopMcpServer>,
+    mcpClient: DesktopMcpClient,
     selectedProviderId: String,
     webSearchEnabled: Boolean,
     jumpToMessageId: String?,
@@ -2212,6 +2217,9 @@ private fun ChatPane(
     onReasoningEffortChange: (String) -> Unit,
     client: OpenAiClient,
     onAssistantSelect: (String) -> Unit,
+    onMcpServersChange: (List<DesktopMcpServer>) -> Unit,
+    onAssistantMcpServerIdsChange: (Set<String>) -> Unit,
+    onMcpSettings: () -> Unit,
     onToggleWebSearch: () -> Unit,
     onRename: () -> Unit,
     onExportConversation: () -> Unit,
@@ -2231,7 +2239,7 @@ private fun ChatPane(
     onRemoveAttachment: (DesktopAttachment) -> Unit,
     onDismissError: () -> Unit,
     onCancel: () -> Unit,
-    onEditMessage: (Int, String) -> Unit,
+    onSaveMessageEdit: (Int, String) -> Unit,
     onDeleteMessage: (Int) -> Unit,
     onToggleMessageFavorite: (Int) -> Unit,
     onForkAtMessage: (Int) -> Unit,
@@ -2247,6 +2255,7 @@ private fun ChatPane(
     var composerHeightPx by remember { mutableStateOf(164) }
     val messageBottomPadding = with(LocalDensity.current) { composerHeightPx.toDp() + 16.dp }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
+    var editingMessageIndex by remember(conversation.id) { mutableStateOf<Int?>(null) }
     val providerName = providers.firstOrNull { it.id == assistant.providerId }?.name
         ?: providers.firstOrNull { it.id == selectedProviderId }?.name
         ?: "OpenAI"
@@ -2530,7 +2539,13 @@ private fun ChatPane(
                                             timelineAfterContent = renderedItem.timelineAfterContent,
                                             generating = isGenerating && renderedItem.messageIndex == conversation.messages.lastIndex,
                                             actionsEnabled = !isGenerating,
-                                            onEdit = { onEditMessage(renderedItem.messageIndex, renderedItem.message.content) },
+                                            editing = editingMessageIndex == renderedItem.messageIndex,
+                                            onEdit = { editingMessageIndex = renderedItem.messageIndex },
+                                            onCancelEdit = { editingMessageIndex = null },
+                                            onSaveEdit = { content ->
+                                                onSaveMessageEdit(renderedItem.messageIndex, content)
+                                                editingMessageIndex = null
+                                            },
                                             onDelete = { onDeleteMessage(renderedItem.messageIndex) },
                                             onToggleFavorite = { onToggleMessageFavorite(renderedItem.messageIndex) },
                                             onFork = { onForkAtMessage(renderedItem.messageIndex) },
@@ -2602,6 +2617,11 @@ private fun ChatPane(
                 assistant = assistant,
                 assistants = assistants,
                 onAssistantSelect = onAssistantSelect,
+                mcpServers = mcpServers,
+                mcpClient = mcpClient,
+                onMcpServersChange = onMcpServersChange,
+                onAssistantMcpServerIdsChange = onAssistantMcpServerIdsChange,
+                onMcpSettings = onMcpSettings,
                 onToggleWebSearch = onToggleWebSearch,
                 onQuickMessageSelect = onPromptChange,
                 suggestions = conversation.suggestions,
@@ -2793,7 +2813,10 @@ private fun MessageBlock(
     timelineAfterContent: Boolean,
     generating: Boolean,
     actionsEnabled: Boolean,
+    editing: Boolean,
     onEdit: () -> Unit,
+    onCancelEdit: () -> Unit,
+    onSaveEdit: (String) -> Unit,
     onDelete: () -> Unit,
     onToggleFavorite: () -> Unit,
     onFork: () -> Unit,
@@ -2812,6 +2835,7 @@ private fun MessageBlock(
     val displayContent = assistant.applyRegexRules(message.content, message.role, visualOnly = true)
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
+    var editedContent by remember(message.id, message.content) { mutableStateOf(message.content) }
     var copyVersion by remember(message.id) { mutableStateOf(0) }
     var copied by remember(message.id) { mutableStateOf(false) }
     LaunchedEffect(copyVersion) {
@@ -2887,11 +2911,35 @@ private fun MessageBlock(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest)
             ) {
-                MarkdownContent(
-                    displayContent,
-                    Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
-                    markdownOptions
-                )
+                if (editing) {
+                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = editedContent,
+                            onValueChange = { editedContent = it },
+                            modifier = Modifier.widthIn(min = 300.dp, max = 630.dp),
+                            minLines = 3,
+                            maxLines = 12,
+                            placeholder = { Text("编辑消息") }
+                        )
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(onClick = onCancelEdit) { Text("取消") }
+                            Button(
+                                onClick = { onSaveEdit(editedContent.trim()) },
+                                enabled = editedContent.isNotBlank()
+                            ) { Text("提交") }
+                        }
+                    }
+                } else {
+                    MarkdownContent(
+                        displayContent,
+                        Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
+                        markdownOptions
+                    )
+                }
             }
         } else {
             val assistantContent: @Composable () -> Unit = {
@@ -3042,7 +3090,7 @@ private fun MessageBlock(
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (!editing) Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             val variants = message.availableVariants()
             val currentVariantIndex = message.selectedVariantIndex.coerceIn(variants.indices)
             if (variants.size > 1) {
@@ -3569,112 +3617,140 @@ private fun MessageAction(
 }
 
 @Composable
-private fun ModelPickerDialog(
+private fun ModelPickerMenu(
     providers: List<DesktopProviderProfile>,
     selectedProviderId: String,
     selectedModel: String,
     reasoningEffort: String,
     client: OpenAiClient,
-    onDismiss: () -> Unit,
     onSelect: (String, String) -> Unit,
     onReasoningEffortChange: (String) -> Unit,
     onSettings: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
-    var balance by remember(selectedProviderId) { mutableStateOf<String?>(null) }
-    var loadingBalance by remember { mutableStateOf(false) }
+    var reasoningSliderValue by remember(reasoningEffort) {
+        mutableFloatStateOf(listOf("", "low", "medium", "high").indexOf(reasoningEffort).coerceAtLeast(0).toFloat())
+    }
+    val balances = remember { mutableStateMapOf<String, String>() }
+    val loadingBalanceIds = remember { mutableStateMapOf<String, Boolean>() }
     val scope = rememberCoroutineScope()
-    val activeProvider = providers.firstOrNull { it.id == selectedProviderId }
-    val entries = providers.flatMap { provider ->
-        (provider.discoveredModels + provider.config.model).filter { it.isNotBlank() }.distinct().map { provider to it }
-    }.filter { (_, model) -> model.contains(query.trim(), ignoreCase = true) }
-    LaunchedEffect(activeProvider?.id, activeProvider?.config?.balanceOptions) {
-        if (activeProvider?.config?.balanceOptions?.enabled == true) {
-            loadingBalance = true
-            balance = runCatching { "余额：${client.getCachedBalance(activeProvider.config)}" }
-                .getOrElse { "余额查询失败：${it.message ?: "未知错误"}" }
-            loadingBalance = false
-        }
+    val filteredProviders = providers.mapNotNull { provider ->
+        val models = (provider.discoveredModels + provider.config.model)
+            .filter { it.isNotBlank() && it.contains(query.trim(), ignoreCase = true) }
+            .distinct()
+        models.takeIf { it.isNotEmpty() }?.let { provider to it }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("选择模型") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("筛选模型") },
-                    singleLine = true
-                )
-                if (activeProvider?.config?.balanceOptions?.enabled == true) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(balance ?: "余额未查询", Modifier.weight(1f), fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    fun refreshBalance(provider: DesktopProviderProfile, forceRefresh: Boolean = false) {
+        if (provider.config.balanceOptions.enabled != true || loadingBalanceIds[provider.id] == true) return
+        loadingBalanceIds[provider.id] = true
+        scope.launch {
+            balances[provider.id] = runCatching {
+                "余额：${client.getCachedBalance(provider.config, forceRefresh = forceRefresh)}"
+            }.getOrElse { "余额查询失败：${it.message ?: "未知错误"}" }
+            loadingBalanceIds.remove(provider.id)
+        }
+    }
+    LaunchedEffect(providers) {
+        providers.filter { it.config.balanceOptions.enabled }.forEach(::refreshBalance)
+    }
+
+    Column(
+        Modifier.widthIn(min = 300.dp, max = 380.dp).padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("选择模型", Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            IconButton(onClick = onSettings, modifier = Modifier.size(30.dp)) {
+                Icon(Lucide.Settings, "管理服务商", Modifier.size(16.dp))
+            }
+        }
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("筛选模型") },
+            singleLine = true
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("推理强度", Modifier.weight(1f), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                listOf("默认", "低", "中", "高")[reasoningSliderValue.roundToInt().coerceIn(0, 3)],
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Slider(
+            value = reasoningSliderValue,
+            onValueChange = { reasoningSliderValue = it },
+            onValueChangeFinished = {
+                onReasoningEffortChange(listOf("", "low", "medium", "high")[reasoningSliderValue.roundToInt().coerceIn(0, 3)])
+            },
+            valueRange = 0f..3f,
+            steps = 2
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            listOf("默认", "低", "中", "高").forEach { label ->
+                Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        HorizontalDivider()
+        Column(
+            Modifier.fillMaxWidth().heightIn(max = 300.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            filteredProviders.forEachIndexed { providerIndex, (provider, models) ->
+                if (providerIndex > 0) HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DesktopProviderIcon(provider.name, Modifier.size(16.dp))
+                    Text(provider.name, Modifier.padding(start = 6.dp).weight(1f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    if (provider.config.balanceOptions.enabled) {
+                        Text(
+                            balances[provider.id] ?: "查询余额中",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
                         IconButton(
-                            enabled = !loadingBalance,
-                            onClick = {
-                                loadingBalance = true
-                                scope.launch {
-                                    balance = runCatching { "余额：${client.getCachedBalance(activeProvider.config, forceRefresh = true)}" }
-                                        .getOrElse { "余额查询失败：${it.message ?: "未知错误"}" }
-                                    loadingBalance = false
-                                }
-                            }
+                            enabled = loadingBalanceIds[provider.id] != true,
+                            onClick = { refreshBalance(provider, forceRefresh = true) },
+                            modifier = Modifier.padding(start = 2.dp).size(24.dp)
                         ) {
-                            if (loadingBalance) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                            else Icon(Lucide.RotateCcw, "刷新余额", Modifier.size(17.dp))
+                            if (loadingBalanceIds[provider.id] == true) {
+                                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Lucide.RotateCcw, "刷新 ${provider.name} 余额", Modifier.size(14.dp))
+                            }
                         }
                     }
                 }
-                Text("推理强度", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("", "low", "medium", "high").forEach { effort ->
-                        FilterChip(
-                            selected = reasoningEffort == effort,
-                            onClick = { onReasoningEffortChange(effort) },
-                            label = { Text(effort.ifBlank { "默认" }) }
-                        )
-                    }
-                }
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(entries, key = { "${it.first.id}:${it.second}" }) { (provider, availableModel) ->
-                        val selected = provider.id == selectedProviderId && availableModel == selectedModel
-                        Surface(
-                            modifier = Modifier.fillMaxWidth().clickable { onSelect(provider.id, availableModel) },
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
-                        ) {
-                            Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(availableModel, Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                    if (selected) Icon(Lucide.Sparkles, "当前模型", Modifier.size(16.dp), MaterialTheme.colorScheme.primary)
-                                }
-                                Text(provider.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                FlowRow(
-                                    Modifier.padding(top = 5.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                                    verticalArrangement = Arrangement.spacedBy(3.dp)
-                                ) {
-                                    modelCapabilityLabels(availableModel).forEach { label ->
-                                        Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                                            Text(label, Modifier.padding(horizontal = 5.dp, vertical = 2.dp), fontSize = 10.sp)
-                                        }
-                                    }
-                                }
+                models.forEach { availableModel ->
+                    val selected = provider.id == selectedProviderId && availableModel == selectedModel
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().clickable { onSelect(provider.id, availableModel) },
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+                    ) {
+                        Column(Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(availableModel, Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                if (selected) Icon(Lucide.Sparkles, "当前模型", Modifier.size(14.dp), MaterialTheme.colorScheme.primary)
                             }
+                            Text(
+                                modelCapabilityLabels(availableModel).joinToString(" · "),
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onSettings) { Text("管理服务商") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
-    )
+        }
+    }
 }
 
 private fun modelCapabilityLabels(model: String): List<String> {
@@ -3712,6 +3788,11 @@ private fun Composer(
     assistant: DesktopAssistantProfile,
     assistants: List<DesktopAssistantProfile>,
     onAssistantSelect: (String) -> Unit,
+    mcpServers: List<DesktopMcpServer>,
+    mcpClient: DesktopMcpClient,
+    onMcpServersChange: (List<DesktopMcpServer>) -> Unit,
+    onAssistantMcpServerIdsChange: (Set<String>) -> Unit,
+    onMcpSettings: () -> Unit,
     onToggleWebSearch: () -> Unit,
     onQuickMessageSelect: (String) -> Unit,
     suggestions: List<String>,
@@ -3721,17 +3802,30 @@ private fun Composer(
     var modelMenuOpen by remember { mutableStateOf(false) }
     var assistantMenuOpen by remember { mutableStateOf(false) }
     var quickMessageMenuOpen by remember { mutableStateOf(false) }
-    var fullScreenEditorOpen by remember { mutableStateOf(false) }
+    var mcpMenuOpen by remember { mutableStateOf(false) }
+    var composerExpanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val inputFocusRequester = remember { FocusRequester() }
-    val composerShape = RoundedCornerShape(24.dp)
+    val composerShape = RoundedCornerShape(if (composerExpanded) 16.dp else 24.dp)
     val glassSurface = MaterialTheme.colorScheme.surface
+    LaunchedEffect(composerExpanded) {
+        if (composerExpanded) inputFocusRequester.requestFocus()
+    }
     Box(
-        modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 16.dp),
+        modifier
+            .animateContentSize(animationSpec = tween(280, easing = FastOutSlowInEasing))
+            .then(
+                if (composerExpanded) {
+                    Modifier.fillMaxSize().padding(16.dp)
+                } else {
+                    Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 16.dp)
+                }
+            ),
         contentAlignment = Alignment.Center
     ) {
         Box(
-            modifier = Modifier.fillMaxWidth().widthIn(max = 920.dp)
+            modifier = Modifier.fillMaxWidth()
+                .then(if (composerExpanded) Modifier.fillMaxHeight() else Modifier.widthIn(max = 920.dp))
                 .hazeEffect(hazeState) {
                     blurEffect {
                         blurRadius = 40.dp
@@ -3753,7 +3847,11 @@ private fun Composer(
             Box(
                 Modifier.fillMaxWidth()
             ) {
-                Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+                Column(
+                    Modifier
+                        .then(if (composerExpanded) Modifier.fillMaxSize() else Modifier)
+                        .padding(horizontal = 12.dp, vertical = 9.dp)
+                ) {
                 if (suggestions.isNotEmpty()) {
                     FlowRow(
                         Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
@@ -3813,7 +3911,13 @@ private fun Composer(
                     onValueChange = onPromptChange,
                     modifier = Modifier.fillMaxWidth()
                         .focusRequester(inputFocusRequester)
-                        .heightIn(min = 58.dp, max = 150.dp)
+                        .then(
+                            if (composerExpanded) {
+                                Modifier.weight(1f)
+                            } else {
+                                Modifier.heightIn(min = 58.dp, max = 150.dp)
+                            }
+                        )
                         .onPreviewKeyEvent { event ->
                             if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isAltPressed) {
                                 onAddWithoutResponse()
@@ -3830,8 +3934,12 @@ private fun Composer(
                         },
                     placeholder = { Text("给 RikkaHub 发送消息") },
                     trailingIcon = {
-                        IconButton(onClick = { fullScreenEditorOpen = true }) {
-                            Icon(Lucide.Maximize2, "打开全屏编辑器", Modifier.size(18.dp))
+                        IconButton(onClick = { composerExpanded = !composerExpanded }) {
+                            Icon(
+                                if (composerExpanded) Lucide.Minimize2 else Lucide.Maximize2,
+                                if (composerExpanded) "收起输入框" else "展开输入框",
+                                Modifier.size(18.dp)
+                            )
                         }
                     },
                     colors = TextFieldDefaults.colors(
@@ -3842,8 +3950,8 @@ private fun Composer(
                         unfocusedIndicatorColor = Color.Transparent,
                         disabledIndicatorColor = Color.Transparent
                     ),
-                    minLines = 2,
-                    maxLines = 6
+                    minLines = if (composerExpanded) 12 else 2,
+                    maxLines = if (composerExpanded) Int.MAX_VALUE else 6
                 )
                 Row(Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onAddAttachments, modifier = Modifier.size(34.dp)) {
@@ -3860,6 +3968,36 @@ private fun Composer(
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             }
                         )
+                    }
+                    Box {
+                        IconButton(onClick = { mcpMenuOpen = true }, modifier = Modifier.size(34.dp)) {
+                            Icon(
+                                Lucide.Wrench,
+                                "管理 MCP 服务",
+                                Modifier.size(18.dp),
+                                tint = if (mcpServers.any { it.enabled && it.id in assistant.mcpServerIds }) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = mcpMenuOpen,
+                            onDismissRequest = { mcpMenuOpen = false }
+                        ) {
+                            McpQuickManager(
+                                servers = mcpServers,
+                                selectedServerIds = assistant.mcpServerIds,
+                                mcpClient = mcpClient,
+                                onServersChange = onMcpServersChange,
+                                onSelectedServerIdsChange = onAssistantMcpServerIdsChange,
+                                onOpenSettings = {
+                                    mcpMenuOpen = false
+                                    onMcpSettings()
+                                }
+                            )
+                        }
                     }
                     if (assistant.quickMessages.isNotEmpty()) {
                         Box {
@@ -3938,23 +4076,27 @@ private fun Composer(
                             Text(model, Modifier.padding(horizontal = 7.dp), fontSize = 12.sp, maxLines = 1)
                             Icon(Lucide.ChevronDown, null, Modifier.size(14.dp))
                         }
-                        if (modelMenuOpen) ModelPickerDialog(
-                            providers = providers,
-                            selectedProviderId = selectedProviderId,
-                            selectedModel = model,
-                            reasoningEffort = assistant.reasoningEffort,
-                            client = client,
-                            onDismiss = { modelMenuOpen = false },
-                            onSelect = { providerId, selectedModel ->
-                                modelMenuOpen = false
-                                onProviderModelSelect(providerId, selectedModel)
-                            },
-                            onReasoningEffortChange = onReasoningEffortChange,
-                            onSettings = {
-                                modelMenuOpen = false
-                                onSettings()
-                            }
-                        )
+                        DropdownMenu(
+                            expanded = modelMenuOpen,
+                            onDismissRequest = { modelMenuOpen = false }
+                        ) {
+                            ModelPickerMenu(
+                                providers = providers,
+                                selectedProviderId = selectedProviderId,
+                                selectedModel = model,
+                                reasoningEffort = assistant.reasoningEffort,
+                                client = client,
+                                onSelect = { providerId, selectedModel ->
+                                    modelMenuOpen = false
+                                    onProviderModelSelect(providerId, selectedModel)
+                                },
+                                onReasoningEffortChange = onReasoningEffortChange,
+                                onSettings = {
+                                    modelMenuOpen = false
+                                    onSettings()
+                                }
+                            )
+                        }
                     }
                     Spacer(Modifier.weight(1f))
                     val sendEnabled = isGenerating || prompt.isNotBlank() || pendingAttachments.isNotEmpty()
@@ -4001,40 +4143,139 @@ private fun Composer(
             }
         }
     }
-    if (fullScreenEditorOpen) {
-        FullScreenPromptEditor(
-            initialValue = prompt,
-            onDismiss = { fullScreenEditorOpen = false },
-            onSave = { value ->
-                onPromptChange(value)
-                fullScreenEditorOpen = false
-            }
-        )
-    }
 }
 
 @Composable
-private fun FullScreenPromptEditor(
-    initialValue: String,
-    onDismiss: () -> Unit,
-    onSave: (String) -> Unit
+private fun McpQuickManager(
+    servers: List<DesktopMcpServer>,
+    selectedServerIds: Set<String>,
+    mcpClient: DesktopMcpClient,
+    onServersChange: (List<DesktopMcpServer>) -> Unit,
+    onSelectedServerIdsChange: (Set<String>) -> Unit,
+    onOpenSettings: () -> Unit
 ) {
-    var value by remember(initialValue) { mutableStateOf(initialValue) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        modifier = Modifier.fillMaxWidth(0.85f).fillMaxHeight(0.85f),
-        title = { Text("编辑消息") },
-        text = {
-            OutlinedTextField(
-                value = value,
-                onValueChange = { value = it },
-                modifier = Modifier.fillMaxSize(),
-                placeholder = { Text("给 RikkaHub 发送消息") }
+    val scope = rememberCoroutineScope()
+    val availability = remember { mutableStateMapOf<String, McpAvailability>() }
+
+    fun canCheck(server: DesktopMcpServer): Boolean =
+        server.name.matches(Regex("[A-Za-z0-9]+")) &&
+            if (server.transport == DesktopMcpTransport.STDIO) server.command.isNotBlank() else server.url.isNotBlank()
+
+    fun check(server: DesktopMcpServer) {
+        if (!canCheck(server) || availability[server.id] == McpAvailability.CHECKING) return
+        availability[server.id] = McpAvailability.CHECKING
+        scope.launch {
+            runCatching { mcpClient.syncTools(server) }
+                .onSuccess { tools ->
+                    availability[server.id] = McpAvailability.AVAILABLE
+                    val existingTools = server.tools.associateBy { it.name }
+                    onServersChange(servers.map { candidate ->
+                        if (candidate.id == server.id) {
+                            candidate.copy(tools = tools.map { tool ->
+                                tool.copy(enabled = existingTools[tool.name]?.enabled ?: true)
+                            })
+                        } else {
+                            candidate
+                        }
+                    })
+                }
+                .onFailure { availability[server.id] = McpAvailability.UNAVAILABLE }
+        }
+    }
+
+    Column(
+        Modifier.widthIn(min = 300.dp, max = 380.dp).padding(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("MCP 服务", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    "${servers.count { it.enabled && it.id in selectedServerIds }} 个服务用于当前助手",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp
+                )
+            }
+            TextButton(
+                onClick = { servers.forEach(::check) },
+                enabled = servers.any(::canCheck)
+            ) { Text("检测全部") }
+            IconButton(onClick = onOpenSettings, modifier = Modifier.size(34.dp)) {
+                Icon(Lucide.Settings, "打开 MCP 设置", Modifier.size(17.dp))
+            }
+        }
+        if (servers.isEmpty()) {
+            Text(
+                "尚未配置 MCP 服务",
+                Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
             )
-        },
-        confirmButton = { Button(onClick = { onSave(value) }) { Text("完成") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
-    )
+        }
+        servers.forEachIndexed { index, server ->
+            if (index > 0) HorizontalDivider()
+            val state = availability[server.id] ?: McpAvailability.UNKNOWN
+            val status = when (state) {
+                McpAvailability.UNKNOWN -> if (server.tools.isEmpty()) "尚未检测" else "已同步 ${server.tools.size} 个工具"
+                McpAvailability.CHECKING -> "正在检测"
+                McpAvailability.AVAILABLE -> "可用 · ${server.tools.size} 个工具"
+                McpAvailability.UNAVAILABLE -> "不可用"
+            }
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(server.name.ifBlank { "未命名 MCP 服务" }, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            status,
+                            color = when (state) {
+                                McpAvailability.AVAILABLE -> MaterialTheme.colorScheme.primary
+                                McpAvailability.UNAVAILABLE -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            fontSize = 11.sp
+                        )
+                    }
+                    IconButton(
+                        onClick = { check(server) },
+                        enabled = canCheck(server) && state != McpAvailability.CHECKING,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        if (state == McpAvailability.CHECKING) {
+                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Lucide.RotateCcw, "检测可用性", Modifier.size(16.dp))
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("当前助手", Modifier.weight(1f), fontSize = 12.sp)
+                    Switch(
+                        checked = server.id in selectedServerIds,
+                        onCheckedChange = { selected ->
+                            onSelectedServerIdsChange(
+                                if (selected) selectedServerIds + server.id else selectedServerIds - server.id
+                            )
+                        }
+                    )
+                    Text("启用", Modifier.padding(start = 10.dp, end = 6.dp), fontSize = 12.sp)
+                    Switch(
+                        checked = server.enabled,
+                        onCheckedChange = { enabled ->
+                            onServersChange(servers.map { candidate ->
+                                if (candidate.id == server.id) candidate.copy(enabled = enabled) else candidate
+                            })
+                        }
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

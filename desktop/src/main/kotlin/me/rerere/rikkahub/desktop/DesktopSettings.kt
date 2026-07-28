@@ -421,7 +421,7 @@ internal fun DesktopSettingsPane(
                         ) { onPreferencesChange(preferences.copy(codeBlockAutoWrap = it)) }
                         SettingsDivider()
                         PreferenceSwitch(
-                            "中文排版",
+                            "中文排版优化",
                             "在中文与西文、数字或符号之间自动添加间距",
                             preferences.enableChineseTypography
                         ) { onPreferencesChange(preferences.copy(enableChineseTypography = it)) }
