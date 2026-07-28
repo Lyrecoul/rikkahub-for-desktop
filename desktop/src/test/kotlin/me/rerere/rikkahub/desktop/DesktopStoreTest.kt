@@ -224,6 +224,44 @@ class DesktopStoreTest {
     }
 
     @Test
+    fun keepsTavilyKeyWhenSwitchingSearchProviders() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-tavily-secrets")
+        val secrets = MemorySecrets()
+        val store = DesktopStore(directory.resolve("desktop.json"), secrets)
+        val tavily = DesktopWebSearchSettings(
+            providerType = DesktopSearchProviderType.TAVILY,
+            apiKey = "tavily-secret"
+        )
+
+        store.save(DesktopData(webSearchSettings = tavily))
+        val brave = store.load().webSearchSettings.selectProvider(DesktopSearchProviderType.BRAVE)
+            .withApiKey("brave-secret")
+        store.save(DesktopData(webSearchSettings = brave))
+
+        val restored = store.load().webSearchSettings.selectProvider(DesktopSearchProviderType.TAVILY)
+        assertEquals("tavily-secret", restored.apiKey)
+        assertEquals("brave-secret", restored.selectProvider(DesktopSearchProviderType.BRAVE).apiKey)
+    }
+
+    @Test
+    fun migratesLegacySearchKeyToSelectedTavilyProvider() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-tavily-legacy")
+        val secrets = MemorySecrets().apply { values["search:brave-api-key"] = "legacy-tavily-secret" }
+        val dataFile = directory.resolve("desktop.json")
+        Files.writeString(dataFile, """{"webSearchSettings":{"providerType":"TAVILY"}}""")
+        val store = DesktopStore(dataFile, secrets)
+
+        val migrated = store.load()
+        assertEquals("legacy-tavily-secret", migrated.webSearchSettings.apiKey)
+        store.save(migrated)
+        val restored = store.load()
+
+        assertEquals("legacy-tavily-secret", restored.webSearchSettings.apiKey)
+        assertFalse(secrets.values.containsKey("search:brave-api-key"))
+        assertEquals("legacy-tavily-secret", secrets.values["search:tavily:api-key"])
+    }
+
+    @Test
     fun clearsStoredKeysWhenAKeyIsRemovedOrDataIsReset() {
         val directory = Files.createTempDirectory("rikkahub-desktop-clear-secrets")
         val secrets = MemorySecrets()

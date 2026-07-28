@@ -542,7 +542,7 @@ internal fun DesktopSettingsPane(
                                             selected = webSearchSettings.providerType == provider,
                                             onClick = {
                                                 onWebSearchSettingsChange(
-                                                    webSearchSettings.copy(providerType = provider)
+                                                    webSearchSettings.selectProvider(provider)
                                                 )
                                             },
                                             label = { Text(provider.displayName) }
@@ -562,7 +562,7 @@ internal fun DesktopSettingsPane(
                                 } else {
                                     OutlinedTextField(
                                         value = webSearchSettings.apiKey,
-                                        onValueChange = { onWebSearchSettingsChange(webSearchSettings.copy(apiKey = it.trim())) },
+                                        onValueChange = { onWebSearchSettingsChange(webSearchSettings.withApiKey(it.trim())) },
                                         modifier = Modifier.fillMaxWidth(),
                                         label = { Text("${webSearchSettings.providerType.displayName} ${desktopText(preferences.language, "settings.api_key")}") },
                                         singleLine = true

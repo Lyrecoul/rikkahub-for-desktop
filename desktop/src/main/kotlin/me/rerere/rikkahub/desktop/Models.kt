@@ -92,6 +92,8 @@ data class DesktopWebSearchSettings(
     val providerType: DesktopSearchProviderType = DesktopSearchProviderType.SEARXNG,
     val searxngUrl: String = "",
     val apiKey: String = "",
+    /** Keys are only held in memory; DesktopStore persists them in the system secret store. */
+    val apiKeys: Map<DesktopSearchProviderType, String> = emptyMap(),
     val resultCount: Int = 5
 ) {
     val isConfigured: Boolean get() = when (providerType) {
@@ -99,6 +101,16 @@ data class DesktopWebSearchSettings(
         else -> apiKey.isNotBlank()
     }
 }
+
+internal fun DesktopWebSearchSettings.selectProvider(
+    provider: DesktopSearchProviderType
+): DesktopWebSearchSettings {
+    val keys = apiKeys + (providerType to apiKey)
+    return copy(providerType = provider, apiKey = keys[provider].orEmpty(), apiKeys = keys)
+}
+
+internal fun DesktopWebSearchSettings.withApiKey(value: String): DesktopWebSearchSettings =
+    copy(apiKey = value, apiKeys = apiKeys + (providerType to value))
 
 @Serializable
 data class DesktopBalanceOptions(

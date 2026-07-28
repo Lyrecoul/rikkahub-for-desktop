@@ -53,7 +53,10 @@ internal class DesktopStore(
 
     fun clearSecrets(data: DesktopData) {
         data.providers.forEach { provider -> deleteProviderSecret(provider.id) }
-        secretStore.delete(braveSearchSecretId)
+        DesktopSearchProviderType.entries.forEach { provider ->
+            secretStore.delete(searchSecretId(provider))
+        }
+        secretStore.delete(legacySearchSecretId)
     }
 
     fun importData(source: Path): DesktopData {
@@ -164,8 +167,19 @@ internal class DesktopStore(
                 apiKey = provider.config.apiKey.ifBlank { secretStore.read(providerSecretId(provider.id)).orEmpty() }
             ))
         }
+        val storedKeys = DesktopSearchProviderType.entries.associateWith { provider ->
+            secretStore.read(searchSecretId(provider)).orEmpty()
+        }.filterValues(String::isNotBlank)
+        val selectedProvider = data.webSearchSettings.providerType
+        val legacyKey = if (selectedProvider !in storedKeys) {
+            secretStore.read(legacySearchSecretId).orEmpty()
+        } else {
+            ""
+        }
+        val searchKeys = storedKeys + if (legacyKey.isNotBlank()) mapOf(selectedProvider to legacyKey) else emptyMap()
         val search = data.webSearchSettings.copy(
-            apiKey = data.webSearchSettings.apiKey.ifBlank { secretStore.read(braveSearchSecretId).orEmpty() }
+            apiKey = data.webSearchSettings.apiKey.ifBlank { searchKeys[selectedProvider].orEmpty() },
+            apiKeys = searchKeys
         )
         val hydrated = data.copy(providers = providers, webSearchSettings = search)
         return hydrated.copy(config = hydrated.activeProvider().config)
@@ -183,17 +197,22 @@ internal class DesktopStore(
             }
             provider.copy(config = provider.config.copy(apiKey = ""))
         }
-        val braveKey = data.webSearchSettings.apiKey
-        if (braveKey.isBlank()) {
-            secretStore.delete(braveSearchSecretId)
-        } else {
-            check(secretStore.write(braveSearchSecretId, braveKey)) {
-                "无法将 Brave Search API 密钥写入系统密钥库；为保护密钥，设置未保存。"
+        val searchSettings = data.webSearchSettings
+        val searchKeys = searchSettings.apiKeys + (searchSettings.providerType to searchSettings.apiKey)
+        searchKeys.forEach { (provider, key) ->
+            if (key.isBlank()) {
+                secretStore.delete(searchSecretId(provider))
+            } else {
+                check(secretStore.write(searchSecretId(provider), key)) {
+                    "无法将 ${provider.name} API 密钥写入系统密钥库；为保护密钥，设置未保存。"
+                }
             }
         }
+        // The historical shared slot is migrated once its provider-specific value is durable.
+        secretStore.delete(legacySearchSecretId)
         val sanitized = data.copy(
             providers = providers,
-            webSearchSettings = data.webSearchSettings.copy(apiKey = "")
+            webSearchSettings = searchSettings.copy(apiKey = "", apiKeys = emptyMap())
         )
         return sanitized.copy(config = sanitized.activeProvider().config)
     }
@@ -211,8 +230,11 @@ internal class DesktopStore(
 
     private fun providerSecretId(providerId: String) = "provider:$providerId:api-key"
 
+    private fun searchSecretId(provider: DesktopSearchProviderType) =
+        "search:${provider.name.lowercase()}:api-key"
+
     companion object {
-        private const val braveSearchSecretId = "search:brave-api-key"
+        private const val legacySearchSecretId = "search:brave-api-key"
         private const val CurrentSchemaVersion = 2
 
         fun defaultDataFile(): Path {
