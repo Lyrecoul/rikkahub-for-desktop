@@ -25,7 +25,7 @@ class DesktopStoreTest {
     @Test
     fun savesAndLoadsDesktopData() {
         val directory = Files.createTempDirectory("rikkahub-desktop-store")
-        val store = DesktopStore(directory.resolve("desktop.json"))
+        val store = DesktopStore(directory.resolve("desktop.json"), MemorySecrets())
         val conversation = DesktopConversation(
             title = "Saved conversation",
             messages = listOf(ChatMessage("user", "hello"))

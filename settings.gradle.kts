@@ -1,22 +1,7 @@
 pluginManagement {
     repositories {
-        google {
-            content {
-                includeGroupByRegex("com\\.android.*")
-                includeGroupByRegex("com\\.google.*")
-                includeGroupByRegex("androidx.*")
-            }
-        }
         mavenCentral()
         gradlePluginPortal()
-        maven("https://repo.itextsupport.com/android")
-    }
-    resolutionStrategy {
-        eachPlugin {
-            if (requested.id.id == "io.objectbox") {
-                useModule("io.objectbox:objectbox-gradle-plugin:${requested.version}")
-            }
-        }
     }
 }
 plugins {
@@ -28,22 +13,8 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven("https://jitpack.io")
-        mavenLocal()
     }
 }
 
 rootProject.name = "rikkahub"
 include(":desktop")
-if (!providers.gradleProperty("desktopOnly").isPresent) {
-    include(":app")
-    include(":highlight")
-    include(":ai")
-    include(":search")
-    include(":speech")
-    include(":common")
-    include(":document")
-    include(":web")
-    include(":material3")
-    include(":workspace")
-    include(":app:baselineprofile")
-}

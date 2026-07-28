@@ -44,13 +44,6 @@ dependencies {
     testImplementation(kotlin("test"))
 }
 
-tasks.processResources {
-    from(rootProject.file("docs/icon.png"))
-    from(rootProject.file("app/src/main/assets/icons")) {
-        into("icons")
-    }
-}
-
 compose.desktop {
     application {
         mainClass = "me.rerere.rikkahub.desktop.MainKt"
@@ -62,7 +55,7 @@ compose.desktop {
             description = "RikkaHub Linux desktop client"
             vendor = "RikkaHub"
             linux {
-                iconFile.set(rootProject.file("docs/icon.png"))
+                iconFile.set(project.file("src/main/resources/icon.png"))
                 menuGroup = "Network"
             }
         }
