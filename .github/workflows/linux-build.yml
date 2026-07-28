@@ -24,7 +24,9 @@ jobs:
     container: archlinux:latest
     steps:
       - name: Install build tools
-        run: pacman -Syu --noconfirm base-devel git jdk17-openjdk
+        run: |
+          pacman -Syu --noconfirm base-devel git jdk17-openjdk
+          id builduser >/dev/null 2>&1 || useradd --create-home builduser
       - uses: actions/checkout@v4
       - name: Configure Java
         shell: bash
@@ -37,8 +39,9 @@ jobs:
       - name: Build Arch Linux package
         run: |
           chmod +x gradlew
+          chown -R builduser:builduser "$GITHUB_WORKSPACE"
           cd packaging/arch
-          makepkg --noconfirm --cleanbuild --asroot
+          runuser -u builduser -- makepkg --noconfirm --cleanbuild
       - uses: actions/upload-artifact@v4
         with:
           name: rikkahub-archlinux-x86_64
