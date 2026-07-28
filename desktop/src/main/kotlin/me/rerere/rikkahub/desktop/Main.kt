@@ -331,6 +331,7 @@ private fun RikkaHubDesktop(
     var sidebarPreferredWidth by remember { mutableStateOf(292.dp) }
     var sidebarResizeHovered by remember { mutableStateOf(false) }
     var jumpToMessageId by remember { mutableStateOf<String?>(null) }
+    var jumpToMessageRequest by remember { mutableStateOf(0) }
     var renameTarget by remember { mutableStateOf<ConversationRenameTarget?>(null) }
     var conversationPromptTarget by remember { mutableStateOf<ConversationPromptTarget?>(null) }
     var folderCreateTarget by remember { mutableStateOf<FolderCreateTarget?>(null) }
@@ -967,7 +968,10 @@ private fun RikkaHubDesktop(
                 generationErrors[target.conversationId] = error.message ?: desktopText(data.preferences.language, "runtime.translation_failed")
             } finally {
                 generationJobs.remove(target.conversationId)
-                translatedMessageId?.let { messageId -> jumpToMessageId = messageId }
+                translatedMessageId?.let { messageId ->
+                    jumpToMessageId = messageId
+                    jumpToMessageRequest++
+                }
             }
         }
         generationJobs[target.conversationId] = job
@@ -1024,6 +1028,7 @@ private fun RikkaHubDesktop(
                     onSelectFavorite = { conversationId, messageId ->
                         update(data.copy(selectedConversationId = conversationId))
                         jumpToMessageId = messageId
+                        jumpToMessageRequest++
                         showSettings = false
                         if (compact) showSidebar = false
                     },
@@ -1138,12 +1143,15 @@ private fun RikkaHubDesktop(
                         assistants = data.assistants.ifEmpty { listOf(data.activeAssistant()) },
                         preferences = data.preferences,
                         providers = data.providers.ifEmpty { listOf(data.activeProvider()) },
-                        folders = data.folders.filter { it.assistantId == selectedAssistant.id },
+                        // The chat toolbar is also the folder management entry point, so it must
+                        // expose every saved folder rather than only the current assistant's scope.
+                        folders = data.folders,
                         mcpServers = data.mcpServers,
                         mcpClient = mcpClient,
                         selectedProviderId = selectedAssistant.providerId.ifBlank { data.activeProvider().id },
                         webSearchEnabled = selected.webSearchEnabled ?: selectedAssistant.enableWebSearch,
                         jumpToMessageId = jumpToMessageId,
+                        jumpToMessageRequest = jumpToMessageRequest,
                         conversationScrollPositions = conversationScrollPositions,
                         onAskUserAnswer = ::submitAskUserAnswer,
                         showMenu = compact,
@@ -1843,9 +1851,7 @@ private fun ConversationSidebar(
     var folderFilterId by remember { mutableStateOf<String?>(null) }
     var showFavorites by remember { mutableStateOf(false) }
     var sortMenuOpen by remember { mutableStateOf(false) }
-    val availableFolders = data.folders.filter { folder ->
-        assistantFilterId == null || folder.assistantId == assistantFilterId
-    }
+    val availableFolders = data.folders
     val conversations = data.filteredConversations(query, assistantFilterId).filter {
         (folderFilterId == null || it.folderId == folderFilterId) &&
             (tagFilter == null || data.assistantFor(it).tags.any { tag -> tag.equals(tagFilter, ignoreCase = true) })
@@ -2058,7 +2064,7 @@ private fun ConversationSidebar(
                             onClick = { onSelect(conversation.id) },
                             onPin = { onPin(conversation.id) },
                             onDelete = { onDelete(conversation.id) },
-                            folders = data.folders.filter { it.assistantId == data.assistantFor(conversation).id },
+                            folders = data.folders,
                             onMoveToFolder = { folderId -> onMoveToFolder(conversation.id, folderId) }
                         )
                         }
@@ -2357,6 +2363,7 @@ private fun ChatPane(
     selectedProviderId: String,
     webSearchEnabled: Boolean,
     jumpToMessageId: String?,
+    jumpToMessageRequest: Int,
     conversationScrollPositions: MutableMap<String, Pair<Int, Int>>,
     onAskUserAnswer: (String, DesktopToolCall, String) -> Unit,
     showMenu: Boolean,
@@ -2446,7 +2453,7 @@ private fun ChatPane(
             listState.animateScrollToItem(targetIndex)
         }
     }
-    LaunchedEffect(jumpToMessageId, conversation.id) {
+    LaunchedEffect(jumpToMessageId, jumpToMessageRequest, conversation.id) {
         val index = displayItems.indexOfFirst { item ->
             when (item) {
                 is DesktopChatDisplayItem.Message -> item.message.id == jumpToMessageId
@@ -2630,56 +2637,28 @@ private fun ChatPane(
                 IconButton(onClick = { folderMenuOpen = true }) {
                     Icon(Lucide.Folder, desktopText(language, "chat.move_to_folder"))
                 }
-                DropdownMenu(folderMenuOpen, onDismissRequest = { folderMenuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text(desktopText(language, "chat.uncategorized")) },
-                                     onClick = {
-                                         folderMenuOpen = false
-                                         onMoveToFolder(null)
-                                     }
-                    )
-                    folders.forEach { folder ->
-                        DropdownMenuItem(
-                            text = { Text(folder.name) },
-                            leadingIcon = { Icon(Lucide.Folder, null, Modifier.size(18.dp)) },
-                            trailingIcon = {
-                                Row {
-                                    IconButton(
-                                        onClick = {
-                                            folderMenuOpen = false
-                                            onRenameFolder(folder)
-                                        },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(Lucide.Pencil, desktopText(language, "chat.rename"), Modifier.size(16.dp))
-                                    }
-                                    IconButton(
-                                        onClick = {
-                                            folderMenuOpen = false
-                                            onDeleteFolder(folder)
-                                        },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(Lucide.Trash2, desktopText(language, "message.delete"), Modifier.size(16.dp))
-                                    }
-                                }
-                            },
-                                         onClick = {
-                                             folderMenuOpen = false
-                                             onMoveToFolder(folder.id)
-                                         }
-                        )
+                FolderManagementMenu(
+                    expanded = folderMenuOpen,
+                    folders = folders,
+                    language = language,
+                    onDismiss = { folderMenuOpen = false },
+                    onMoveToFolder = { folderId ->
+                        folderMenuOpen = false
+                        onMoveToFolder(folderId)
+                    },
+                    onCreateFolder = {
+                        folderMenuOpen = false
+                        onCreateFolder()
+                    },
+                    onRenameFolder = { folder ->
+                        folderMenuOpen = false
+                        onRenameFolder(folder)
+                    },
+                    onDeleteFolder = { folder ->
+                        folderMenuOpen = false
+                        onDeleteFolder(folder)
                     }
-                    HorizontalDivider()
-                    DropdownMenuItem(
-                        text = { Text(desktopText(language, "chat.new_folder")) },
-                                     leadingIcon = { Icon(Lucide.Plus, null, Modifier.size(18.dp)) },
-                                     onClick = {
-                                         folderMenuOpen = false
-                                         onCreateFolder()
-                                     }
-                    )
-                }
+                )
             }
             IconButton(onClick = onNew) { Icon(Lucide.Plus, desktopText(language, "sidebar.new_chat")) }
         }
@@ -2892,25 +2871,68 @@ private fun ChatPane(
                     TextButton(onClick = onDismissError) { Text(desktopText(language, "chat.close")) }
                 }
             }
-            DropdownMenu(folderMenuOpen, onDismissRequest = { folderMenuOpen = false }) {
-                DropdownMenuItem(
-                    text = { Text(desktopText(language, "sidebar.chats")) },
-                    onClick = {
-                        folderMenuOpen = false
-                        onMoveToFolder(null)
-                    }
-                )
-                folders.forEach { folder ->
-                    DropdownMenuItem(
-                        text = { Text(folder.name) },
-                        onClick = {
-                            folderMenuOpen = false
-                            onMoveToFolder(folder.id)
-                        }
-                    )
-                }
-            }
         }
+        }
+    }
+}
+
+@Composable
+private fun FolderManagementMenu(
+    expanded: Boolean,
+    folders: List<DesktopFolder>,
+    language: DesktopLanguage,
+    onDismiss: () -> Unit,
+    onMoveToFolder: (String?) -> Unit,
+    onCreateFolder: () -> Unit,
+    onRenameFolder: (DesktopFolder) -> Unit,
+    onDeleteFolder: (DesktopFolder) -> Unit
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        modifier = Modifier.widthIn(min = 280.dp, max = 360.dp)
+    ) {
+        DropdownMenuItem(
+            text = { Text(desktopText(language, "chat.new_folder")) },
+            leadingIcon = { Icon(Lucide.Plus, null, Modifier.size(18.dp)) },
+            onClick = onCreateFolder
+        )
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text(desktopText(language, "chat.uncategorized")) },
+            leadingIcon = { Icon(Lucide.Folder, null, Modifier.size(18.dp)) },
+            onClick = { onMoveToFolder(null) }
+        )
+        folders.forEach { folder ->
+            DropdownMenuItem(
+                text = { Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                leadingIcon = { Icon(Lucide.Folder, null, Modifier.size(18.dp)) },
+                trailingIcon = {
+                    Row {
+                        IconButton(
+                            onClick = { onRenameFolder(folder) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Lucide.Pencil,
+                                desktopText(language, "sidebar.rename_folder"),
+                                Modifier.size(16.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = { onDeleteFolder(folder) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Lucide.Trash2,
+                                desktopText(language, "message.delete"),
+                                Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                },
+                onClick = { onMoveToFolder(folder.id) }
+            )
         }
     }
 }
@@ -3108,14 +3130,19 @@ private fun MessageBlock(
         codeBlockAutoWrap = preferences.codeBlockAutoWrap,
         enableChineseTypography = preferences.enableChineseTypography
     )
+    val highlightAlpha by animateFloatAsState(
+        targetValue = if (highlighted) 0.45f else 0f,
+        animationSpec = tween(260, easing = FastOutSlowInEasing),
+        label = "messageHighlightAlpha"
+    )
     Column(
         Modifier.fillMaxWidth()
             .background(
-                if (highlighted) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f) else Color.Transparent,
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = highlightAlpha),
                 RoundedCornerShape(8.dp)
             )
-            .padding(if (highlighted) 8.dp else 0.dp)
-            .animateContentSize(tween(180, easing = FastOutSlowInEasing)),
+            // Keep the highlight inset stable so fading the background never reflows message content.
+            .padding(8.dp),
         horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {

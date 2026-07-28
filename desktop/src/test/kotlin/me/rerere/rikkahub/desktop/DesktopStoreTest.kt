@@ -377,7 +377,7 @@ class DesktopStoreTest {
     }
 
     @Test
-    fun folderOperationsKeepFoldersScopedToTheirAssistant() {
+    fun movingConversationToFolderWorksAcrossAssistantScopes() {
         val firstAssistant = DesktopAssistantProfile(id = "first")
         val secondAssistant = DesktopAssistantProfile(id = "second")
         val conversation = DesktopConversation(id = "conversation", assistantId = firstAssistant.id)
@@ -390,19 +390,19 @@ class DesktopStoreTest {
             selectedConversationId = conversation.id
         )
 
-        val unchanged = data.moveConversationToFolder(conversation.id, secondFolder.id)
+        val moved = data.moveConversationToFolder(conversation.id, secondFolder.id)
         val created = data.createFolder(
             DesktopFolder(id = "first-folder", assistantId = firstAssistant.id, name = "First"),
             conversation.id
         )
 
-        assertEquals(null, unchanged.conversations.single().folderId)
+        assertEquals(secondFolder.id, moved.conversations.single().folderId)
         assertEquals("first-folder", created.conversations.single().folderId)
         assertEquals(2, created.folders.size)
     }
 
     @Test
-    fun normalizationClearsFoldersOwnedByAnotherAssistant() {
+    fun normalizationKeepsFoldersOwnedByAnotherAssistant() {
         val firstAssistant = DesktopAssistantProfile(id = "first")
         val secondAssistant = DesktopAssistantProfile(id = "second")
         val folder = DesktopFolder(id = "second-folder", assistantId = secondAssistant.id, name = "Second")
@@ -414,11 +414,11 @@ class DesktopStoreTest {
             conversations = listOf(DesktopConversation(assistantId = firstAssistant.id, folderId = folder.id))
         ).normalized()
 
-        assertEquals(null, normalized.conversations.single().folderId)
+        assertEquals(folder.id, normalized.conversations.single().folderId)
     }
 
     @Test
-    fun clearsFolderFilterWhenSwitchingToAnotherAssistantsScope() {
+    fun keepsFolderFilterWhenSwitchingToAnotherAssistantsScope() {
         val firstAssistant = DesktopAssistantProfile(id = "first")
         val secondAssistant = DesktopAssistantProfile(id = "second")
         val firstFolder = DesktopFolder(id = "first-folder", assistantId = firstAssistant.id, name = "First")
@@ -428,12 +428,12 @@ class DesktopStoreTest {
             folders = listOf(firstFolder)
         )
 
-        assertEquals(null, data.folderFilterForAssistant(firstFolder.id, secondAssistant.id))
+        assertEquals(firstFolder.id, data.folderFilterForAssistant(firstFolder.id, secondAssistant.id))
         assertEquals(firstFolder.id, data.folderFilterForAssistant(firstFolder.id, firstAssistant.id))
     }
 
     @Test
-    fun movingConversationToAnotherAssistantClearsItsOldFolder() {
+    fun movingConversationToAnotherAssistantKeepsItsFolder() {
         val firstAssistant = DesktopAssistantProfile(id = "first")
         val secondAssistant = DesktopAssistantProfile(id = "second")
         val firstFolder = DesktopFolder(id = "first-folder", assistantId = firstAssistant.id, name = "First")
@@ -449,7 +449,7 @@ class DesktopStoreTest {
         val moved = data.assignAssistantToConversation(conversation.id, secondAssistant.id)
 
         assertEquals(secondAssistant.id, moved.conversations.single().assistantId)
-        assertEquals(null, moved.conversations.single().folderId)
+        assertEquals(firstFolder.id, moved.conversations.single().folderId)
     }
 
     @Test

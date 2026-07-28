@@ -1179,7 +1179,7 @@ fun DesktopData.createFolder(folder: DesktopFolder, conversationId: String? = nu
 fun DesktopData.moveConversationToFolder(conversationId: String, folderId: String?): DesktopData {
     val conversation = conversations.firstOrNull { it.id == conversationId } ?: return this
     val folder = folderId?.let { id -> folders.firstOrNull { it.id == id } }
-    if (folderId != null && (folder == null || folder.assistantId != assistantFor(conversation).id)) return this
+    if (folderId != null && folder == null) return this
     val branchIds = mutableSetOf(conversationId)
     var changed = true
     while (changed) {
@@ -1195,7 +1195,7 @@ fun DesktopData.moveConversationToFolder(conversationId: String, folderId: Strin
 }
 
 internal fun DesktopData.folderFilterForAssistant(folderId: String?, assistantId: String): String? =
-    folderId?.takeIf { id -> folders.any { folder -> folder.id == id && folder.assistantId == assistantId } }
+    folderId?.takeIf { id -> folders.any { folder -> folder.id == id } }
 
 fun DesktopData.assignAssistantToConversation(conversationId: String, assistantId: String): DesktopData {
     if (assistants.none { it.id == assistantId } || conversations.none { it.id == conversationId }) return this

@@ -266,9 +266,8 @@ internal fun DesktopData.normalized(): DesktopData {
         selectedAssistantId = assistantId,
         folders = validFolders,
         conversations = validConversations.map { conversation ->
-            val conversationAssistantId = validAssistants.firstOrNull { it.id == conversation.assistantId }?.id ?: assistantId
             val folder = validFolders.firstOrNull { it.id == conversation.folderId }
-            if (conversation.folderId != null && (folder == null || folder.assistantId != conversationAssistantId)) {
+            if (conversation.folderId != null && folder == null) {
                 conversation.copy(folderId = null)
             } else conversation
         },
