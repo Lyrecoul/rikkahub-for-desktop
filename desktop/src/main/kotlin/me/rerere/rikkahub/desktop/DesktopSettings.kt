@@ -3,6 +3,8 @@ package me.rerere.rikkahub.desktop
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.layout.Arrangement
@@ -50,16 +52,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
@@ -92,11 +91,11 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlin.math.roundToInt
 
-internal enum class DesktopSettingsSection(val itemIndex: Int) {
-    GENERAL(0),
-    DATA(3),
-    ASSISTANTS(4),
-    PROVIDERS(5)
+internal enum class DesktopSettingsSection {
+    GENERAL,
+    DATA,
+    ASSISTANTS,
+    PROVIDERS
 }
 
 @Composable
@@ -182,7 +181,9 @@ internal fun DesktopSettingsPane(
     }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
-    val sectionScrollOffsets = remember { mutableStateMapOf<DesktopSettingsSection, Int>() }
+    val sectionBringIntoViewRequesters = remember {
+        DesktopSettingsSection.entries.associateWith { BringIntoViewRequester() }
+    }
     var scrollViewportHeight by remember { mutableIntStateOf(0) }
     val settingsScrollbarAdapter = remember(scrollState, scrollViewportHeight) {
         object : ScrollbarAdapter {
@@ -197,9 +198,9 @@ internal fun DesktopSettingsPane(
     }
     var activeSection by remember { mutableStateOf(initialSection) }
 
-    LaunchedEffect(initialSection, sectionScrollOffsets.size) {
+    LaunchedEffect(initialSection) {
         activeSection = initialSection
-        scrollState.scrollTo(sectionScrollOffsets[initialSection] ?: 0)
+        sectionBringIntoViewRequesters.getValue(initialSection).bringIntoView()
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -228,7 +229,7 @@ internal fun DesktopSettingsPane(
                     activeSection = activeSection,
                     onSectionClick = { section ->
                         activeSection = section
-                        scope.launch { scrollState.animateScrollTo(sectionScrollOffsets[section] ?: 0) }
+                        scope.launch { sectionBringIntoViewRequesters.getValue(section).bringIntoView() }
                     }
                 )
                 Box(
@@ -248,10 +249,7 @@ internal fun DesktopSettingsPane(
                         .padding(start = 24.dp, end = 24.dp, top = 22.dp, bottom = 36.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                Box(Modifier.onGloballyPositioned { coordinates ->
-                    sectionScrollOffsets[DesktopSettingsSection.GENERAL] =
-                        (coordinates.positionInParent().y + scrollState.value).roundToInt()
-                }) {
+                Box(Modifier.bringIntoViewRequester(sectionBringIntoViewRequesters.getValue(DesktopSettingsSection.GENERAL))) {
                     SettingsSection("通用设置", Lucide.Palette) {
                         SettingsRow(
                             title = "颜色模式",
@@ -408,10 +406,7 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                Box(Modifier.onGloballyPositioned { coordinates ->
-                    sectionScrollOffsets[DesktopSettingsSection.DATA] =
-                        (coordinates.positionInParent().y + scrollState.value).roundToInt()
-                }) {
+                Box(Modifier.bringIntoViewRequester(sectionBringIntoViewRequesters.getValue(DesktopSettingsSection.DATA))) {
                     SettingsSection("数据、备份与联网搜索", Lucide.Save) {
                         SettingsRow(
                             title = "导出备份",
@@ -541,10 +536,7 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                Box(Modifier.onGloballyPositioned { coordinates ->
-                    sectionScrollOffsets[DesktopSettingsSection.ASSISTANTS] =
-                        (coordinates.positionInParent().y + scrollState.value).roundToInt()
-                }) {
+                Box(Modifier.bringIntoViewRequester(sectionBringIntoViewRequesters.getValue(DesktopSettingsSection.ASSISTANTS))) {
                     SettingsSection("助手", Lucide.Bot) {
                         FlowRow(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -1540,10 +1532,7 @@ internal fun DesktopSettingsPane(
                     }
                 }
 
-                Box(Modifier.onGloballyPositioned { coordinates ->
-                    sectionScrollOffsets[DesktopSettingsSection.PROVIDERS] =
-                        (coordinates.positionInParent().y + scrollState.value).roundToInt()
-                }) {
+                Box(Modifier.bringIntoViewRequester(sectionBringIntoViewRequesters.getValue(DesktopSettingsSection.PROVIDERS))) {
                     SettingsSection("模型与服务", Lucide.ServerCog) {
                         FlowRow(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -2340,6 +2329,7 @@ private fun DesktopMcpSettings(
             }
         }
         servers.forEach { server ->
+            var argumentsText by remember(server.id) { mutableStateOf(server.arguments.joinToString("\n")) }
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -2365,29 +2355,78 @@ private fun DesktopMcpSettings(
                     singleLine = true,
                     isError = server.name.isNotBlank() && !server.name.matches(Regex("[A-Za-z0-9]+"))
                 )
-                OutlinedTextField(
-                    value = server.url,
-                    onValueChange = { value -> onServersChange(servers.replaceMcpServer(server.id) { it.copy(url = value) }) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("服务器 URL") },
-                    placeholder = { Text("https://example.com/mcp") },
-                    singleLine = true
-                )
                 SingleChoiceSegmentedButtonRow {
                     DesktopMcpTransport.entries.forEachIndexed { index, transport ->
                         SegmentedButton(
                             selected = server.transport == transport,
                             onClick = { onServersChange(servers.replaceMcpServer(server.id) { it.copy(transport = transport) }) },
                             shape = SegmentedButtonDefaults.itemShape(index, DesktopMcpTransport.entries.size),
-                            label = { Text(if (transport == DesktopMcpTransport.STREAMABLE_HTTP) "Streamable HTTP" else "SSE") }
+                            label = {
+                                Text(
+                                    when (transport) {
+                                        DesktopMcpTransport.STREAMABLE_HTTP -> "Streamable HTTP"
+                                        DesktopMcpTransport.SSE -> "SSE"
+                                        DesktopMcpTransport.STDIO -> "Stdio"
+                                    }
+                                )
+                            }
                         )
                     }
+                }
+                if (server.transport == DesktopMcpTransport.STDIO) {
+                    OutlinedTextField(
+                        value = server.command,
+                        onValueChange = { value -> onServersChange(servers.replaceMcpServer(server.id) { it.copy(command = value) }) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("启动命令") },
+                        placeholder = { Text("npx") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = argumentsText,
+                        onValueChange = { value ->
+                            argumentsText = value
+                            onServersChange(servers.replaceMcpServer(server.id) {
+                                it.copy(arguments = value.lineSequence().map(String::trim).filter(String::isNotBlank).toList())
+                            })
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("命令参数") },
+                        supportingText = { Text("每行一个参数") },
+                        minLines = 2
+                    )
+                    OutlinedTextField(
+                        value = server.environment.joinToString("\n") { "${it.name}=${it.value}" },
+                        onValueChange = { value ->
+                            onServersChange(servers.replaceMcpServer(server.id) {
+                                it.copy(environment = value.lineSequence().mapNotNull { line ->
+                                    line.substringBefore('=', "").takeIf(String::isNotBlank)?.let { name ->
+                                        DesktopCustomHeader(name, line.substringAfter('=', ""))
+                                    }
+                                }.toList())
+                            })
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("环境变量") },
+                        supportingText = { Text("每行一个 KEY=VALUE") },
+                        minLines = 2
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = server.url,
+                        onValueChange = { value -> onServersChange(servers.replaceMcpServer(server.id) { it.copy(url = value) }) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("服务器 URL") },
+                        placeholder = { Text("https://example.com/mcp") },
+                        singleLine = true
+                    )
                 }
                 PreferenceSwitch("启用服务器", "关闭后不会向模型暴露其中的工具", server.enabled) { enabled ->
                     onServersChange(servers.replaceMcpServer(server.id) { it.copy(enabled = enabled) })
                 }
                 OutlinedButton(
-                    enabled = syncingServerId == null && server.name.matches(Regex("[A-Za-z0-9]+")) && server.url.isNotBlank(),
+                    enabled = syncingServerId == null && server.name.matches(Regex("[A-Za-z0-9]+")) &&
+                        (if (server.transport == DesktopMcpTransport.STDIO) server.command.isNotBlank() else server.url.isNotBlank()),
                     onClick = {
                         syncingServerId = server.id
                         syncError = null

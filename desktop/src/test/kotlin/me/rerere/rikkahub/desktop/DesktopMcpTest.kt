@@ -48,4 +48,27 @@ class DesktopMcpTest {
         assertEquals("object", parameters["type"]!!.jsonPrimitive.content)
         assertTrue(parameters["required"]!!.jsonArray.any { it.jsonPrimitive.content == "query" })
     }
+
+    @Test
+    fun stdioServerKeepsProcessSettings() {
+        val base = DesktopMcpServer(
+            id = "stdio",
+            name = "Local",
+            transport = DesktopMcpTransport.STDIO,
+            command = "npx",
+            arguments = listOf("-y", "@modelcontextprotocol/server-filesystem"),
+            environment = listOf(DesktopCustomHeader("ROOT", "/tmp"))
+        )
+
+        assertEquals(DesktopMcpTransport.STDIO, base.transport)
+        assertEquals("npx", base.command)
+        assertEquals(listOf("ROOT"), base.environment.map { it.name })
+    }
+
+    @Test
+    fun stdioArgumentsCanHaveWhitespaceFromMultilineInput() {
+        val arguments = listOf(" /tmp/server.js ", "  mcp  ")
+
+        assertEquals(listOf("/tmp/server.js", "mcp"), arguments.map(String::trim).filter(String::isNotBlank))
+    }
 }

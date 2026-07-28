@@ -9,6 +9,7 @@ import io.ktor.http.headers
 import io.ktor.serialization.kotlinx.json.json
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.SseClientTransport
+import io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport
 import io.modelcontextprotocol.kotlin.sdk.client.StreamableHttpClientTransport
 import io.modelcontextprotocol.kotlin.sdk.shared.AbstractTransport
 import io.modelcontextprotocol.kotlin.sdk.shared.RequestOptions
@@ -17,9 +18,14 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequestParams
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.io.asSink
+import kotlinx.io.asSource
+import kotlinx.io.buffered
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -32,10 +38,13 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.seconds
 
+private const val MCP_CONNECTION_TIMEOUT_MILLIS = 30_000L
+
 @Serializable
 enum class DesktopMcpTransport {
     STREAMABLE_HTTP,
-    SSE
+    SSE,
+    STDIO
 }
 
 @Serializable
@@ -54,6 +63,9 @@ data class DesktopMcpServer(
     val url: String = "",
     val transport: DesktopMcpTransport = DesktopMcpTransport.STREAMABLE_HTTP,
     val headers: List<DesktopCustomHeader> = emptyList(),
+    val command: String = "",
+    val arguments: List<String> = emptyList(),
+    val environment: List<DesktopCustomHeader> = emptyList(),
     val enabled: Boolean = true,
     val tools: List<DesktopMcpTool> = emptyList()
 )
@@ -69,16 +81,19 @@ internal class DesktopMcpClient {
     private val sessions = ConcurrentHashMap<String, McpSession>()
     private val sessionsMutex = Mutex()
 
-    suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = withClient(server) { client ->
-        client.listTools().tools.map { tool ->
-            DesktopMcpTool(
-                name = tool.name,
-                description = tool.description.orEmpty(),
-                inputSchema = tool.inputSchema.properties ?: JsonObject(emptyMap()),
-                required = tool.inputSchema.required.orEmpty()
-            )
+    suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> =
+        withTimeout(MCP_CONNECTION_TIMEOUT_MILLIS) {
+            withClient(server) { client ->
+                client.listTools().tools.map { tool ->
+                    DesktopMcpTool(
+                        name = tool.name,
+                        description = tool.description.orEmpty(),
+                        inputSchema = tool.inputSchema.properties ?: JsonObject(emptyMap()),
+                        required = tool.inputSchema.required.orEmpty()
+                    )
+                }
+            }
         }
-    }
 
     suspend fun callTool(server: DesktopMcpServer, toolName: String, arguments: String): String = withClient(server) { client ->
         val args = Json.parseToJsonElement(arguments).jsonObject
@@ -99,48 +114,108 @@ internal class DesktopMcpClient {
             require(server.name.matches(Regex("[A-Za-z0-9]+"))) {
                 "MCP server name must contain only letters and numbers: ${server.name}"
             }
-            require(server.url.isNotBlank()) { "MCP server URL is required" }
+            require(server.transport == DesktopMcpTransport.STDIO || server.url.isNotBlank()) {
+                "MCP server URL is required"
+            }
             val connection = server.connectionKey()
             val existing = sessions[server.id]
             if (existing != null && existing.connection != connection) {
-                existing.client.close()
+                existing.close()
                 sessions.remove(server.id, existing)
             }
-            val session = sessions[server.id] ?: Client(
-                Implementation(name = "RikkaHub Desktop", version = "1.0")
-            ).let { client ->
-                client.connect(createTransport(server))
-                McpSession(connection, client).also { sessions[server.id] = it }
+
+            repeat(2) { attempt ->
+                val cachedSession = sessions[server.id]
+                if (cachedSession?.process?.isAlive == false && sessions.remove(server.id, cachedSession)) {
+                    cachedSession.close()
+                }
+                val session = sessions[server.id] ?: createSession(server).also { sessions[server.id] = it }
+                try {
+                    return@withLock action(session.client)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    // Recreate a dead transport once so transient process exits recover without user intervention.
+                    if (sessions.remove(server.id, session)) session.close()
+                    if (attempt == 1) throw error
+                }
             }
-            try {
-                action(session.client)
-            } catch (error: Throwable) {
-                // A failed transport is not reusable; initialize a fresh session for the next attempt.
-                if (sessions.remove(server.id, session)) session.client.close()
-                throw error
-            }
+
+            error("MCP client retry loop completed without a result")
         }
     }
 
-    private data class McpSession(val connection: McpConnectionKey, val client: Client)
+    private suspend fun createSession(server: DesktopMcpServer): McpSession {
+        val process = server.createProcess()
+        return try {
+            val client = Client(Implementation(name = "RikkaHub Desktop", version = "1.0"))
+            client.connect(createTransport(server, process))
+            McpSession(server.connectionKey(), client, process)
+        } catch (error: Throwable) {
+            process?.destroy()
+            throw error
+        }
+    }
+
+    private data class McpSession(
+        val connection: McpConnectionKey,
+        val client: Client,
+        val process: Process?
+    ) {
+        suspend fun close() {
+            try {
+                client.close()
+            } finally {
+                process?.destroy()
+            }
+        }
+    }
 
     private data class McpConnectionKey(
         val name: String,
         val url: String,
         val transport: DesktopMcpTransport,
-        val headers: List<DesktopCustomHeader>
+        val headers: List<DesktopCustomHeader>,
+        val command: String,
+        val arguments: List<String>,
+        val environment: List<DesktopCustomHeader>
     )
 
-    private fun DesktopMcpServer.connectionKey() = McpConnectionKey(name, url, transport, headers)
+    private fun DesktopMcpServer.connectionKey() = McpConnectionKey(
+        name, url, transport, headers, command.trim(), arguments.normalizedArguments(), environment
+    )
 
-    private fun createTransport(server: DesktopMcpServer): AbstractTransport = when (server.transport) {
+    private fun createTransport(server: DesktopMcpServer, process: Process?): AbstractTransport = when (server.transport) {
         DesktopMcpTransport.SSE -> SseClientTransport(urlString = server.url, client = httpClient) {
             appendHeaders(server)
         }
         DesktopMcpTransport.STREAMABLE_HTTP -> StreamableHttpClientTransport(url = server.url, client = httpClient) {
             appendHeaders(server)
         }
+        DesktopMcpTransport.STDIO -> {
+            requireNotNull(process) { "A process is required for stdio MCP transport" }
+            StdioClientTransport(
+                input = process.inputStream.asSource().buffered(),
+                output = process.outputStream.asSink().buffered(),
+                error = process.errorStream.asSource().buffered(),
+            )
+        }
     }
+
+    private fun DesktopMcpServer.createProcess(): Process? {
+        if (transport != DesktopMcpTransport.STDIO) return null
+        val executable = command.trim()
+        require(executable.isNotBlank()) { "MCP server command is required" }
+        return ProcessBuilder(listOf(executable) + arguments.normalizedArguments())
+            .apply {
+                environment.filter { it.name.isNotBlank() }
+                    .forEach { (name, value) -> environment()[name] = value }
+            }
+            .start()
+    }
+
+    private fun List<String>.normalizedArguments(): List<String> =
+        map(String::trim).filter(String::isNotBlank)
 
     private fun HttpRequestBuilder.appendHeaders(server: DesktopMcpServer) {
         server.headers.filter { it.name.isNotBlank() }.forEach { headers.append(it.name, it.value) }
