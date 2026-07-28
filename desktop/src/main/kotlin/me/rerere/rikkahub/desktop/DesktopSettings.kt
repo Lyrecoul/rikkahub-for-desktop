@@ -458,6 +458,28 @@ internal fun DesktopSettingsPane(
                             desktopText(preferences.language, "settings.chinese_typography_description"),
                             preferences.enableChineseTypography
                         ) { onPreferencesChange(preferences.copy(enableChineseTypography = it)) }
+                        SettingsDivider()
+                        PreferenceSwitch(
+                            desktopText(preferences.language, "settings.mermaid_rendering"),
+                            desktopText(preferences.language, "settings.mermaid_rendering_description"),
+                            preferences.enableMermaidRendering
+                        ) { onPreferencesChange(preferences.copy(enableMermaidRendering = it)) }
+                        if (preferences.enableMermaidRendering) {
+                            SettingsDivider()
+                            PreferenceSwitch(
+                                desktopText(preferences.language, "settings.mermaid_cli"),
+                                desktopText(preferences.language, "settings.mermaid_cli_description"),
+                                preferences.enableMermaidCli
+                            ) { onPreferencesChange(preferences.copy(enableMermaidCli = it)) }
+                            if (preferences.enableMermaidCli) {
+                                SettingsDivider()
+                                PreferenceSwitch(
+                                    desktopText(preferences.language, "settings.mermaid_system_browser"),
+                                    desktopText(preferences.language, "settings.mermaid_system_browser_description"),
+                                    preferences.mermaidUseSystemBrowser
+                                ) { onPreferencesChange(preferences.copy(mermaidUseSystemBrowser = it)) }
+                            }
+                        }
                     }
                 }
 

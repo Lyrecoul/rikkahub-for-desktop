@@ -2,6 +2,7 @@ package me.rerere.rikkahub.desktop
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -64,6 +65,22 @@ class DesktopMarkdownParserTest {
         assertEquals("Home: ~/projects; ", paragraph.spans[0].text)
         assertEquals("obsolete", paragraph.spans[1].text)
         assertTrue(paragraph.spans[1].strikethrough)
+    }
+
+    @Test
+    fun recognizesMermaidCodeBlockLanguage() {
+        assertTrue("mermaid".isMermaidLanguage())
+        assertTrue(" Mermaid ".isMermaidLanguage())
+        assertTrue(!"mmd".isMermaidLanguage())
+    }
+
+    @Test
+    fun disablesMermaidRenderingByDefault() {
+        val preferences = DesktopPreferences()
+
+        assertFalse(preferences.enableMermaidRendering)
+        assertFalse(preferences.enableMermaidCli)
+        assertFalse(preferences.mermaidUseSystemBrowser)
     }
 
     @Test

@@ -2678,9 +2678,10 @@ private fun ChatPane(
                         state = listState,
                         modifier = Modifier.fillMaxSize().onPointerEvent(
                             PointerEventType.Scroll,
-                            PointerEventPass.Initial
+                            PointerEventPass.Main
                         ) { event ->
                             if (!preferences.enableSmoothScroll) return@onPointerEvent
+                            if (event.changes.any { it.isConsumed }) return@onPointerEvent
 
                             val scrollDelta = event.changes.firstOrNull()?.scrollDelta?.y ?: return@onPointerEvent
                             if (scrollDelta != 0f) {
@@ -3128,7 +3129,10 @@ private fun MessageBlock(
     val markdownOptions = MarkdownRenderOptions(
         fontScale = preferences.fontScale,
         codeBlockAutoWrap = preferences.codeBlockAutoWrap,
-        enableChineseTypography = preferences.enableChineseTypography
+        enableChineseTypography = preferences.enableChineseTypography,
+        enableMermaidRendering = preferences.enableMermaidRendering,
+        enableMermaidCli = preferences.enableMermaidCli,
+        mermaidUseSystemBrowser = preferences.mermaidUseSystemBrowser
     )
     val highlightAlpha by animateFloatAsState(
         targetValue = if (highlighted) 0.45f else 0f,

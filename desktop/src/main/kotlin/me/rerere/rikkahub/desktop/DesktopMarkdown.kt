@@ -2,6 +2,8 @@ package me.rerere.rikkahub.desktop
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.HorizontalScrollbar
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -14,9 +16,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -40,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -48,6 +54,14 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
@@ -63,9 +77,14 @@ import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.RotateCcw
+import com.composables.icons.lucide.ZoomIn
+import com.composables.icons.lucide.ZoomOut
 import dev.darkokoa.pangu.spacingText
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.scilab.forge.jlatexmath.TeXConstants
 import org.scilab.forge.jlatexmath.TeXFormula
 import org.intellij.markdown.MarkdownElementTypes
@@ -105,7 +124,10 @@ internal sealed interface MarkdownBlock {
 internal data class MarkdownRenderOptions(
     val fontScale: Float = 1.0f,
     val codeBlockAutoWrap: Boolean = false,
-    val enableChineseTypography: Boolean = false
+    val enableChineseTypography: Boolean = false,
+    val enableMermaidRendering: Boolean = false,
+    val enableMermaidCli: Boolean = false,
+    val mermaidUseSystemBrowser: Boolean = false
 )
 
 internal object DesktopMarkdownParser {
@@ -342,7 +364,11 @@ private fun MarkdownBlockView(block: MarkdownBlock, options: MarkdownRenderOptio
                 enableChineseTypography = options.enableChineseTypography
             )
         }
-        is MarkdownBlock.Code -> CodeBlock(block, options)
+        is MarkdownBlock.Code -> if (block.language.isMermaidLanguage() && options.enableMermaidRendering) {
+            MermaidDiagram(block, options)
+        } else {
+            CodeBlock(block, options)
+        }
         is MarkdownBlock.Quote -> {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 Box(
@@ -579,6 +605,112 @@ private fun CodeBlock(block: MarkdownBlock.Code, options: MarkdownRenderOptions)
                 softWrap = options.codeBlockAutoWrap
             )
         }
+    }
+}
+
+@Composable
+private fun MermaidDiagram(block: MarkdownBlock.Code, options: MarkdownRenderOptions) {
+    if (!options.enableMermaidCli) {
+        CodeBlock(block, options)
+        return
+    }
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    var imageBytes by remember(block.content) { mutableStateOf<ByteArray?>(null) }
+    LaunchedEffect(block.content, dark) {
+        imageBytes = withContext(Dispatchers.IO) {
+            DesktopMermaidRenderer.render(block.content, dark, options.mermaidUseSystemBrowser)
+        }
+    }
+    val bitmap = remember(imageBytes) {
+        imageBytes?.let { bytes ->
+            runCatching { org.jetbrains.skia.Image.makeFromEncoded(bytes).toComposeImageBitmap() }.getOrNull()
+        }
+    }
+
+    if (bitmap == null || bitmap.width <= 0 || bitmap.height <= 0) {
+        CodeBlock(block, options)
+    } else {
+        BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            val aspectRatio = bitmap.width.toFloat() / bitmap.height
+            val diagramWidth = minOf(maxWidth, 880.dp, 600.dp * aspectRatio)
+            val diagramHeight = diagramWidth / aspectRatio
+            MermaidViewport(bitmap, diagramWidth, diagramHeight)
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalComposeUiApi::class)
+private fun MermaidViewport(
+    bitmap: androidx.compose.ui.graphics.ImageBitmap,
+    width: androidx.compose.ui.unit.Dp,
+    height: androidx.compose.ui.unit.Dp
+) {
+    var scale by remember(bitmap) { mutableFloatStateOf(1f) }
+    var translation by remember(bitmap) { mutableStateOf(Offset.Zero) }
+    fun reset() {
+        scale = 1f
+        translation = Offset.Zero
+    }
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val updatedScale = (scale * zoomChange).coerceIn(1f, 4f)
+        if (updatedScale > 1f || scale > 1f) translation += panChange
+        scale = updatedScale
+        if (scale == 1f) translation = Offset.Zero
+    }
+
+    Column(Modifier.width(width).padding(vertical = 4.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                MermaidViewportButton(Lucide.ZoomOut, "缩小") {
+                    scale = (scale / 1.25f).coerceAtLeast(1f)
+                    if (scale == 1f) translation = Offset.Zero
+                }
+                MermaidViewportButton(Lucide.ZoomIn, "放大") { scale = (scale * 1.25f).coerceAtMost(4f) }
+                MermaidViewportButton(Lucide.RotateCcw, "复位") { reset() }
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth().height(height),
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Box(
+                Modifier.fillMaxWidth().fillMaxHeight().clipToBounds()
+                    .onPointerEvent(PointerEventType.Scroll, PointerEventPass.Initial) { event ->
+                        val delta = event.changes.firstOrNull()?.scrollDelta?.y ?: return@onPointerEvent
+                        if (delta != 0f) {
+                            scale = (scale * if (delta < 0f) 1.15f else 0.87f).coerceIn(1f, 4f)
+                            if (scale == 1f) translation = Offset.Zero
+                            event.changes.forEach { it.consume() }
+                        }
+                    }
+                    .transformable(transformState)
+            ) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = "Mermaid diagram",
+                    modifier = Modifier.fillMaxWidth().fillMaxHeight().graphicsLayer {
+                        transformOrigin = TransformOrigin.Center
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = translation.x
+                        translationY = translation.y
+                    },
+                    contentScale = ContentScale.Fit
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MermaidViewportButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    onClick: () -> Unit
+) {
+    androidx.compose.material3.IconButton(onClick = onClick, modifier = Modifier.size(30.dp)) {
+        androidx.compose.material3.Icon(icon, description, Modifier.size(16.dp))
     }
 }
 
