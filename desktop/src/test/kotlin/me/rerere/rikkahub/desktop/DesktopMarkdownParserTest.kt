@@ -56,6 +56,17 @@ class DesktopMarkdownParserTest {
     }
 
     @Test
+    fun preservesLiteralTildesWhileParsingStrikethrough() {
+        val paragraph = assertIs<MarkdownBlock.Paragraph>(
+            DesktopMarkdownParser.parse("Home: ~/projects; ~~obsolete~~").single()
+        )
+
+        assertEquals("Home: ~/projects; ", paragraph.spans[0].text)
+        assertEquals("obsolete", paragraph.spans[1].text)
+        assertTrue(paragraph.spans[1].strikethrough)
+    }
+
+    @Test
     fun appliesChineseTypographyWithoutChangingCodeOrMath() {
         val spans = listOf(
             MarkdownSpan("中文RikkaHub"),

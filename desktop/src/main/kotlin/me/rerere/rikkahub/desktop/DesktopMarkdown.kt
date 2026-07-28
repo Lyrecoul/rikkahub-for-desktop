@@ -251,7 +251,9 @@ internal object DesktopMarkdownParser {
                 }
                 else -> {
                     if (current is LeafASTNode) {
-                        if (current.type != MarkdownTokenTypes.EMPH && current.type != GFMTokenTypes.TILDE) {
+                        if (current.type != MarkdownTokenTypes.EMPH &&
+                            (current.type != GFMTokenTypes.TILDE || !style.strikethrough)
+                        ) {
                             append(current.getTextInNode(content), style)
                         }
                     } else {
