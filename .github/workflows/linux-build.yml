@@ -26,14 +26,14 @@ jobs:
       - name: Install build tools
         run: |
           pacman -Syu --noconfirm \
-            base-devel git jdk17-openjdk \
+            base-devel git jdk-openjdk \
             libx11 libxext libxi libxrender libxtst freetype2 fontconfig
           id builduser >/dev/null 2>&1 || useradd --create-home builduser
       - uses: actions/checkout@v4
       - name: Configure Java
         shell: bash
         run: |
-          java_home=/usr/lib/jvm/java-17-openjdk
+          java_home=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
           test -x "$java_home/bin/java"
           echo "JAVA_HOME=$java_home" >> "$GITHUB_ENV"
           echo "$java_home/bin" >> "$GITHUB_PATH"

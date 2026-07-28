@@ -2,7 +2,7 @@
 
 app_dir=/usr/lib/rikkahub
 
-exec /usr/lib/jvm/java-17-openjdk/bin/java \
+exec /usr/bin/java \
   -Dcompose.application.resources.dir="$app_dir/resources" \
   -Dcompose.application.configure.swing.globals=true \
   -Dskiko.library.path="$app_dir" \
