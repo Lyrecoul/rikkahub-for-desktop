@@ -48,6 +48,7 @@ internal val RussianDesktopTranslations = mapOf(
         "settings.chinese_typography" to "Китайская типографика", "settings.chinese_typography_description" to "Добавлять пробелы между китайским и латинским текстом, числами или символами",
         "settings.mermaid_rendering" to "Рендерить диаграммы Mermaid", "settings.mermaid_rendering_description" to "Рендерить блоки кода Mermaid как интерактивные диаграммы",
         "settings.mermaid_cli" to "Разрешить Mermaid CLI", "settings.mermaid_cli_description" to "Разрешить локальный запуск Mermaid CLI для рендеринга диаграмм",
+        "settings.mermaid_cli_path" to "Путь к Mermaid CLI", "settings.mermaid_cli_path_description" to "Оставьте пустым для автоматического поиска в PATH, глобальном npm и локальных каталогах пользователя",
         "settings.mermaid_system_browser" to "Использовать системный браузер", "settings.mermaid_system_browser_description" to "Разрешить Mermaid CLI использовать установленный браузер на базе Chromium",
         "settings.send_on_enter" to "Отправлять по Enter", "settings.send_on_enter_description" to "Когда выключено: Ctrl+Enter отправляет, Enter — новая строка",
         "settings.auto_scroll" to "Автопрокрутка", "settings.auto_scroll_description" to "Следовать за новым содержанием рассуждений и ответом при генерации",

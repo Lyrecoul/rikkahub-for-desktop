@@ -48,6 +48,7 @@ internal val TraditionalChineseDesktopTranslations = mapOf(
         "settings.chinese_typography" to "中文排版最佳化", "settings.chinese_typography_description" to "在中文與西文、數字或符號之間自動新增間距",
         "settings.mermaid_rendering" to "渲染 Mermaid 圖表", "settings.mermaid_rendering_description" to "將 Mermaid 程式碼區塊渲染為可互動圖表",
         "settings.mermaid_cli" to "允許呼叫 Mermaid CLI", "settings.mermaid_cli_description" to "允許 Mermaid CLI 在本機執行以渲染圖表",
+        "settings.mermaid_cli_path" to "Mermaid CLI 路徑", "settings.mermaid_cli_path_description" to "留空時自動尋找 PATH、npm 全域目錄和使用者本機目錄",
         "settings.mermaid_system_browser" to "使用系統瀏覽器", "settings.mermaid_system_browser_description" to "允許 Mermaid CLI 使用已安裝的 Chromium 系瀏覽器",
         "settings.send_on_enter" to "按 Enter 傳送", "settings.send_on_enter_description" to "關閉後，Ctrl+Enter 傳送，Enter 換行",
         "settings.auto_scroll" to "自動捲動", "settings.auto_scroll_description" to "生成時跟隨新的推理和回覆內容",

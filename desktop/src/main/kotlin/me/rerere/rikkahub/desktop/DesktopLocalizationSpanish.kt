@@ -48,6 +48,7 @@ internal val SpanishDesktopTranslations = mapOf(
         "settings.chinese_typography" to "Tipografía china", "settings.chinese_typography_description" to "Añadir espaciado entre texto chino y latino, números o símbolos",
         "settings.mermaid_rendering" to "Renderizar diagramas Mermaid", "settings.mermaid_rendering_description" to "Renderizar bloques de código Mermaid como diagramas interactivos",
         "settings.mermaid_cli" to "Permitir Mermaid CLI", "settings.mermaid_cli_description" to "Permitir que Mermaid CLI se ejecute localmente para renderizar diagramas",
+        "settings.mermaid_cli_path" to "Ruta de Mermaid CLI", "settings.mermaid_cli_path_description" to "Déjela vacía para detectar automáticamente PATH, npm global y ubicaciones locales del usuario",
         "settings.mermaid_system_browser" to "Usar el navegador del sistema", "settings.mermaid_system_browser_description" to "Permitir que Mermaid CLI use un navegador basado en Chromium instalado",
         "settings.send_on_enter" to "Enviar con Enter", "settings.send_on_enter_description" to "Cuando está desactivado, Ctrl+Enter envía y Enter añade una nueva línea",
         "settings.auto_scroll" to "Desplazamiento automático", "settings.auto_scroll_description" to "Seguir el nuevo contenido de razonamiento y respuesta mientras se genera",

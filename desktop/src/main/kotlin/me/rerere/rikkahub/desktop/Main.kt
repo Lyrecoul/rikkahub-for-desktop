@@ -3132,6 +3132,7 @@ private fun MessageBlock(
         enableChineseTypography = preferences.enableChineseTypography,
         enableMermaidRendering = preferences.enableMermaidRendering,
         enableMermaidCli = preferences.enableMermaidCli,
+        mermaidCliPath = preferences.mermaidCliPath,
         mermaidUseSystemBrowser = preferences.mermaidUseSystemBrowser
     )
     val highlightAlpha by animateFloatAsState(

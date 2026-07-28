@@ -48,6 +48,7 @@ internal val JapaneseDesktopTranslations = mapOf(
         "settings.chinese_typography" to "中国語組版", "settings.chinese_typography_description" to "中国語とラテン文字、数字、記号の間に間隔を追加します",
         "settings.mermaid_rendering" to "Mermaid 図をレンダリング", "settings.mermaid_rendering_description" to "Mermaid コードブロックをインタラクティブな図としてレンダリングします",
         "settings.mermaid_cli" to "Mermaid CLI を許可", "settings.mermaid_cli_description" to "Mermaid CLI によるローカルでの図のレンダリングを許可します",
+        "settings.mermaid_cli_path" to "Mermaid CLI のパス", "settings.mermaid_cli_path_description" to "空欄の場合、PATH、npm グローバル、ユーザーのローカルディレクトリを自動検出します",
         "settings.mermaid_system_browser" to "システムブラウザーを使用", "settings.mermaid_system_browser_description" to "Mermaid CLI がインストール済みの Chromium ベースブラウザーを使用することを許可します",
         "settings.send_on_enter" to "Enter で送信", "settings.send_on_enter_description" to "オフの場合、Ctrl+Enter で送信、Enter で改行",
         "settings.auto_scroll" to "自動スクロール", "settings.auto_scroll_description" to "生成中に新しい推論と応答を追います",

@@ -48,6 +48,7 @@ internal val GermanDesktopTranslations = mapOf(
         "settings.chinese_typography" to "Chinesische Typografie", "settings.chinese_typography_description" to "Abstände zwischen chinesischem und lateinischem Text, Zahlen oder Symbolen einfügen",
         "settings.mermaid_rendering" to "Mermaid-Diagramme rendern", "settings.mermaid_rendering_description" to "Mermaid-Codeblöcke als interaktive Diagramme rendern",
         "settings.mermaid_cli" to "Mermaid CLI erlauben", "settings.mermaid_cli_description" to "Die lokale Ausführung von Mermaid CLI zum Rendern von Diagrammen erlauben",
+        "settings.mermaid_cli_path" to "Mermaid-CLI-Pfad", "settings.mermaid_cli_path_description" to "Leer lassen, um PATH, globales npm und lokale Benutzerpfade automatisch zu erkennen",
         "settings.mermaid_system_browser" to "Systembrowser verwenden", "settings.mermaid_system_browser_description" to "Mermaid CLI die Verwendung eines installierten Chromium-basierten Browsers erlauben",
         "settings.send_on_enter" to "Mit Enter senden", "settings.send_on_enter_description" to "Wenn aus: Strg+Enter sendet, Enter fügt eine neue Zeile ein",
         "settings.auto_scroll" to "Automatisch scrollen", "settings.auto_scroll_description" to "Neuem Denk- und Antwortinhalt während der Generierung folgen",

@@ -48,6 +48,7 @@ internal val KoreanDesktopTranslations = mapOf(
         "settings.chinese_typography" to "중국어 조판", "settings.chinese_typography_description" to "중국어와 라틴 문자, 숫자, 기호 사이에 간격을 추가합니다",
         "settings.mermaid_rendering" to "Mermaid 다이어그램 렌더링", "settings.mermaid_rendering_description" to "Mermaid 코드 블록을 상호작용 가능한 다이어그램으로 렌더링합니다",
         "settings.mermaid_cli" to "Mermaid CLI 허용", "settings.mermaid_cli_description" to "다이어그램 렌더링을 위해 Mermaid CLI의 로컬 실행을 허용합니다",
+        "settings.mermaid_cli_path" to "Mermaid CLI 경로", "settings.mermaid_cli_path_description" to "비워 두면 PATH, npm 전역 및 사용자 로컬 경로에서 자동으로 찾습니다",
         "settings.mermaid_system_browser" to "시스템 브라우저 사용", "settings.mermaid_system_browser_description" to "Mermaid CLI가 설치된 Chromium 기반 브라우저를 사용하도록 허용합니다",
         "settings.send_on_enter" to "Enter로 전송", "settings.send_on_enter_description" to "꺼져 있으면 Ctrl+Enter 전송, Enter 줄바꿈",
         "settings.auto_scroll" to "자동 스크롤", "settings.auto_scroll_description" to "생성 중에 새로운 추론과 응답을 따라갑니다",

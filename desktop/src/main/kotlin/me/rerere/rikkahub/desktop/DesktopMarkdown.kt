@@ -127,6 +127,7 @@ internal data class MarkdownRenderOptions(
     val enableChineseTypography: Boolean = false,
     val enableMermaidRendering: Boolean = false,
     val enableMermaidCli: Boolean = false,
+    val mermaidCliPath: String = "",
     val mermaidUseSystemBrowser: Boolean = false
 )
 
@@ -615,10 +616,14 @@ private fun MermaidDiagram(block: MarkdownBlock.Code, options: MarkdownRenderOpt
         return
     }
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    var imageBytes by remember(block.content) { mutableStateOf<ByteArray?>(null) }
-    LaunchedEffect(block.content, dark) {
+    var imageBytes by remember(block.content, dark, options.mermaidCliPath, options.mermaidUseSystemBrowser) {
+        mutableStateOf<ByteArray?>(null)
+    }
+    LaunchedEffect(block.content, dark, options.mermaidCliPath, options.mermaidUseSystemBrowser) {
         imageBytes = withContext(Dispatchers.IO) {
-            DesktopMermaidRenderer.render(block.content, dark, options.mermaidUseSystemBrowser)
+            DesktopMermaidRenderer.render(
+                block.content, dark, options.mermaidUseSystemBrowser, options.mermaidCliPath
+            )
         }
     }
     val bitmap = remember(imageBytes) {

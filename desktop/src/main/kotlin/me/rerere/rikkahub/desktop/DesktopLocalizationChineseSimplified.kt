@@ -91,6 +91,8 @@ internal val SimplifiedChineseDesktopTranslations = mapOf(
         "settings.mermaid_rendering_description" to "将 Mermaid 代码块渲染为可交互图表",
         "settings.mermaid_cli" to "允许调用 Mermaid CLI",
         "settings.mermaid_cli_description" to "允许 Mermaid CLI 在本地执行以渲染图表",
+        "settings.mermaid_cli_path" to "Mermaid CLI 路径",
+        "settings.mermaid_cli_path_description" to "留空时自动查找 PATH、npm 全局目录和用户本地目录",
         "settings.mermaid_system_browser" to "复用系统浏览器",
         "settings.mermaid_system_browser_description" to "允许 Mermaid CLI 使用已安装的 Chromium 系浏览器",
         "settings.send_on_enter" to "按 Enter 发送",

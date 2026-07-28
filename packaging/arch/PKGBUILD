@@ -1,6 +1,6 @@
 pkgname=rikkahub
 pkgver=2.4.3
-pkgrel=2
+pkgrel=3
 pkgdesc='RikkaHub desktop LLM chat client'
 arch=('x86_64')
 url='https://github.com/rikkahub/rikkahub'

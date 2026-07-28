@@ -301,6 +301,7 @@ data class DesktopPreferences(
     val enableChineseTypography: Boolean = false,
     val enableMermaidRendering: Boolean = false,
     val enableMermaidCli: Boolean = false,
+    val mermaidCliPath: String = "",
     val mermaidUseSystemBrowser: Boolean = false,
     val sendOnEnter: Boolean = true,
     val enableAutoScroll: Boolean = true,

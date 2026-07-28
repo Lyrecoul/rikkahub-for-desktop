@@ -473,6 +473,20 @@ internal fun DesktopSettingsPane(
                             ) { onPreferencesChange(preferences.copy(enableMermaidCli = it)) }
                             if (preferences.enableMermaidCli) {
                                 SettingsDivider()
+                                SettingsRow(
+                                    desktopText(preferences.language, "settings.mermaid_cli_path"),
+                                    desktopText(preferences.language, "settings.mermaid_cli_path_description")
+                                ) {
+                                    OutlinedTextField(
+                                        value = preferences.mermaidCliPath,
+                                        onValueChange = { path ->
+                                            onPreferencesChange(preferences.copy(mermaidCliPath = path))
+                                        },
+                                        modifier = Modifier.widthIn(min = 220.dp, max = 360.dp),
+                                        singleLine = true
+                                    )
+                                }
+                                SettingsDivider()
                                 PreferenceSwitch(
                                     desktopText(preferences.language, "settings.mermaid_system_browser"),
                                     desktopText(preferences.language, "settings.mermaid_system_browser_description"),

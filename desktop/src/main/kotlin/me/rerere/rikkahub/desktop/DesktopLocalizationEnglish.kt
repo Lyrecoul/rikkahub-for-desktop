@@ -91,6 +91,8 @@ internal val EnglishDesktopTranslations = mapOf(
         "settings.mermaid_rendering_description" to "Render Mermaid code blocks as interactive diagrams",
         "settings.mermaid_cli" to "Allow Mermaid CLI",
         "settings.mermaid_cli_description" to "Permit Mermaid CLI to run locally for diagram rendering",
+        "settings.mermaid_cli_path" to "Mermaid CLI path",
+        "settings.mermaid_cli_path_description" to "Leave empty to detect PATH, npm global, and local user locations automatically",
         "settings.mermaid_system_browser" to "Use system browser",
         "settings.mermaid_system_browser_description" to "Allow Mermaid CLI to use an installed Chromium-based browser",
         "settings.send_on_enter" to "Send with Enter",
