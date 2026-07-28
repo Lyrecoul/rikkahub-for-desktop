@@ -1,11 +1,11 @@
 pkgname=rikkahub
 pkgver=2.4.2
-pkgrel=1
+pkgrel=2
 pkgdesc='RikkaHub desktop LLM chat client'
 arch=('x86_64')
 url='https://github.com/rikkahub/rikkahub'
 license=('AGPL-3.0-only')
-depends=('glibc' 'libx11' 'libxext' 'libxi' 'libxrender' 'libxtst' 'freetype2' 'fontconfig')
+depends=('jre17-openjdk' 'glibc' 'libx11' 'libxext' 'libxi' 'libxrender' 'libxtst' 'freetype2' 'fontconfig')
 makedepends=('jdk-openjdk')
 options=('!strip' '!debug')
 source=()
@@ -18,9 +18,9 @@ build() {
 
 package() {
   local app_dir="$startdir/../../desktop/build/compose/binaries/main/app/rikkahub"
-  install -d "$pkgdir/opt/rikkahub" "$pkgdir/usr/bin" "$pkgdir/usr/share/applications" "$pkgdir/usr/share/pixmaps"
-  cp -a "$app_dir/." "$pkgdir/opt/rikkahub/"
-  ln -s /opt/rikkahub/bin/rikkahub "$pkgdir/usr/bin/rikkahub"
+  install -d "$pkgdir/usr/lib/rikkahub" "$pkgdir/usr/bin" "$pkgdir/usr/share/applications" "$pkgdir/usr/share/pixmaps"
+  cp -a "$app_dir/lib/app/." "$pkgdir/usr/lib/rikkahub/"
+  install -Dm755 "$startdir/rikkahub" "$pkgdir/usr/bin/rikkahub"
   install -Dm644 "$startdir/../../docs/icon.png" "$pkgdir/usr/share/pixmaps/rikkahub.png"
   install -Dm644 "$startdir/rikkahub.desktop" "$pkgdir/usr/share/applications/rikkahub.desktop"
 }
