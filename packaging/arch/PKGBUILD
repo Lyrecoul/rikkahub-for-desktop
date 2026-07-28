@@ -1,12 +1,12 @@
 pkgname=rikkahub
 pkgver=2.4.2
-pkgrel=2
+pkgrel=3
 pkgdesc='RikkaHub desktop LLM chat client'
 arch=('x86_64')
 url='https://github.com/rikkahub/rikkahub'
 license=('AGPL-3.0-only')
 depends=('jre17-openjdk' 'glibc' 'libx11' 'libxext' 'libxi' 'libxrender' 'libxtst' 'freetype2' 'fontconfig')
-makedepends=('jdk-openjdk')
+makedepends=('jdk17-openjdk')
 options=('!strip' '!debug')
 source=()
 sha256sums=()
