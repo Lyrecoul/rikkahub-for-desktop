@@ -96,15 +96,15 @@ import kotlinx.serialization.json.Json
 import kotlin.math.roundToInt
 
 internal enum class DesktopSettingsSection(
-    val label: String,
+    val labelKey: String,
     val icon: ImageVector
 ) {
-    GENERAL("通用设置", Lucide.Palette),
-    MESSAGE_DISPLAY("消息显示", Lucide.MessageSquareText),
-    INTERACTION("交互", Lucide.Keyboard),
-    DATA("数据、备份与联网搜索", Lucide.Save),
-    ASSISTANTS("助手", Lucide.Bot),
-    PROVIDERS("模型与服务", Lucide.ServerCog)
+    GENERAL("settings.section.general", Lucide.Palette),
+    MESSAGE_DISPLAY("settings.section.messages", Lucide.MessageSquareText),
+    INTERACTION("settings.section.interaction", Lucide.Keyboard),
+    DATA("settings.section.data", Lucide.Save),
+    ASSISTANTS("settings.section.assistants", Lucide.Bot),
+    PROVIDERS("settings.section.providers", Lucide.ServerCog)
 }
 
 @Composable
@@ -157,6 +157,7 @@ internal fun DesktopSettingsPane(
     var webSearchTesting by remember { mutableStateOf(false) }
     val feedbackHostState = remember { SnackbarHostState() }
     var balanceStatus by remember(selectedProvider.id) { mutableStateOf<String?>(null) }
+    var balanceStatusIsError by remember(selectedProvider.id) { mutableStateOf(false) }
     var resetConfirmationOpen by remember { mutableStateOf(false) }
     val messageTemplateValid = remember(draftAssistant.messageTemplate) {
         validateMessageTemplate(draftAssistant.messageTemplate).isSuccess
@@ -232,12 +233,12 @@ internal fun DesktopSettingsPane(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = if (showMenu) onMenu else onBack) {
-                Icon(if (showMenu) Lucide.Menu else Lucide.ArrowLeft, "返回")
+                Icon(if (showMenu) Lucide.Menu else Lucide.ArrowLeft, desktopText(preferences.language, "settings.back"))
             }
             Column(Modifier.padding(start = 4.dp)) {
-                Text("设置", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                Text(desktopText(preferences.language, "settings.title"), fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
                 Text(
-                    "外观、交互与模型服务",
+                    desktopText(preferences.language, "settings.subtitle"),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
                 )
@@ -249,6 +250,7 @@ internal fun DesktopSettingsPane(
             if (!showMenu) {
                 DesktopSettingsNavigation(
                     activeSection = activeSection,
+                    language = preferences.language,
                     onSectionClick = { section ->
                         activeSection = section
                         sectionNavigationJob?.cancel()
@@ -282,10 +284,10 @@ internal fun DesktopSettingsPane(
                         sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
                     }
                 ) {
-                    SettingsSection("通用设置", Lucide.Palette) {
+                        SettingsSection(desktopText(preferences.language, "settings.section.general"), Lucide.Palette) {
                         SettingsRow(
-                            title = "颜色模式",
-                            description = "跟随系统，或固定使用浅色或深色主题"
+                            title = desktopText(preferences.language, "settings.color_mode"),
+                            description = desktopText(preferences.language, "settings.color_mode_description")
                         ) {
                             SingleChoiceSegmentedButtonRow {
                                 DesktopColorMode.entries.forEachIndexed { index, mode ->
@@ -299,9 +301,9 @@ internal fun DesktopSettingsPane(
                                         label = {
                                             Text(
                                                 when (mode) {
-                                                    DesktopColorMode.SYSTEM -> "跟随系统"
-                                                    DesktopColorMode.LIGHT -> "浅色"
-                                                    DesktopColorMode.DARK -> "深色"
+                                                    DesktopColorMode.SYSTEM -> desktopText(preferences.language, "settings.system")
+                                                    DesktopColorMode.LIGHT -> desktopText(preferences.language, "settings.light")
+                                                    DesktopColorMode.DARK -> desktopText(preferences.language, "settings.dark")
                                                 }
                                             )
                                         }
@@ -311,10 +313,11 @@ internal fun DesktopSettingsPane(
                         }
                         SettingsDivider()
                         SettingsRow(
-                            title = "主题色",
-                            description = "为界面选择一套强调色和配套的明暗色阶"
+                            title = desktopText(preferences.language, "settings.theme_color"),
+                            description = desktopText(preferences.language, "settings.theme_color_description")
                         ) {
                             ThemeColorSelector(
+                                language = preferences.language,
                                 selected = preferences.themeColor,
                                 dark = preferences.colorMode == DesktopColorMode.DARK,
                                 onSelect = { onPreferencesChange(preferences.copy(themeColor = it)) }
@@ -322,17 +325,29 @@ internal fun DesktopSettingsPane(
                         }
                         SettingsDivider()
                         SettingsRow(
-                            title = "界面字体",
-                            description = "${preferences.fontFamily.displayName}，代码块保持等宽字体"
+                            title = desktopText(preferences.language, "settings.font"),
+                            description = desktopText(preferences.language, "settings.font_description")
+                                .replace("%s", preferences.fontFamily.displayName(preferences.language))
                         ) {
                             FontFamilySelector(
+                                language = preferences.language,
                                 selected = preferences.fontFamily,
                                 onSelect = { onPreferencesChange(preferences.copy(fontFamily = it)) }
                             )
                         }
                         SettingsDivider()
                         SettingsRow(
-                            title = "聊天字体大小",
+                            title = desktopText(preferences.language, "settings.language"),
+                            description = desktopText(preferences.language, "settings.language_description")
+                        ) {
+                            DesktopLanguageSelector(
+                                selected = preferences.language,
+                                onSelect = { onPreferencesChange(preferences.copy(language = it)) }
+                            )
+                        }
+                        SettingsDivider()
+                        SettingsRow(
+                            title = desktopText(preferences.language, "settings.chat_font_size"),
                             description = "${(preferences.fontScale * 100).roundToInt()}%"
                         ) {
                             Slider(
@@ -354,16 +369,16 @@ internal fun DesktopSettingsPane(
                         sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
                     }
                 ) {
-                    SettingsSection("消息显示", Lucide.MessageSquareText) {
+                    SettingsSection(desktopText(preferences.language, "settings.section.messages"), Lucide.MessageSquareText) {
                         PreferenceSwitch(
-                            "显示用户头像",
-                            "在用户消息旁显示头像",
+                            desktopText(preferences.language, "settings.show_user_avatar"),
+                            desktopText(preferences.language, "settings.show_user_avatar_description"),
                             preferences.showUserAvatar
                         ) { onPreferencesChange(preferences.copy(showUserAvatar = it)) }
                         SettingsDivider()
                         SettingsRow(
-                            title = "用户昵称",
-                            description = "显示在用户消息旁，留空时使用“你”"
+                            title = desktopText(preferences.language, "settings.user_nickname"),
+                            description = desktopText(preferences.language, "settings.user_nickname_description")
                         ) {
                             OutlinedTextField(
                                 value = preferences.userNickname,
@@ -371,58 +386,58 @@ internal fun DesktopSettingsPane(
                                     onPreferencesChange(preferences.copy(userNickname = nickname))
                                 },
                                 modifier = Modifier.widthIn(min = 180.dp, max = 240.dp),
-                                placeholder = { Text("你") },
+                                placeholder = { Text(desktopText(preferences.language, "settings.user_nickname_placeholder")) },
                                 singleLine = true
                             )
                         }
                         SettingsDivider()
                         PreferenceSwitch(
-                            "显示模型图标",
-                            "在助手消息旁显示模型图标",
+                            desktopText(preferences.language, "settings.show_model_icon"),
+                            desktopText(preferences.language, "settings.show_model_icon_description"),
                             preferences.showModelIcon
                         ) { onPreferencesChange(preferences.copy(showModelIcon = it)) }
                         SettingsDivider()
                         PreferenceSwitch(
-                            "显示模型名称",
-                            "在助手消息上方显示模型名称",
+                            desktopText(preferences.language, "settings.show_model_name"),
+                            desktopText(preferences.language, "settings.show_model_name_description"),
                             preferences.showModelName
                         ) { onPreferencesChange(preferences.copy(showModelName = it)) }
                         SettingsDivider()
                         PreferenceSwitch(
-                            "助手气泡",
-                            "用填充气泡显示助手文本",
+                            desktopText(preferences.language, "settings.assistant_bubble"),
+                            desktopText(preferences.language, "settings.assistant_bubble_description"),
                             preferences.showAssistantBubble
                         ) { onPreferencesChange(preferences.copy(showAssistantBubble = it)) }
                         SettingsDivider()
                         PreferenceSwitch(
-                            "消息时间",
-                            "在每条消息标题中显示创建时间",
+                            desktopText(preferences.language, "settings.message_timestamp"),
+                            desktopText(preferences.language, "settings.message_timestamp_description"),
                             preferences.showMessageTimestamp
                         ) { onPreferencesChange(preferences.copy(showMessageTimestamp = it)) }
                         SettingsDivider()
                         PreferenceSwitch(
-                            "思考内容",
-                            "显示兼容模型返回的推理内容",
+                            desktopText(preferences.language, "settings.reasoning"),
+                            desktopText(preferences.language, "settings.reasoning_description"),
                             preferences.showReasoning
                         ) { onPreferencesChange(preferences.copy(showReasoning = it)) }
                         if (preferences.showReasoning) {
                             SettingsDivider()
                             PreferenceSwitch(
-                                "完成后折叠思考内容",
-                                "仅在生成进行中展开推理内容",
+                                desktopText(preferences.language, "settings.collapse_reasoning"),
+                                desktopText(preferences.language, "settings.collapse_reasoning_description"),
                                 preferences.autoCollapseReasoning
                             ) { onPreferencesChange(preferences.copy(autoCollapseReasoning = it)) }
                         }
                         SettingsDivider()
                         PreferenceSwitch(
-                            "代码块自动换行",
-                            "长代码行自动换行，而不是横向滚动",
+                            desktopText(preferences.language, "settings.code_wrap"),
+                            desktopText(preferences.language, "settings.code_wrap_description"),
                             preferences.codeBlockAutoWrap
                         ) { onPreferencesChange(preferences.copy(codeBlockAutoWrap = it)) }
                         SettingsDivider()
                         PreferenceSwitch(
-                            "中文排版优化",
-                            "在中文与西文、数字或符号之间自动添加间距",
+                            desktopText(preferences.language, "settings.chinese_typography"),
+                            desktopText(preferences.language, "settings.chinese_typography_description"),
                             preferences.enableChineseTypography
                         ) { onPreferencesChange(preferences.copy(enableChineseTypography = it)) }
                     }
@@ -434,29 +449,29 @@ internal fun DesktopSettingsPane(
                         sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
                     }
                 ) {
-                    SettingsSection("交互", Lucide.Keyboard) {
+                    SettingsSection(desktopText(preferences.language, "settings.section.interaction"), Lucide.Keyboard) {
                         PreferenceSwitch(
-                            "按 Enter 发送",
-                            "关闭后，Ctrl+Enter 发送，Enter 换行",
+                            desktopText(preferences.language, "settings.send_on_enter"),
+                            desktopText(preferences.language, "settings.send_on_enter_description"),
                             preferences.sendOnEnter
                         ) { onPreferencesChange(preferences.copy(sendOnEnter = it)) }
                         SettingsDivider()
                         PreferenceSwitch(
-                            "自动滚动",
-                            "生成时跟随新的推理和回复内容",
+                            desktopText(preferences.language, "settings.auto_scroll"),
+                            desktopText(preferences.language, "settings.auto_scroll_description"),
                             preferences.enableAutoScroll
                         ) { onPreferencesChange(preferences.copy(enableAutoScroll = it)) }
                         SettingsDivider()
                         PreferenceSwitch(
-                            "消息导航",
-                            "滚动消息后显示跳转到顶部、上一条、下一条和底部的按钮",
+                            desktopText(preferences.language, "settings.message_navigation"),
+                            desktopText(preferences.language, "settings.message_navigation_description"),
                             preferences.showMessageJumper
                         ) { onPreferencesChange(preferences.copy(showMessageJumper = it)) }
                         if (preferences.showMessageJumper) {
                             SettingsDivider()
                             PreferenceSwitch(
-                                "消息导航置左",
-                                "默认显示在消息区域右侧",
+                                desktopText(preferences.language, "settings.message_navigation_left"),
+                                desktopText(preferences.language, "settings.message_navigation_left_description"),
                                 preferences.messageJumperOnLeft
                             ) { onPreferencesChange(preferences.copy(messageJumperOnLeft = it)) }
                         }
@@ -469,24 +484,24 @@ internal fun DesktopSettingsPane(
                         sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
                     }
                 ) {
-                    SettingsSection("数据、备份与联网搜索", Lucide.Save) {
+                    SettingsSection(desktopText(preferences.language, "settings.section.data"), Lucide.Save) {
                         SettingsRow(
-                            title = "导出备份",
-                            description = "将服务商、助手、偏好和对话保存为 JSON"
+                            title = desktopText(preferences.language, "settings.export_backup"),
+                            description = desktopText(preferences.language, "settings.export_backup_description")
                         ) {
                             OutlinedButton(onClick = { backupStatus = onExportData() }) {
                                 Icon(Lucide.Download, null, Modifier.size(17.dp))
-                                Text("导出", Modifier.padding(start = 7.dp))
+                                Text(desktopText(preferences.language, "settings.export"), Modifier.padding(start = 7.dp))
                             }
                         }
                         SettingsDivider()
                         SettingsRow(
-                            title = "导入备份",
-                            description = "使用 RikkaHub 备份替换当前桌面端数据"
+                            title = desktopText(preferences.language, "settings.import_backup"),
+                            description = desktopText(preferences.language, "settings.import_backup_description")
                         ) {
                             OutlinedButton(onClick = { backupStatus = onImportData() }) {
                                 Icon(Lucide.Upload, null, Modifier.size(17.dp))
-                                Text("导入", Modifier.padding(start = 7.dp))
+                                Text(desktopText(preferences.language, "settings.import"), Modifier.padding(start = 7.dp))
                             }
                         }
                         backupStatus?.let { status ->
@@ -504,18 +519,18 @@ internal fun DesktopSettingsPane(
                         }
                         SettingsDivider()
                         SettingsRow(
-                            title = "重置全部数据",
-                            description = "删除本机的服务商、助手、偏好和对话，此操作无法撤销"
+                            title = desktopText(preferences.language, "settings.reset_data"),
+                            description = desktopText(preferences.language, "settings.reset_data_description")
                         ) {
                             OutlinedButton(onClick = { resetConfirmationOpen = true }) {
                                 Icon(Lucide.Trash2, null, Modifier.size(17.dp))
-                                Text("重置", Modifier.padding(start = 7.dp))
+                                Text(desktopText(preferences.language, "settings.reset"), Modifier.padding(start = 7.dp))
                             }
                         }
                         SettingsDivider()
                         SettingsRow(
-                            title = "联网搜索服务",
-                            description = "配置后优先使用外部搜索服务；未配置时使用模型服务商的原生搜索"
+                            title = desktopText(preferences.language, "settings.web_search"),
+                            description = desktopText(preferences.language, "settings.web_search_description")
                         ) {
                             Column(Modifier.widthIn(min = 240.dp, max = 390.dp)) {
                                 FlowRow(
@@ -540,7 +555,7 @@ internal fun DesktopSettingsPane(
                                         value = webSearchSettings.searxngUrl,
                                         onValueChange = { onWebSearchSettingsChange(webSearchSettings.copy(searxngUrl = it.trim())) },
                                         modifier = Modifier.fillMaxWidth(),
-                                        label = { Text("SearXNG 地址") },
+                                        label = { Text(desktopText(preferences.language, "settings.searxng_url")) },
                                         placeholder = { Text("https://searx.example.com") },
                                         singleLine = true
                                     )
@@ -549,13 +564,14 @@ internal fun DesktopSettingsPane(
                                         value = webSearchSettings.apiKey,
                                         onValueChange = { onWebSearchSettingsChange(webSearchSettings.copy(apiKey = it.trim())) },
                                         modifier = Modifier.fillMaxWidth(),
-                                        label = { Text("${webSearchSettings.providerType.displayName} API 密钥") },
+                                        label = { Text("${webSearchSettings.providerType.displayName} ${desktopText(preferences.language, "settings.api_key")}") },
                                         singleLine = true
                                     )
                                 }
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    "每次搜索返回 ${webSearchSettings.resultCount.coerceIn(1, 10)} 条结果",
+                                    desktopText(preferences.language, "settings.search_result_count")
+                                        .replace("%d", webSearchSettings.resultCount.coerceIn(1, 10).toString()),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 12.sp
                                 )
@@ -575,20 +591,22 @@ internal fun DesktopSettingsPane(
                                         scope.launch {
                                             webSearchTestStatus = runCatching {
                                                 client.testWebSearch(webSearchSettings, "RikkaHub")
-                                                "联网搜索连接正常"
-                                            }.getOrElse { error -> "搜索测试失败：${error.message ?: "未知错误"}" }
+                                                desktopText(preferences.language, "settings.search_test_success")
+                                            }.getOrElse { error ->
+                                                "${desktopText(preferences.language, "settings.search_test_failed")}: ${error.message ?: ""}"
+                                            }
                                             webSearchTesting = false
                                         }
                                     }
                                 ) {
                                     if (webSearchTesting) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                                    else Text("测试搜索")
+                                    else Text(desktopText(preferences.language, "settings.test_search"))
                                 }
                                 webSearchTestStatus?.let { status ->
                                     Text(
                                         status,
                                         Modifier.padding(top = 6.dp),
-                                        color = if (status.startsWith("联网搜索")) MaterialTheme.colorScheme.primary
+                                        color = if (status == desktopText(preferences.language, "settings.search_test_success")) MaterialTheme.colorScheme.primary
                                         else MaterialTheme.colorScheme.error,
                                         fontSize = 12.sp
                                     )
@@ -604,7 +622,7 @@ internal fun DesktopSettingsPane(
                         sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
                     }
                 ) {
-                    SettingsSection("助手", Lucide.Bot) {
+                    SettingsSection(desktopText(preferences.language, "settings.section.assistants"), Lucide.Bot) {
                         FlowRow(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -619,7 +637,7 @@ internal fun DesktopSettingsPane(
                                 )
                             }
                             IconButton(onClick = onAssistantAdd, modifier = Modifier.size(40.dp)) {
-                                Icon(Lucide.Plus, "添加助手", Modifier.size(18.dp))
+                                Icon(Lucide.Plus, desktopText(preferences.language, "settings.add_assistant"), Modifier.size(18.dp))
                             }
                         }
                         SettingsDivider()
@@ -632,21 +650,21 @@ internal fun DesktopSettingsPane(
                                     draftAssistant.name,
                                     { draftAssistant = draftAssistant.copy(name = it) },
                                     Modifier.weight(1f),
-                                    label = { Text("助手名称") },
+                                    label = { Text(desktopText(preferences.language, "settings.assistant_name")) },
                                     singleLine = true
                                 )
                                 IconButton(
                                     onClick = { onAssistantCopy(selectedAssistant.id) },
                                     modifier = Modifier.padding(start = 8.dp)
                                 ) {
-                                    Icon(Lucide.Copy, "复制助手", Modifier.size(18.dp))
+                                    Icon(Lucide.Copy, desktopText(preferences.language, "settings.copy_assistant"), Modifier.size(18.dp))
                                 }
                                 IconButton(
                                     onClick = { onAssistantDelete(selectedAssistant.id) },
                                     enabled = assistants.size > 1,
                                     modifier = Modifier.padding(start = 8.dp)
                                 ) {
-                                    Icon(Lucide.Trash2, "删除助手", Modifier.size(18.dp))
+                                    Icon(Lucide.Trash2, desktopText(preferences.language, "settings.delete_assistant"), Modifier.size(18.dp))
                                 }
                             }
                             OutlinedTextField(
@@ -658,7 +676,7 @@ internal fun DesktopSettingsPane(
                                     )
                                 },
                                 Modifier.fillMaxWidth(),
-                                label = { Text("标签（逗号分隔）") },
+                                label = { Text(desktopText(preferences.language, "settings.tags")) },
                                 singleLine = true
                             )
                             Box {
@@ -699,11 +717,11 @@ internal fun DesktopSettingsPane(
                                     draftAssistant.model,
                                     { draftAssistant = draftAssistant.copy(model = it) },
                                     Modifier.fillMaxWidth(),
-                                    label = { Text("模型（留空使用服务商默认值）") },
+                                    label = { Text(desktopText(preferences.language, "settings.model_inherit")) },
                                     trailingIcon = {
                                         if (assistantProvider.discoveredModels.isNotEmpty()) {
                                             IconButton(onClick = { assistantModelMenuOpen = true }) {
-                                                Icon(Lucide.ChevronDown, "选择模型")
+                                                Icon(Lucide.ChevronDown, desktopText(preferences.language, "settings.select_model"))
                                             }
                                         }
                                     },
@@ -728,20 +746,20 @@ internal fun DesktopSettingsPane(
                                 draftAssistant.systemPrompt,
                                 { draftAssistant = draftAssistant.copy(systemPrompt = it) },
                                 Modifier.fillMaxWidth(),
-                                label = { Text("系统提示词（留空使用服务商默认值）") },
+                                label = { Text(desktopText(preferences.language, "settings.system_prompt_inherit")) },
                                 minLines = 4
                             )
                             OutlinedTextField(
                                 draftAssistant.messageTemplate,
                                 { draftAssistant = draftAssistant.copy(messageTemplate = it) },
                                 Modifier.fillMaxWidth(),
-                                label = { Text("消息模板") },
+                                label = { Text(desktopText(preferences.language, "assistant.message_template")) },
                                 supportingText = {
                                     Text(
                                         if (messageTemplateValid) {
-                                            "变量：{{ message }}、{{ role }}、{{ date }}、{{ time }}"
+                                            desktopText(preferences.language, "assistant.template_variables")
                                         } else {
-                                            "需要包含 {{ message }} 的有效 Pebble 模板"
+                                            desktopText(preferences.language, "assistant.template_invalid")
                                         }
                                     )
                                 },
@@ -751,29 +769,29 @@ internal fun DesktopSettingsPane(
                                 maxLines = 8
                             )
                             PreferenceSwitch(
-                                "对话系统提示词",
-                                "允许单个对话覆盖此助手的系统提示词",
+                                desktopText(preferences.language, "assistant.conversation_system_prompt"),
+                                desktopText(preferences.language, "assistant.conversation_system_prompt_help"),
                                 draftAssistant.allowConversationSystemPrompt
                             ) {
                                 draftAssistant = draftAssistant.copy(allowConversationSystemPrompt = it)
                             }
                             PreferenceSwitch(
-                                "对话世界书",
-                                "允许单个对话启用或禁用此助手的提示词注入",
+                                desktopText(preferences.language, "assistant.conversation_lorebooks"),
+                                desktopText(preferences.language, "assistant.conversation_lorebooks_help"),
                                 draftAssistant.allowConversationPromptInjection
                             ) {
                                 draftAssistant = draftAssistant.copy(allowConversationPromptInjection = it)
                             }
                             PreferenceSwitch(
-                                "联网搜索",
-                                "默认在新对话中启用兼容 OpenAI 的联网搜索",
+                                desktopText(preferences.language, "assistant.web_search"),
+                                desktopText(preferences.language, "assistant.web_search_help"),
                                 draftAssistant.enableWebSearch
                             ) {
                                 draftAssistant = draftAssistant.copy(enableWebSearch = it)
                             }
                             PreferenceSwitch(
-                                "本地时间工具",
-                                "允许模型按需读取此设备的本地时间和时区",
+                                desktopText(preferences.language, "assistant.local_time_tool"),
+                                desktopText(preferences.language, "assistant.local_time_tool_help"),
                                 DesktopLocalTool.CURRENT_TIME in draftAssistant.localTools
                             ) { enabled ->
                                 draftAssistant = draftAssistant.copy(
@@ -785,8 +803,8 @@ internal fun DesktopSettingsPane(
                                 )
                             }
                             PreferenceSwitch(
-                                "主动提问",
-                                "允许模型在需要澄清信息或确认时向你提问",
+                                desktopText(preferences.language, "assistant.ask_user_tool"),
+                                desktopText(preferences.language, "assistant.ask_user_tool_help"),
                                 DesktopLocalTool.ASK_USER in draftAssistant.localTools
                             ) { enabled ->
                                 draftAssistant = draftAssistant.copy(
@@ -805,13 +823,13 @@ internal fun DesktopSettingsPane(
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
-                                label = { Text("每次回复的工具调用轮数上限") },
-                                supportingText = { Text("0 表示不限制；默认值为 8") },
+                                label = { Text(desktopText(preferences.language, "assistant.max_tool_rounds")) },
+                                supportingText = { Text(desktopText(preferences.language, "assistant.max_tool_rounds_help")) },
                                 singleLine = true
                             )
                             PreferenceSwitch(
-                                "Agent 工作区",
-                                "允许模型在选定目录内读写文件、执行命令并加载已启用的 Skills",
+                                desktopText(preferences.language, "assistant.agent_workspace"),
+                                desktopText(preferences.language, "assistant.agent_workspace_help"),
                                 draftAssistant.agentWorkspace != null
                             ) { enabled ->
                                 draftAssistant = draftAssistant.copy(
@@ -825,8 +843,8 @@ internal fun DesktopSettingsPane(
                                         draftAssistant = draftAssistant.copy(agentWorkspace = workspace.copy(rootPath = root.trim()))
                                     },
                                     modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("工作区目录") },
-                                    supportingText = { Text("仅允许 Agent 文件工具访问此目录；本地 shell 每次仍会要求确认") },
+                                    label = { Text(desktopText(preferences.language, "assistant.workspace_directory")) },
+                                    supportingText = { Text(desktopText(preferences.language, "assistant.workspace_directory_help")) },
                                     singleLine = true
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -837,7 +855,7 @@ internal fun DesktopSettingsPane(
                                                 agentWorkspace = workspace.copy(backend = DesktopAgentBackend.DOCKER)
                                             )
                                         },
-                                        label = { Text("Docker 容器") }
+                                        label = { Text(desktopText(preferences.language, "assistant.docker_container")) }
                                     )
                                     FilterChip(
                                         selected = workspace.backend == DesktopAgentBackend.LOCAL,
@@ -846,7 +864,7 @@ internal fun DesktopSettingsPane(
                                                 agentWorkspace = workspace.copy(backend = DesktopAgentBackend.LOCAL)
                                             )
                                         },
-                                        label = { Text("本机 Shell") }
+                                        label = { Text(desktopText(preferences.language, "assistant.local_shell")) }
                                     )
                                 }
                                 if (workspace.backend == DesktopAgentBackend.DOCKER) {
@@ -856,8 +874,8 @@ internal fun DesktopSettingsPane(
                                             draftAssistant = draftAssistant.copy(agentWorkspace = workspace.copy(dockerImage = image.trim()))
                                         },
                                         modifier = Modifier.fillMaxWidth(),
-                                        label = { Text("Docker 镜像") },
-                                        supportingText = { Text("默认断网、无特权、只挂载工作区；首次拉取需批准") },
+                                        label = { Text(desktopText(preferences.language, "assistant.docker_image")) },
+                                        supportingText = { Text(desktopText(preferences.language, "assistant.docker_image_help")) },
                                         singleLine = true
                                     )
                                 }
@@ -869,47 +887,47 @@ internal fun DesktopSettingsPane(
                                         )
                                     },
                                     modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("已启用 Skills") },
-                                    supportingText = { Text("逗号分隔；目录位于 ~/.config/rikkahub/skills/<名称>/SKILL.md") },
+                                    label = { Text(desktopText(preferences.language, "assistant.enabled_skills")) },
+                                    supportingText = { Text(desktopText(preferences.language, "assistant.enabled_skills_help")) },
                                     singleLine = true
                                 )
                             }
                             PreferenceSwitch(
-                                "流式输出",
-                                "实时显示回复内容，而不是等待完整回复",
+                                desktopText(preferences.language, "assistant.stream_output"),
+                                desktopText(preferences.language, "assistant.stream_output_help"),
                                 draftAssistant.streamOutput
                             ) {
                                 draftAssistant = draftAssistant.copy(streamOutput = it)
                             }
                             PreferenceSwitch(
-                                "记忆",
-                                "允许模型记录、更新和使用跨对话的长期信息",
+                                desktopText(preferences.language, "assistant.memory"),
+                                desktopText(preferences.language, "assistant.memory_help"),
                                 draftAssistant.enableMemory
                             ) {
                                 draftAssistant = draftAssistant.copy(enableMemory = it)
                             }
                             if (draftAssistant.enableMemory) {
                                 PreferenceSwitch(
-                                    "全局共享记忆",
-                                    "与其他启用共享记忆的助手共用记忆库",
+                                    desktopText(preferences.language, "assistant.global_memory"),
+                                    desktopText(preferences.language, "assistant.global_memory_help"),
                                     draftAssistant.useGlobalMemory
                                 ) {
                                     draftAssistant = draftAssistant.copy(useGlobalMemory = it)
                                 }
                                 if (draftAssistant.useGlobalMemory) {
                                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                        Text("全局记忆", Modifier.weight(1f), fontWeight = FontWeight.Medium)
+                                        Text(desktopText(preferences.language, "assistant.global_memory"), Modifier.weight(1f), fontWeight = FontWeight.Medium)
                                         IconButton(onClick = { onGlobalMemoriesChange(globalMemories + DesktopMemory()) }) {
-                                            Icon(Lucide.Plus, "添加全局记忆", Modifier.size(18.dp))
+                                            Icon(Lucide.Plus, desktopText(preferences.language, "assistant.add_global_memory"), Modifier.size(18.dp))
                                         }
                                     }
                                     globalMemories.forEachIndexed { index, memory ->
                                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                                             OutlinedTextField(memory.content, { value ->
                                                 onGlobalMemoriesChange(globalMemories.mapIndexed { i, item -> if (i == index) item.copy(content = value) else item })
-                                            }, Modifier.weight(1f), label = { Text("共享事实或偏好") }, minLines = 2)
+                                            }, Modifier.weight(1f), label = { Text(desktopText(preferences.language, "assistant.shared_memory_content")) }, minLines = 2)
                                             IconButton(onClick = { onGlobalMemoriesChange(globalMemories.filterIndexed { i, _ -> i != index }) }) {
-                                                Icon(Lucide.Trash2, "删除全局记忆", Modifier.size(18.dp))
+                                                Icon(Lucide.Trash2, desktopText(preferences.language, "assistant.delete_global_memory"), Modifier.size(18.dp))
                                             }
                                         }
                                     }
@@ -919,14 +937,14 @@ internal fun DesktopSettingsPane(
                                     Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("记忆条目", Modifier.weight(1f), fontWeight = FontWeight.Medium)
+                                    Text(desktopText(preferences.language, "assistant.memory_entries"), Modifier.weight(1f), fontWeight = FontWeight.Medium)
                                     IconButton(
                                         onClick = {
                                             draftAssistant = draftAssistant.copy(
                                                 memories = draftAssistant.memories + DesktopMemory()
                                             )
                                         }
-                                    ) { Icon(Lucide.Plus, "添加记忆", Modifier.size(18.dp)) }
+                                    ) { Icon(Lucide.Plus, desktopText(preferences.language, "assistant.add_memory"), Modifier.size(18.dp)) }
                                 }
                                 draftAssistant.memories.forEachIndexed { index, memory ->
                                     Row(
@@ -944,7 +962,7 @@ internal fun DesktopSettingsPane(
                                                 )
                                             },
                                             Modifier.weight(1f),
-                                            label = { Text("事实或偏好") },
+                                            label = { Text(desktopText(preferences.language, "assistant.memory_content")) },
                                             minLines = 2,
                                             maxLines = 5,
                                             isError = memory.content.isBlank()
@@ -958,13 +976,14 @@ internal fun DesktopSettingsPane(
                                                 )
                                             },
                                             modifier = Modifier.padding(top = 8.dp)
-                                        ) { Icon(Lucide.Trash2, "删除记忆", Modifier.size(18.dp)) }
+                                        ) { Icon(Lucide.Trash2, desktopText(preferences.language, "assistant.delete_memory"), Modifier.size(18.dp)) }
                                     }
                                 }
                                 }
                             }
                             SettingsDivider()
                             DesktopMcpSettings(
+                                language = preferences.language,
                                 servers = mcpServers,
                                 selectedServerIds = draftAssistant.mcpServerIds,
                                 mcpClient = mcpClient,
@@ -985,8 +1004,8 @@ internal fun DesktopSettingsPane(
                                         }
                                     },
                                     Modifier.weight(1f),
-                                    label = { Text("温度") },
-                                    supportingText = { Text("留空继承服务商设置") },
+                                    label = { Text(desktopText(preferences.language, "assistant.temperature")) },
+                                    supportingText = { Text(desktopText(preferences.language, "assistant.inherit_provider")) },
                                     singleLine = true
                                 )
                                 OutlinedTextField(
@@ -997,8 +1016,8 @@ internal fun DesktopSettingsPane(
                                         }
                                     },
                                     Modifier.weight(1f),
-                                    label = { Text("最大输出 Token") },
-                                    supportingText = { Text("留空继承服务商设置") },
+                                    label = { Text(desktopText(preferences.language, "assistant.max_output_tokens")) },
+                                    supportingText = { Text(desktopText(preferences.language, "assistant.inherit_provider")) },
                                     singleLine = true
                                 )
                                 OutlinedTextField(
@@ -1011,8 +1030,8 @@ internal fun DesktopSettingsPane(
                                         }
                                     },
                                     Modifier.weight(1f),
-                                    label = { Text("上下文消息数") },
-                                    supportingText = { Text("留空保留全部") },
+                                    label = { Text(desktopText(preferences.language, "assistant.context_messages")) },
+                                    supportingText = { Text(desktopText(preferences.language, "assistant.keep_all_when_empty")) },
                                     singleLine = true
                                 )
                             }
@@ -1030,11 +1049,11 @@ internal fun DesktopSettingsPane(
                                     },
                                     Modifier.weight(1f),
                                     label = { Text("Top P") },
-                                    supportingText = { Text("留空继承服务商设置") },
+                                    supportingText = { Text(desktopText(preferences.language, "assistant.inherit_provider")) },
                                     singleLine = true
                                 )
                                 Column(Modifier.weight(2f)) {
-                                    Text("推理强度", fontSize = 12.sp)
+                                    Text(desktopText(preferences.language, "model_picker.reasoning"), fontSize = 12.sp)
                                     SingleChoiceSegmentedButtonRow {
                                         listOf("", "low", "medium", "high").forEachIndexed { index, effort ->
                                             SegmentedButton(
@@ -1043,7 +1062,7 @@ internal fun DesktopSettingsPane(
                                                     draftAssistant = draftAssistant.copy(reasoningEffort = effort)
                                                 },
                                                 shape = SegmentedButtonDefaults.itemShape(index, 4),
-                                                label = { Text(effort.ifBlank { "默认" }) }
+                                                label = { Text(if (effort.isBlank()) desktopText(preferences.language, "model_picker.default") else desktopText(preferences.language, "model_picker.$effort")) }
                                             )
                                         }
                                     }
@@ -1055,9 +1074,9 @@ internal fun DesktopSettingsPane(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("预设消息", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                    Text(desktopText(preferences.language, "assistant.preset_messages"), fontSize = 15.sp, fontWeight = FontWeight.Medium)
                                     Text(
-                                        "在每个新对话中添加示例消息",
+                                        desktopText(preferences.language, "assistant.preset_messages_help"),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 12.sp
                                     )
@@ -1074,7 +1093,7 @@ internal fun DesktopSettingsPane(
                                     }
                                 ) {
                                     Icon(Lucide.Plus, null, Modifier.size(17.dp))
-                                    Text("添加", Modifier.padding(start = 7.dp))
+                                    Text(desktopText(preferences.language, "common.add"), Modifier.padding(start = 7.dp))
                                 }
                             }
                             draftAssistant.presetMessages.forEachIndexed { index, presetMessage ->
@@ -1096,7 +1115,7 @@ internal fun DesktopSettingsPane(
                                                     )
                                                 },
                                                 shape = SegmentedButtonDefaults.itemShape(roleIndex, 2),
-                                                label = { Text(role.replaceFirstChar { it.uppercase() }) }
+                                                label = { Text(desktopText(preferences.language, "role.$role")) }
                                             )
                                         }
                                     }
@@ -1111,7 +1130,7 @@ internal fun DesktopSettingsPane(
                                             )
                                         },
                                         Modifier.weight(1f),
-                                        label = { Text("消息") },
+                                        label = { Text(desktopText(preferences.language, "assistant.message")) },
                                         minLines = 2,
                                         maxLines = 5
                                     )
@@ -1125,7 +1144,7 @@ internal fun DesktopSettingsPane(
                                         },
                                         modifier = Modifier.padding(top = 8.dp)
                                     ) {
-                                        Icon(Lucide.Trash2, "删除预设消息", Modifier.size(18.dp))
+                                        Icon(Lucide.Trash2, desktopText(preferences.language, "assistant.delete_preset_message"), Modifier.size(18.dp))
                                     }
                                 }
                             }
@@ -1135,9 +1154,9 @@ internal fun DesktopSettingsPane(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("快捷消息", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                    Text(desktopText(preferences.language, "assistant.quick_messages"), fontSize = 15.sp, fontWeight = FontWeight.Medium)
                                     Text(
-                                        "从聊天输入框插入可复用提示词",
+                                        desktopText(preferences.language, "assistant.quick_messages_help"),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 12.sp
                                     )
@@ -1150,7 +1169,7 @@ internal fun DesktopSettingsPane(
                                     }
                                 ) {
                                     Icon(Lucide.Plus, null, Modifier.size(17.dp))
-                                    Text("添加", Modifier.padding(start = 7.dp))
+                                    Text(desktopText(preferences.language, "common.add"), Modifier.padding(start = 7.dp))
                                 }
                             }
                             draftAssistant.quickMessages.forEachIndexed { index, quickMessage ->
@@ -1169,7 +1188,7 @@ internal fun DesktopSettingsPane(
                                             )
                                         },
                                         Modifier.weight(0.7f),
-                                        label = { Text("标题") },
+                                        label = { Text(desktopText(preferences.language, "assistant.title")) },
                                         singleLine = true
                                     )
                                     OutlinedTextField(
@@ -1182,7 +1201,7 @@ internal fun DesktopSettingsPane(
                                             )
                                         },
                                         Modifier.weight(1.3f),
-                                        label = { Text("内容") },
+                                        label = { Text(desktopText(preferences.language, "assistant.content")) },
                                         minLines = 2,
                                         maxLines = 4
                                     )
@@ -1196,7 +1215,7 @@ internal fun DesktopSettingsPane(
                                         },
                                         modifier = Modifier.padding(top = 8.dp)
                                     ) {
-                                        Icon(Lucide.Trash2, "删除快捷消息", Modifier.size(18.dp))
+                                        Icon(Lucide.Trash2, desktopText(preferences.language, "assistant.delete_quick_message"), Modifier.size(18.dp))
                                     }
                                 }
                             }
@@ -1206,9 +1225,9 @@ internal fun DesktopSettingsPane(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("正则转换", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                    Text(desktopText(preferences.language, "assistant.regex_transforms"), fontSize = 15.sp, fontWeight = FontWeight.Medium)
                                     Text(
-                                        "转换用户输入、助手输出或显示文本",
+                                        desktopText(preferences.language, "assistant.regex_transforms_help"),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 12.sp
                                     )
@@ -1221,7 +1240,7 @@ internal fun DesktopSettingsPane(
                                     }
                                 ) {
                                     Icon(Lucide.Plus, null, Modifier.size(17.dp))
-                                    Text("添加", Modifier.padding(start = 7.dp))
+                                    Text(desktopText(preferences.language, "common.add"), Modifier.padding(start = 7.dp))
                                 }
                             }
                             draftAssistant.regexRules.forEachIndexed { index, rule ->
@@ -1244,7 +1263,7 @@ internal fun DesktopSettingsPane(
                                                 )
                                             },
                                             Modifier.weight(1f),
-                                            label = { Text("规则名称") },
+                                            label = { Text(desktopText(preferences.language, "assistant.rule_name")) },
                                             singleLine = true
                                         )
                                         Switch(
@@ -1266,7 +1285,7 @@ internal fun DesktopSettingsPane(
                                                 )
                                             }
                                         ) {
-                                            Icon(Lucide.Trash2, "删除正则规则", Modifier.size(18.dp))
+                                            Icon(Lucide.Trash2, desktopText(preferences.language, "assistant.delete_regex_rule"), Modifier.size(18.dp))
                                         }
                                     }
                                     Row(
@@ -1283,7 +1302,7 @@ internal fun DesktopSettingsPane(
                                                 )
                                             },
                                             Modifier.weight(1f),
-                                            label = { Text("匹配正则") },
+                                            label = { Text(desktopText(preferences.language, "assistant.find_regex")) },
                                             isError = rule.findRegex.isBlank() ||
                                                 runCatching { Regex(rule.findRegex) }.isFailure,
                                             textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace),
@@ -1299,7 +1318,7 @@ internal fun DesktopSettingsPane(
                                                 )
                                             },
                                             Modifier.weight(1f),
-                                            label = { Text("替换为") },
+                                            label = { Text(desktopText(preferences.language, "assistant.replace_with")) },
                                             textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace),
                                             singleLine = true
                                         )
@@ -1324,7 +1343,7 @@ internal fun DesktopSettingsPane(
                                                         }
                                                     )
                                                 },
-                                                label = { Text(role.replaceFirstChar { it.uppercase() }) }
+                                                label = { Text(desktopText(preferences.language, "role.$role")) }
                                             )
                                         }
                                         FilterChip(
@@ -1338,7 +1357,7 @@ internal fun DesktopSettingsPane(
                                                     }
                                                 )
                                             },
-                                            label = { Text("仅视觉显示") }
+                                            label = { Text(desktopText(preferences.language, "assistant.visual_only")) }
                                         )
                                     }
                                 }
@@ -1349,9 +1368,9 @@ internal fun DesktopSettingsPane(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("提示词注入 / 世界书", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                    Text(desktopText(preferences.language, "assistant.prompt_injections"), fontSize = 15.sp, fontWeight = FontWeight.Medium)
                                     Text(
-                                        "按关键词匹配上下文，或设为常驻注入",
+                                        desktopText(preferences.language, "assistant.prompt_injections_help"),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 12.sp
                                     )
@@ -1364,7 +1383,7 @@ internal fun DesktopSettingsPane(
                                     }
                                 ) {
                                     Icon(Lucide.Plus, null, Modifier.size(17.dp))
-                                    Text("添加", Modifier.padding(start = 7.dp))
+                                    Text(desktopText(preferences.language, "common.add"), Modifier.padding(start = 7.dp))
                                 }
                             }
                             draftAssistant.promptInjections.forEachIndexed { index, injection ->
@@ -1387,7 +1406,7 @@ internal fun DesktopSettingsPane(
                                                 )
                                             },
                                             Modifier.weight(1f),
-                                            label = { Text("条目名称") },
+                                            label = { Text(desktopText(preferences.language, "assistant.entry_name")) },
                                             singleLine = true
                                         )
                                         Switch(
@@ -1408,7 +1427,7 @@ internal fun DesktopSettingsPane(
                                                     }
                                                 )
                                             }
-                                        ) { Icon(Lucide.Trash2, "删除注入条目", Modifier.size(18.dp)) }
+                                        ) { Icon(Lucide.Trash2, desktopText(preferences.language, "assistant.delete_injection"), Modifier.size(18.dp)) }
                                     }
                                     OutlinedTextField(
                                         injection.content,
@@ -1420,7 +1439,7 @@ internal fun DesktopSettingsPane(
                                             )
                                         },
                                         Modifier.fillMaxWidth(),
-                                        label = { Text("注入内容") },
+                                        label = { Text(desktopText(preferences.language, "assistant.injection_content")) },
                                         minLines = 2
                                     )
                                     OutlinedTextField(
@@ -1435,8 +1454,8 @@ internal fun DesktopSettingsPane(
                                             )
                                         },
                                         Modifier.fillMaxWidth(),
-                                        label = { Text("关键词（逗号分隔）") },
-                                        supportingText = { Text("留空时请开启常驻") },
+                                        label = { Text(desktopText(preferences.language, "assistant.keywords")) },
+                                        supportingText = { Text(desktopText(preferences.language, "assistant.keywords_help")) },
                                         singleLine = true
                                     )
                                     Row(
@@ -1455,8 +1474,8 @@ internal fun DesktopSettingsPane(
                                                 }
                                             },
                                             Modifier.weight(1f),
-                                            label = { Text("优先级") },
-                                            supportingText = { Text("数值越大越靠前") },
+                                            label = { Text(desktopText(preferences.language, "assistant.priority")) },
+                                            supportingText = { Text(desktopText(preferences.language, "assistant.priority_help")) },
                                             singleLine = true
                                         )
                                         OutlinedTextField(
@@ -1471,8 +1490,8 @@ internal fun DesktopSettingsPane(
                                                 }
                                             },
                                             Modifier.weight(1f),
-                                            label = { Text("扫描消息数") },
-                                            supportingText = { Text("用于关键词匹配") },
+                                            label = { Text(desktopText(preferences.language, "assistant.scan_depth")) },
+                                            supportingText = { Text(desktopText(preferences.language, "assistant.scan_depth_help")) },
                                             singleLine = true
                                         )
                                         if (injection.position == DesktopInjectionPosition.AT_DEPTH) {
@@ -1488,13 +1507,13 @@ internal fun DesktopSettingsPane(
                                                     }
                                                 },
                                                 Modifier.weight(1f),
-                                                label = { Text("注入深度") },
-                                                supportingText = { Text("从末尾倒数") },
+                                                label = { Text(desktopText(preferences.language, "assistant.injection_depth")) },
+                                                supportingText = { Text(desktopText(preferences.language, "assistant.injection_depth_help")) },
                                                 singleLine = true
                                             )
                                         }
                                     }
-                                    Text("注入角色", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(desktopText(preferences.language, "assistant.injection_role"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     SingleChoiceSegmentedButtonRow {
                                         listOf("system", "user", "assistant").forEachIndexed { roleIndex, role ->
                                             SegmentedButton(
@@ -1507,7 +1526,7 @@ internal fun DesktopSettingsPane(
                                                     )
                                                 },
                                                 shape = SegmentedButtonDefaults.itemShape(roleIndex, 3),
-                                                label = { Text(role) }
+                                                label = { Text(desktopText(preferences.language, "role.$role")) }
                                             )
                                         }
                                     }
@@ -1528,11 +1547,11 @@ internal fun DesktopSettingsPane(
                                                 label = {
                                                     Text(
                                                         when (position) {
-                                                            DesktopInjectionPosition.BEFORE_SYSTEM_PROMPT -> "系统前"
-                                                            DesktopInjectionPosition.AFTER_SYSTEM_PROMPT -> "系统后"
-                                                            DesktopInjectionPosition.TOP_OF_CHAT -> "聊天顶部"
-                                                            DesktopInjectionPosition.BOTTOM_OF_CHAT -> "聊天底部"
-                                                            DesktopInjectionPosition.AT_DEPTH -> "指定深度"
+                                                            DesktopInjectionPosition.BEFORE_SYSTEM_PROMPT -> desktopText(preferences.language, "assistant.before_system")
+                                                            DesktopInjectionPosition.AFTER_SYSTEM_PROMPT -> desktopText(preferences.language, "assistant.after_system")
+                                                            DesktopInjectionPosition.TOP_OF_CHAT -> desktopText(preferences.language, "assistant.top_of_chat")
+                                                            DesktopInjectionPosition.BOTTOM_OF_CHAT -> desktopText(preferences.language, "assistant.bottom_of_chat")
+                                                            DesktopInjectionPosition.AT_DEPTH -> desktopText(preferences.language, "assistant.at_depth")
                                                         }
                                                     )
                                                 }
@@ -1547,7 +1566,7 @@ internal fun DesktopSettingsPane(
                                                     }
                                                 )
                                             },
-                                            label = { Text("常驻") }
+                                            label = { Text(desktopText(preferences.language, "assistant.always_active")) }
                                         )
                                         FilterChip(
                                             selected = injection.useRegex,
@@ -1558,7 +1577,7 @@ internal fun DesktopSettingsPane(
                                                     }
                                                 )
                                             },
-                                            label = { Text("正则关键词") }
+                                            label = { Text(desktopText(preferences.language, "assistant.regex_keywords")) }
                                         )
                                         FilterChip(
                                             selected = injection.caseSensitive,
@@ -1569,13 +1588,14 @@ internal fun DesktopSettingsPane(
                                                     }
                                                 )
                                             },
-                                            label = { Text("区分大小写") }
+                                            label = { Text(desktopText(preferences.language, "assistant.case_sensitive")) }
                                         )
                                     }
                                 }
                             }
                             SettingsDivider()
                             RequestOverridesEditor(
+                                language = preferences.language,
                                 headers = draftAssistant.customHeaders,
                                 bodies = draftAssistant.customBodies,
                                 onHeadersChange = { draftAssistant = draftAssistant.copy(customHeaders = it) },
@@ -1584,7 +1604,7 @@ internal fun DesktopSettingsPane(
                             Button(
                                 onClick = {
                                     onAssistantSave(draftAssistant)
-                                    scope.launch { feedbackHostState.showSnackbar("助手设置已保存") }
+                                    scope.launch { feedbackHostState.showSnackbar(desktopText(preferences.language, "assistant.saved")) }
                                 },
                                 enabled = draftAssistant.name.isNotBlank() &&
                                     draftAssistant.presetMessages.all { it.content.isNotBlank() } &&
@@ -1593,7 +1613,7 @@ internal fun DesktopSettingsPane(
                                 modifier = Modifier.align(Alignment.End)
                             ) {
                                 Icon(Lucide.Save, null, Modifier.size(17.dp))
-                                Text("保存助手", Modifier.padding(start = 8.dp))
+                                Text(desktopText(preferences.language, "assistant.save"), Modifier.padding(start = 8.dp))
                             }
                         }
                     }
@@ -1605,7 +1625,7 @@ internal fun DesktopSettingsPane(
                         sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
                     }
                 ) {
-                    SettingsSection("模型与服务", Lucide.ServerCog) {
+                    SettingsSection(desktopText(preferences.language, "settings.section.providers"), Lucide.ServerCog) {
                         FlowRow(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1623,7 +1643,7 @@ internal fun DesktopSettingsPane(
                             }
                             Box {
                                 OutlinedButton(onClick = { providerPresetMenuOpen = true }) {
-                                    Text("应用预设")
+                                    Text(desktopText(preferences.language, "settings.apply_preset"))
                                     Icon(Lucide.ChevronDown, null, Modifier.padding(start = 4.dp).size(16.dp))
                                 }
                                 DropdownMenu(
@@ -1643,13 +1663,14 @@ internal fun DesktopSettingsPane(
                                                     )
                                                 )
                                                 balanceStatus = null
+                                                balanceStatusIsError = false
                                             }
                                         )
                                     }
                                 }
                             }
                             IconButton(onClick = onProviderAdd, modifier = Modifier.size(40.dp)) {
-                                Icon(Lucide.Plus, "添加服务商", Modifier.size(18.dp))
+                                Icon(Lucide.Plus, desktopText(preferences.language, "settings.add_provider"), Modifier.size(18.dp))
                             }
                         }
                         SettingsDivider()
@@ -1665,7 +1686,7 @@ internal fun DesktopSettingsPane(
                                     draftProvider.name,
                                     { draftProvider = draftProvider.copy(name = it) },
                                     Modifier.weight(1f),
-                                    label = { Text("服务商名称") },
+                                    label = { Text(desktopText(preferences.language, "settings.provider_name")) },
                                     singleLine = true
                                 )
                                 IconButton(
@@ -1673,7 +1694,7 @@ internal fun DesktopSettingsPane(
                                     enabled = providers.size > 1,
                                     modifier = Modifier.padding(start = 8.dp)
                                 ) {
-                                    Icon(Lucide.Trash2, "删除服务商", Modifier.size(18.dp))
+                                    Icon(Lucide.Trash2, desktopText(preferences.language, "settings.delete_provider"), Modifier.size(18.dp))
                                 }
                             }
                             OutlinedTextField(
@@ -1684,7 +1705,7 @@ internal fun DesktopSettingsPane(
                                     )
                                 },
                                 Modifier.fillMaxWidth(),
-                                label = { Text("基础 URL") },
+                                label = { Text(desktopText(preferences.language, "settings.base_url")) },
                                 singleLine = true
                             )
                             OutlinedTextField(
@@ -1695,7 +1716,7 @@ internal fun DesktopSettingsPane(
                                     )
                                 },
                                 Modifier.fillMaxWidth(),
-                                label = { Text("API 密钥") },
+                                label = { Text(desktopText(preferences.language, "settings.api_key")) },
                                 singleLine = true,
                                 visualTransformation = if (apiKeyVisible) {
                                     VisualTransformation.None
@@ -1706,7 +1727,7 @@ internal fun DesktopSettingsPane(
                                     IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
                                         Icon(
                                             if (apiKeyVisible) Lucide.EyeOff else Lucide.Eye,
-                                            if (apiKeyVisible) "隐藏 API 密钥" else "显示 API 密钥"
+                                            desktopText(preferences.language, if (apiKeyVisible) "settings.hide_api_key" else "settings.show_api_key")
                                         )
                                     }
                                 }
@@ -1720,12 +1741,12 @@ internal fun DesktopSettingsPane(
                                         )
                                     },
                                     Modifier.fillMaxWidth(),
-                                    label = { Text("模型") },
+                                    label = { Text(desktopText(preferences.language, "settings.model")) },
                                     leadingIcon = { Icon(Lucide.Bot, null) },
                                     trailingIcon = {
                                         if (draftProvider.discoveredModels.isNotEmpty()) {
                                             IconButton(onClick = { modelMenuOpen = true }) {
-                                                Icon(Lucide.ChevronDown, "选择已发现的模型")
+                                                Icon(Lucide.ChevronDown, desktopText(preferences.language, "settings.select_discovered_model"))
                                             }
                                         }
                                     },
@@ -1756,8 +1777,8 @@ internal fun DesktopSettingsPane(
                                     )
                                 },
                                 Modifier.fillMaxWidth(),
-                                label = { Text("标题模型") },
-                                supportingText = { Text("留空时使用聊天模型") },
+                                label = { Text(desktopText(preferences.language, "provider.title_model")) },
+                                supportingText = { Text(desktopText(preferences.language, "provider.title_model_help")) },
                                 singleLine = true
                             )
                             OutlinedTextField(
@@ -1768,13 +1789,13 @@ internal fun DesktopSettingsPane(
                                     )
                                 },
                                 Modifier.fillMaxWidth(),
-                                label = { Text("标题提示词") },
-                                supportingText = { Text("支持 {locale} 与 {content} 占位符") },
+                                label = { Text(desktopText(preferences.language, "provider.title_prompt")) },
+                                supportingText = { Text(desktopText(preferences.language, "provider.title_prompt_help")) },
                                 minLines = 4,
                                 maxLines = 8
                             )
                             Text(
-                                "温度  ${"%.1f".format(draftProvider.config.temperature)}",
+                                "${desktopText(preferences.language, "assistant.temperature")}  ${"%.1f".format(draftProvider.config.temperature)}",
                                 fontSize = 13.sp
                             )
                             Slider(
@@ -1801,7 +1822,7 @@ internal fun DesktopSettingsPane(
                                 valueRange = 0f..1f,
                                 steps = 19
                             )
-                            Text("推理强度", fontSize = 13.sp)
+                            Text(desktopText(preferences.language, "model_picker.reasoning"), fontSize = 13.sp)
                             SingleChoiceSegmentedButtonRow {
                                 listOf("", "low", "medium", "high").forEachIndexed { index, effort ->
                                     SegmentedButton(
@@ -1812,13 +1833,13 @@ internal fun DesktopSettingsPane(
                                             )
                                         },
                                         shape = SegmentedButtonDefaults.itemShape(index, 4),
-                                        label = { Text(effort.ifBlank { "默认" }) }
+                                        label = { Text(if (effort.isBlank()) desktopText(preferences.language, "model_picker.default") else desktopText(preferences.language, "model_picker.$effort")) }
                                     )
                                 }
                             }
                             PreferenceSwitch(
-                                "Token 用量",
-                                "从兼容的流式 API 请求输入和输出 Token 计数",
+                                desktopText(preferences.language, "provider.token_usage"),
+                                desktopText(preferences.language, "provider.token_usage_help"),
                                 draftProvider.config.requestTokenUsage
                             ) {
                                 draftProvider = draftProvider.copy(
@@ -1841,8 +1862,8 @@ internal fun DesktopSettingsPane(
                                     }
                                 },
                                 Modifier.fillMaxWidth(),
-                                label = { Text("最大输出 Token") },
-                                supportingText = { Text("留空使用服务商默认值") },
+                                label = { Text(desktopText(preferences.language, "assistant.max_output_tokens")) },
+                                supportingText = { Text(desktopText(preferences.language, "provider.use_provider_default")) },
                                 singleLine = true
                             )
                             OutlinedTextField(
@@ -1853,14 +1874,14 @@ internal fun DesktopSettingsPane(
                                     )
                                 },
                                 Modifier.fillMaxWidth(),
-                                label = { Text("系统提示词") },
+                                label = { Text(desktopText(preferences.language, "provider.system_prompt")) },
                                 minLines = 3,
                                 maxLines = 7
                             )
                             SettingsDivider()
                             PreferenceSwitch(
-                                "余额查询",
-                                "通过服务商 API 查询账户余额或额度",
+                                desktopText(preferences.language, "provider.balance_query"),
+                                desktopText(preferences.language, "provider.balance_query_help"),
                                 draftProvider.config.balanceOptions.enabled
                             ) { enabled ->
                                 draftProvider = draftProvider.copy(
@@ -1881,8 +1902,8 @@ internal fun DesktopSettingsPane(
                                         )
                                     },
                                     Modifier.fillMaxWidth(),
-                                    label = { Text("余额 API 路径") },
-                                    supportingText = { Text("可填写相对路径或完整 URL") },
+                                    label = { Text(desktopText(preferences.language, "provider.balance_api_path")) },
+                                    supportingText = { Text(desktopText(preferences.language, "provider.balance_api_path_help")) },
                                     singleLine = true
                                 )
                                 OutlinedTextField(
@@ -1895,27 +1916,34 @@ internal fun DesktopSettingsPane(
                                         )
                                     },
                                     Modifier.fillMaxWidth(),
-                                    label = { Text("结果 JSON 路径") },
-                                    supportingText = { Text("例如 data.balance 或 data.items[0].amount") },
+                                    label = { Text(desktopText(preferences.language, "provider.balance_result_path")) },
+                                    supportingText = { Text(desktopText(preferences.language, "provider.balance_result_path_help")) },
                                     singleLine = true
                                 )
                                 OutlinedButton(
                                     onClick = {
-                                        balanceStatus = "正在查询余额..."
+                                        balanceStatus = desktopText(preferences.language, "provider.checking_balance")
+                                        balanceStatusIsError = false
                                         scope.launch {
                                             balanceStatus = runCatching { client.getBalance(draftProvider.config) }
                                                 .fold(
-                                                    onSuccess = { "当前余额：$it" },
-                                                    onFailure = { "余额查询失败：${it.message}" }
+                                                    onSuccess = {
+                                                        balanceStatusIsError = false
+                                                        desktopText(preferences.language, "provider.current_balance").replace("%s", it)
+                                                    },
+                                                    onFailure = {
+                                                        balanceStatusIsError = true
+                                                        desktopText(preferences.language, "provider.balance_failed").replace("%s", it.message.orEmpty())
+                                                    }
                                                 )
                                         }
                                     },
                                     enabled = draftProvider.config.balanceOptions.resultPath.isNotBlank()
-                                ) { Text("查询余额") }
+                                ) { Text(desktopText(preferences.language, "provider.check_balance")) }
                                 balanceStatus?.let { status ->
                                     Text(
                                         status,
-                                        color = if (status.startsWith("余额查询失败")) {
+                                        color = if (balanceStatusIsError) {
                                             MaterialTheme.colorScheme.error
                                         } else {
                                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -1925,6 +1953,7 @@ internal fun DesktopSettingsPane(
                                 }
                             }
                             RequestOverridesEditor(
+                                language = preferences.language,
                                 headers = draftProvider.config.customHeaders,
                                 bodies = draftProvider.config.customBodies,
                                 onHeadersChange = { headers ->
@@ -1938,7 +1967,7 @@ internal fun DesktopSettingsPane(
                                     )
                                 }
                             )
-                            ConnectionResult(connectionState)
+                            ConnectionResult(connectionState, preferences.language)
                             Row(
                                 Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)
@@ -1972,19 +2001,19 @@ internal fun DesktopSettingsPane(
                                     } else {
                                         Icon(Lucide.ServerCog, null, Modifier.size(17.dp))
                                     }
-                                    Text("测试并获取模型", Modifier.padding(start = 7.dp))
+                                    Text(desktopText(preferences.language, "settings.test_and_fetch_models"), Modifier.padding(start = 7.dp))
                                 }
                                 Button(
                                     onClick = {
                                         onProviderSave(draftProvider)
-                                        scope.launch { feedbackHostState.showSnackbar("服务商设置已保存") }
+                                        scope.launch { feedbackHostState.showSnackbar(desktopText(preferences.language, "settings.provider_saved")) }
                                     },
                                     enabled = draftProvider.name.isNotBlank() && providerBodiesValid &&
                                         draftProvider.config.baseUrl.isNotBlank() &&
                                         draftProvider.config.model.isNotBlank()
                                 ) {
                                     Icon(Lucide.Save, null, Modifier.size(17.dp))
-                                    Text("保存服务商", Modifier.padding(start = 7.dp))
+                                    Text(desktopText(preferences.language, "settings.save_provider"), Modifier.padding(start = 7.dp))
                                 }
                             }
                         }
@@ -1994,7 +2023,7 @@ internal fun DesktopSettingsPane(
                 Box {
                     TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
                         Icon(Lucide.ChevronLeft, null, Modifier.size(17.dp))
-                        Text("返回对话", Modifier.padding(start = 6.dp))
+                        Text(desktopText(preferences.language, "settings.back_to_chat"), Modifier.padding(start = 6.dp))
                     }
                 }
                 }
@@ -2025,41 +2054,28 @@ internal fun DesktopSettingsPane(
     if (resetConfirmationOpen) {
         AlertDialog(
             onDismissRequest = { resetConfirmationOpen = false },
-            title = { Text("重置全部数据？") },
-            text = { Text("这会永久删除桌面端的服务商密钥、助手、设置和所有对话。") },
+            title = { Text(desktopText(preferences.language, "settings.reset_confirmation_title")) },
+            text = { Text(desktopText(preferences.language, "settings.reset_confirmation_description")) },
             confirmButton = {
                 Button(onClick = {
                     resetConfirmationOpen = false
                     onResetData()
-                }) { Text("确认重置") }
+                }) { Text(desktopText(preferences.language, "settings.confirm_reset")) }
             },
             dismissButton = {
-                TextButton(onClick = { resetConfirmationOpen = false }) { Text("取消") }
+                TextButton(onClick = { resetConfirmationOpen = false }) { Text(desktopText(preferences.language, "common.cancel")) }
             }
         )
     }
 }
 
-private val DesktopThemeColor.displayName: String
-    get() = when (this) {
-        DesktopThemeColor.SAKURA -> "樱花"
-        DesktopThemeColor.OCEAN -> "海洋"
-        DesktopThemeColor.FOREST -> "森林"
-        DesktopThemeColor.SUNSET -> "落日"
-        DesktopThemeColor.LAVENDER -> "薰衣草"
-        DesktopThemeColor.SLATE -> "石墨"
-    }
+private fun DesktopThemeColor.displayName(language: DesktopLanguage): String = desktopText(language, "theme.${name.lowercase()}")
 
-private val DesktopFontFamily.displayName: String
-    get() = when (this) {
-        DesktopFontFamily.SYSTEM -> "系统默认"
-        DesktopFontFamily.SANS_SERIF -> "无衬线"
-        DesktopFontFamily.SERIF -> "衬线"
-        DesktopFontFamily.MONOSPACE -> "等宽"
-    }
+private fun DesktopFontFamily.displayName(language: DesktopLanguage): String = desktopText(language, "font.${name.lowercase()}")
 
 @Composable
 private fun ThemeColorSelector(
+    language: DesktopLanguage,
     selected: DesktopThemeColor,
     dark: Boolean,
     onSelect: (DesktopThemeColor) -> Unit
@@ -2088,7 +2104,7 @@ private fun ThemeColorSelector(
                             Surface(Modifier.size(12.dp), shape = RoundedCornerShape(3.dp), color = color) {}
                         }
                     }
-                    Text(theme.displayName, fontSize = 11.sp, maxLines = 1)
+                    Text(theme.displayName(language), fontSize = 11.sp, maxLines = 1)
                 }
             }
         }
@@ -2096,7 +2112,11 @@ private fun ThemeColorSelector(
 }
 
 @Composable
-private fun FontFamilySelector(selected: DesktopFontFamily, onSelect: (DesktopFontFamily) -> Unit) {
+private fun FontFamilySelector(
+    language: DesktopLanguage,
+    selected: DesktopFontFamily,
+    onSelect: (DesktopFontFamily) -> Unit
+) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         DesktopFontFamily.entries.forEach { family ->
             val chosen = family == selected
@@ -2119,8 +2139,30 @@ private fun FontFamilySelector(selected: DesktopFontFamily, onSelect: (DesktopFo
                         fontFamily = family.composeFontFamily,
                         lineHeight = 22.sp
                     )
-                    Text(family.displayName, fontSize = 11.sp, maxLines = 1)
+                    Text(family.displayName(language), fontSize = 11.sp, maxLines = 1)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopLanguageSelector(selected: DesktopLanguage, onSelect: (DesktopLanguage) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.widthIn(min = 180.dp, max = 240.dp)) {
+            Text(selected.displayName, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Icon(Lucide.ChevronDown, null, Modifier.padding(start = 6.dp).size(16.dp))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DesktopLanguage.entries.forEach { language ->
+                DropdownMenuItem(
+                    text = { Text(language.displayName) },
+                    onClick = {
+                        expanded = false
+                        onSelect(language)
+                    }
+                )
             }
         }
     }
@@ -2154,6 +2196,7 @@ private val DesktopSearchProviderType.displayName: String
 
 @Composable
 private fun RequestOverridesEditor(
+    language: DesktopLanguage,
     headers: List<DesktopCustomHeader>,
     bodies: List<DesktopCustomBody>,
     onHeadersChange: (List<DesktopCustomHeader>) -> Unit,
@@ -2162,11 +2205,11 @@ private fun RequestOverridesEditor(
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("自定义请求头", fontWeight = FontWeight.Medium)
-                Text("添加到聊天和模型请求中", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text(desktopText(language, "request_overrides.headers"), fontWeight = FontWeight.Medium)
+                Text(desktopText(language, "request_overrides.headers_help"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
             IconButton(onClick = { onHeadersChange(headers + DesktopCustomHeader()) }) {
-                Icon(Lucide.Plus, "添加自定义请求头", Modifier.size(18.dp))
+                Icon(Lucide.Plus, desktopText(language, "request_overrides.add_header"), Modifier.size(18.dp))
             }
         }
         headers.forEachIndexed { index, header ->
@@ -2178,7 +2221,7 @@ private fun RequestOverridesEditor(
                             if (itemIndex == index) item.copy(name = value) else item
                         })
                     },
-                    Modifier.weight(1f), label = { Text("请求头") }, singleLine = true
+                    Modifier.weight(1f), label = { Text(desktopText(language, "request_overrides.header")) }, singleLine = true
                 )
                 OutlinedTextField(
                     header.value,
@@ -2187,21 +2230,21 @@ private fun RequestOverridesEditor(
                             if (itemIndex == index) item.copy(value = value) else item
                         })
                     },
-                    Modifier.weight(1f), label = { Text("值") }, singleLine = true
+                    Modifier.weight(1f), label = { Text(desktopText(language, "request_overrides.value")) }, singleLine = true
                 )
                 IconButton(
                     onClick = { onHeadersChange(headers.filterIndexed { itemIndex, _ -> itemIndex != index }) },
                     modifier = Modifier.padding(top = 8.dp)
-                ) { Icon(Lucide.Trash2, "删除自定义请求头", Modifier.size(18.dp)) }
+                ) { Icon(Lucide.Trash2, desktopText(language, "request_overrides.delete_header"), Modifier.size(18.dp)) }
             }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("自定义请求体", fontWeight = FontWeight.Medium)
-                Text("将 JSON 合并到请求顶层字段", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text(desktopText(language, "request_overrides.body"), fontWeight = FontWeight.Medium)
+                Text(desktopText(language, "request_overrides.body_help"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
             IconButton(onClick = { onBodiesChange(bodies + DesktopCustomBody()) }) {
-                Icon(Lucide.Plus, "添加自定义请求体", Modifier.size(18.dp))
+                Icon(Lucide.Plus, desktopText(language, "request_overrides.add_body"), Modifier.size(18.dp))
             }
         }
         bodies.forEachIndexed { index, body ->
@@ -2218,7 +2261,7 @@ private fun RequestOverridesEditor(
                             if (itemIndex == index) item.copy(key = value) else item
                         })
                     },
-                    Modifier.weight(0.7f), label = { Text("键") }, isError = body.key.isBlank(), singleLine = true
+                    Modifier.weight(0.7f), label = { Text(desktopText(language, "request_overrides.key")) }, isError = body.key.isBlank(), singleLine = true
                 )
                 OutlinedTextField(
                     body.value,
@@ -2228,9 +2271,9 @@ private fun RequestOverridesEditor(
                         })
                     },
                     Modifier.weight(1.3f),
-                    label = { Text("JSON 值") },
+                    label = { Text(desktopText(language, "request_overrides.json_value")) },
                     isError = !validJson,
-                    supportingText = if (validJson) null else ({ Text("请输入有效 JSON") }),
+                    supportingText = if (validJson) null else ({ Text(desktopText(language, "request_overrides.invalid_json")) }),
                     textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace),
                     minLines = 1,
                     maxLines = 5
@@ -2238,7 +2281,7 @@ private fun RequestOverridesEditor(
                 IconButton(
                     onClick = { onBodiesChange(bodies.filterIndexed { itemIndex, _ -> itemIndex != index }) },
                     modifier = Modifier.padding(top = 8.dp)
-                ) { Icon(Lucide.Trash2, "删除自定义请求体", Modifier.size(18.dp)) }
+                ) { Icon(Lucide.Trash2, desktopText(language, "request_overrides.delete_body"), Modifier.size(18.dp)) }
             }
         }
     }
@@ -2273,6 +2316,7 @@ private fun SettingsSection(title: String, icon: ImageVector, content: @Composab
 @Composable
 private fun DesktopSettingsNavigation(
     activeSection: DesktopSettingsSection,
+    language: DesktopLanguage,
     onSectionClick: (DesktopSettingsSection) -> Unit
 ) {
     Column(
@@ -2280,7 +2324,7 @@ private fun DesktopSettingsNavigation(
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Text(
-            "设置分类",
+            desktopText(language, "settings.navigation"),
             Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
@@ -2312,7 +2356,7 @@ private fun DesktopSettingsNavigation(
                         }
                     )
                     Text(
-                        section.label,
+                        desktopText(language, section.labelKey),
                         Modifier.padding(start = 10.dp),
                         color = if (selected) {
                             MaterialTheme.colorScheme.onSecondaryContainer
@@ -2369,6 +2413,7 @@ private fun SettingsDivider() {
 
 @Composable
 private fun DesktopMcpSettings(
+    language: DesktopLanguage,
     servers: List<DesktopMcpServer>,
     selectedServerIds: Set<String>,
     mcpClient: DesktopMcpClient,
@@ -2386,11 +2431,15 @@ private fun DesktopMcpSettings(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text("MCP 服务器", fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                Text("同步远程工具后，为此助手启用所需服务器", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text(desktopText(language, "mcp_settings.title"), fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    desktopText(language, "mcp_settings.description"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp
+                )
             }
             IconButton(onClick = { onServersChange(servers + DesktopMcpServer()) }) {
-                Icon(Lucide.Plus, "添加 MCP 服务器", Modifier.size(18.dp))
+                Icon(Lucide.Plus, desktopText(language, "mcp_settings.add_server"), Modifier.size(18.dp))
             }
         }
         servers.forEach { server ->
@@ -2406,17 +2455,20 @@ private fun DesktopMcpSettings(
                             onSelectedServerIdsChange(if (selected) selectedServerIds + server.id else selectedServerIds - server.id)
                         }
                     )
-                    Text(server.name.ifBlank { "未命名 MCP 服务器" }, Modifier.padding(start = 10.dp).weight(1f))
+                    Text(
+                        server.name.ifBlank { desktopText(language, "mcp_settings.unnamed_server") },
+                        Modifier.padding(start = 10.dp).weight(1f)
+                    )
                     IconButton(onClick = { onServersChange(servers.filterNot { it.id == server.id }) }) {
-                        Icon(Lucide.Trash2, "删除 MCP 服务器", Modifier.size(18.dp))
+                        Icon(Lucide.Trash2, desktopText(language, "mcp_settings.delete_server"), Modifier.size(18.dp))
                     }
                 }
                 OutlinedTextField(
                     value = server.name,
                     onValueChange = { value -> onServersChange(servers.replaceMcpServer(server.id) { it.copy(name = value) }) },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("服务器名称") },
-                    supportingText = { Text("仅允许字母和数字，用于生成稳定的工具名") },
+                    label = { Text(desktopText(language, "mcp_settings.server_name")) },
+                    supportingText = { Text(desktopText(language, "mcp_settings.server_name_help")) },
                     singleLine = true,
                     isError = server.name.isNotBlank() && !server.name.matches(Regex("[A-Za-z0-9]+"))
                 )
@@ -2446,7 +2498,7 @@ private fun DesktopMcpSettings(
                         value = server.command,
                         onValueChange = { value -> onServersChange(servers.replaceMcpServer(server.id) { it.copy(command = value) }) },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("启动命令") },
+                        label = { Text(desktopText(language, "mcp_settings.command")) },
                         placeholder = { Text("npx") },
                         singleLine = true
                     )
@@ -2459,8 +2511,8 @@ private fun DesktopMcpSettings(
                             })
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("命令参数") },
-                        supportingText = { Text("每行一个参数") },
+                        label = { Text(desktopText(language, "mcp_settings.arguments")) },
+                        supportingText = { Text(desktopText(language, "mcp_settings.arguments_help")) },
                         minLines = 2
                     )
                     OutlinedTextField(
@@ -2475,8 +2527,8 @@ private fun DesktopMcpSettings(
                             })
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("环境变量") },
-                        supportingText = { Text("每行一个 KEY=VALUE") },
+                        label = { Text(desktopText(language, "mcp_settings.environment")) },
+                        supportingText = { Text(desktopText(language, "mcp_settings.environment_help")) },
                         minLines = 2
                     )
                 } else {
@@ -2484,12 +2536,16 @@ private fun DesktopMcpSettings(
                         value = server.url,
                         onValueChange = { value -> onServersChange(servers.replaceMcpServer(server.id) { it.copy(url = value) }) },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("服务器 URL") },
+                        label = { Text(desktopText(language, "mcp_settings.server_url")) },
                         placeholder = { Text("https://example.com/mcp") },
                         singleLine = true
                     )
                 }
-                PreferenceSwitch("启用服务器", "关闭后不会向模型暴露其中的工具", server.enabled) { enabled ->
+                PreferenceSwitch(
+                    desktopText(language, "mcp_settings.enable_server"),
+                    desktopText(language, "mcp_settings.enable_server_help"),
+                    server.enabled
+                ) { enabled ->
                     onServersChange(servers.replaceMcpServer(server.id) { it.copy(enabled = enabled) })
                 }
                 OutlinedButton(
@@ -2508,14 +2564,14 @@ private fun DesktopMcpSettings(
                                         })
                                     })
                                 }
-                                .onFailure { syncError = it.message ?: "同步 MCP 工具失败" }
+                                .onFailure { syncError = it.message ?: desktopText(language, "mcp_settings.sync_failed") }
                             syncingServerId = null
                         }
                     }
                 ) {
                     if (syncingServerId == server.id) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                     else Icon(Lucide.Download, null, Modifier.size(17.dp))
-                    Text("同步工具", Modifier.padding(start = 7.dp))
+                    Text(desktopText(language, "mcp_settings.sync_tools"), Modifier.padding(start = 7.dp))
                 }
                 if (server.tools.isNotEmpty()) {
                     val toolsExpanded = server.id in expandedToolServerIds
@@ -2531,9 +2587,11 @@ private fun DesktopMcpSettings(
                     ) {
                         Text(
                             if (toolsExpanded) {
-                                "收起工具"
+                                desktopText(language, "mcp_settings.collapse_tools")
                             } else {
-                                "管理 ${server.tools.size} 个工具（已启用 $enabledToolCount 个）"
+                                desktopText(language, "mcp_settings.manage_tools")
+                                    .replace("%d", server.tools.size.toString())
+                                    .replace("%e", enabledToolCount.toString())
                             }
                         )
                         Icon(
@@ -2544,7 +2602,11 @@ private fun DesktopMcpSettings(
                     }
                     if (toolsExpanded) {
                         server.tools.forEach { tool ->
-                            PreferenceSwitch(tool.name, tool.description.ifBlank { "MCP 工具" }, tool.enabled) { enabled ->
+                            PreferenceSwitch(
+                                tool.name,
+                                tool.description.ifBlank { desktopText(language, "mcp_settings.tool") },
+                                tool.enabled
+                            ) { enabled ->
                                 onServersChange(servers.replaceMcpServer(server.id) {
                                     it.copy(tools = it.tools.map { existing ->
                                         if (existing.name == tool.name) existing.copy(enabled = enabled) else existing
@@ -2574,13 +2636,13 @@ private sealed interface ConnectionState {
 }
 
 @Composable
-private fun ConnectionResult(state: ConnectionState) {
+private fun ConnectionResult(state: ConnectionState, language: DesktopLanguage) {
     when (state) {
         ConnectionState.Idle, ConnectionState.Testing -> Unit
         is ConnectionState.Success -> Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Lucide.CircleCheck, null, Modifier.size(17.dp), tint = Color(0xFF2E7D32))
             Text(
-                "已连接 · 可用 ${state.models.size} 个模型",
+                desktopText(language, "provider.connection_success").replace("%d", state.models.size.toString()),
                 Modifier.padding(start = 7.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp

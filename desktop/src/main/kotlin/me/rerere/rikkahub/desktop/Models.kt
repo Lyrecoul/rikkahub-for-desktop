@@ -250,6 +250,21 @@ enum class DesktopFontFamily {
 }
 
 @Serializable
+enum class DesktopLanguage {
+    SYSTEM,
+    ENGLISH,
+    CHINESE_SIMPLIFIED,
+    CHINESE_TRADITIONAL,
+    JAPANESE,
+    KOREAN,
+    RUSSIAN,
+    SPANISH,
+    FRENCH,
+    GERMAN,
+    PORTUGUESE_BRAZIL
+}
+
+@Serializable
 enum class DesktopConversationSort {
     RECENT,
     MOST_ACTIVE
@@ -260,6 +275,7 @@ data class DesktopPreferences(
     val colorMode: DesktopColorMode = DesktopColorMode.SYSTEM,
     val themeColor: DesktopThemeColor = DesktopThemeColor.SAKURA,
     val fontFamily: DesktopFontFamily = DesktopFontFamily.SYSTEM,
+    val language: DesktopLanguage = DesktopLanguage.SYSTEM,
     val fontScale: Float = 1.0f,
     val showUserAvatar: Boolean = true,
     val userNickname: String = "",

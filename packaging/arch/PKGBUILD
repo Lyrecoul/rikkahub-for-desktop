@@ -18,9 +18,10 @@ build() {
 
 package() {
   local app_dir="$startdir/../../desktop/build/compose/binaries/main/app/rikkahub"
-  install -d "$pkgdir/usr/lib/rikkahub" "$pkgdir/usr/bin" "$pkgdir/usr/share/applications" "$pkgdir/usr/share/pixmaps"
+  install -d "$pkgdir/usr/lib/rikkahub" "$pkgdir/usr/bin" "$pkgdir/usr/share/applications" "$pkgdir/usr/share/pixmaps" "$pkgdir/usr/share/icons/hicolor/192x192/apps"
   cp -a "$app_dir/lib/app/." "$pkgdir/usr/lib/rikkahub/"
   install -Dm755 "$startdir/rikkahub" "$pkgdir/usr/bin/rikkahub"
   install -Dm644 "$startdir/../../docs/icon.png" "$pkgdir/usr/share/pixmaps/rikkahub.png"
+  install -Dm644 "$startdir/../../docs/icon.png" "$pkgdir/usr/share/icons/hicolor/192x192/apps/rikkahub.png"
   install -Dm644 "$startdir/rikkahub.desktop" "$pkgdir/usr/share/applications/rikkahub.desktop"
 }

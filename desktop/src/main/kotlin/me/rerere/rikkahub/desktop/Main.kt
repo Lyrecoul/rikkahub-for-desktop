@@ -330,7 +330,8 @@ private fun RikkaHubDesktop(
             delay(750)
             withContext(Dispatchers.IO) { runCatching { store.save(next) } }
                 .onFailure { error ->
-                    generationErrors[next.selectedConversationId] = "保存失败：${error.message ?: "未知错误"}"
+                    generationErrors[next.selectedConversationId] = desktopText(next.preferences.language, "runtime.save_failed")
+                        .replace("%s", error.message ?: desktopText(next.preferences.language, "runtime.unknown_error"))
                 }
         }
     }
@@ -349,7 +350,7 @@ private fun RikkaHubDesktop(
 
     fun addProvider() {
         val profile = DesktopProviderProfile(
-            name = "新服务商",
+            name = desktopText(data.preferences.language, "defaults.new_provider"),
             config = DesktopConfig(model = "", systemPrompt = data.config.systemPrompt)
         )
         val currentProviders = data.providers.ifEmpty { listOf(data.activeProvider()) }
@@ -380,7 +381,7 @@ private fun RikkaHubDesktop(
     }
 
     fun addAssistant() {
-        val assistant = DesktopAssistantProfile(name = "新助手")
+        val assistant = DesktopAssistantProfile(name = desktopText(data.preferences.language, "defaults.new_assistant"))
         update(data.copy(assistants = data.assistants + assistant, selectedAssistantId = assistant.id))
     }
 
@@ -428,7 +429,11 @@ private fun RikkaHubDesktop(
     }
 
     fun importBackup(): String? {
-        val source = showOpenFileDialog(dialogOwner, "导入 RikkaHub 备份", multiple = false)?.firstOrNull() ?: return null
+        val source = showOpenFileDialog(
+            dialogOwner,
+            desktopText(data.preferences.language, "file.import_backup"),
+            multiple = false
+        )?.firstOrNull() ?: return null
         val imported = store.importData(source.toPath())
         generationJobs.values.forEach { it.cancel() }
         generationJobs.clear()
@@ -438,7 +443,7 @@ private fun RikkaHubDesktop(
         prompt = ""
         pendingAttachments = emptyList()
         update(imported)
-        return "已从 ${source.toPath()} 导入备份"
+        return desktopText(data.preferences.language, "file.imported_backup").replace("%s", source.toPath().toString())
     }
 
     fun resetDesktopData() {
@@ -454,7 +459,11 @@ private fun RikkaHubDesktop(
     }
 
     fun chooseAttachments(): List<DesktopAttachment>? {
-        return showOpenFileDialog(dialogOwner, "添加图片、音频、文本或文档", multiple = true)?.map(::loadDesktopAttachment)
+        return showOpenFileDialog(
+            dialogOwner,
+            desktopText(data.preferences.language, "file.choose_attachments"),
+            multiple = true
+        )?.map(::loadDesktopAttachment)
     }
 
     fun memoryToolHandler(assistantId: String) = DesktopMemoryToolHandler(
@@ -501,14 +510,14 @@ private fun RikkaHubDesktop(
                     result += delta.content
                 }
                 val title = normalizeGeneratedTitle(result, data.preferences.enableChineseTypography)
-                check(title.isNotBlank()) { "标题模型没有返回内容" }
+                check(title.isNotBlank()) { desktopText(data.preferences.language, "runtime.title_empty") }
                 updateConversation(conversationId) { current ->
                     current.copy(title = title, updatedAt = System.currentTimeMillis())
                 }
             } catch (_: CancellationException) {
                 // Keep the existing title when the request is cancelled.
             } catch (error: Throwable) {
-                generationErrors[conversationId] = error.message ?: "生成标题失败"
+                generationErrors[conversationId] = error.message ?: desktopText(data.preferences.language, "runtime.title_failed")
             } finally {
                 generationJobs.remove(conversationId)
             }
@@ -541,14 +550,14 @@ private fun RikkaHubDesktop(
                     result += delta.content
                 }
                 val suggestions = parseChatSuggestions(result, data.preferences.enableChineseTypography)
-                check(suggestions.isNotEmpty()) { "建议模型没有返回内容" }
+                check(suggestions.isNotEmpty()) { desktopText(data.preferences.language, "runtime.suggestions_empty") }
                 updateConversation(conversationId) { current ->
                     current.copy(suggestions = suggestions, updatedAt = System.currentTimeMillis())
                 }
             } catch (_: CancellationException) {
                 // Cancellation leaves existing suggestions unchanged.
             } catch (error: Throwable) {
-                generationErrors[conversationId] = error.message ?: "生成回复建议失败"
+                generationErrors[conversationId] = error.message ?: desktopText(data.preferences.language, "runtime.suggestions_failed")
             } finally {
                 suggestionJobs.remove(conversationId)
             }
@@ -572,7 +581,7 @@ private fun RikkaHubDesktop(
         }
         val missingMcpServerIds = selectedMcpServerIds - data.mcpServers.map { it.id }.toSet()
         if (missingMcpServerIds.isNotEmpty()) {
-            generationErrors[conversationId] = "MCP 配置已失效，请在助手设置中重新选择服务器"
+            generationErrors[conversationId] = desktopText(data.preferences.language, "runtime.mcp_configuration_invalid")
             return
         }
         val serversNeedingSync = selectedMcpServers.filter { it.tools.isEmpty() }
@@ -583,7 +592,9 @@ private fun RikkaHubDesktop(
                 try {
                     val toolsByServerId = serversNeedingSync.map { server ->
                         server.id to mcpClient.syncTools(server).also { tools ->
-                            check(tools.isNotEmpty()) { "MCP 服务器 ${server.name} 未提供可用工具" }
+                            check(tools.isNotEmpty()) {
+                                desktopText(data.preferences.language, "runtime.mcp_no_tools").replace("%s", server.name)
+                            }
                         }
                     }.toMap()
                     update(data.copy(mcpServers = data.mcpServers.map { server ->
@@ -593,7 +604,8 @@ private fun RikkaHubDesktop(
                     handedOffToGeneration = true
                     startGeneration(conversationId, requestMessages, title, alternativeTarget)
                 } catch (error: Throwable) {
-                    generationErrors[conversationId] = "MCP 工具同步失败：${error.message ?: "未知错误"}"
+                    generationErrors[conversationId] = desktopText(data.preferences.language, "runtime.mcp_sync_failed")
+                        .replace("%s", error.message ?: desktopText(data.preferences.language, "runtime.unknown_error"))
                 } finally {
                     if (!handedOffToGeneration) generationJobs.remove(conversationId)
                 }
@@ -622,7 +634,7 @@ private fun RikkaHubDesktop(
                 )
             )
         }.getOrElse { error ->
-            generationErrors[conversationId] = error.message ?: "无效的消息模板"
+            generationErrors[conversationId] = error.message ?: desktopText(data.preferences.language, "runtime.invalid_message_template")
             return
         }
         generationErrors.remove(conversationId)
@@ -682,7 +694,8 @@ private fun RikkaHubDesktop(
                         conversation.copy(messages = messages, updatedAt = System.currentTimeMillis())
                     }
                     if (generationAssistant.maxToolRounds > 0 && toolRounds >= generationAssistant.maxToolRounds) {
-                        val limitMessage = "本次回复已达到 ${generationAssistant.maxToolRounds} 轮工具调用上限。请继续发送消息以开始新的处理。"
+                        val limitMessage = desktopText(data.preferences.language, "runtime.tool_round_limit")
+                            .replace("%d", generationAssistant.maxToolRounds.toString())
                         updateConversation(conversationId) { conversation ->
                             conversation.copy(
                                 messages = conversation.messages + toolCalls.map { call ->
@@ -786,7 +799,7 @@ private fun RikkaHubDesktop(
                     }
                 }
             } catch (error: Throwable) {
-                generationErrors[conversationId] = error.message ?: "请求失败"
+                generationErrors[conversationId] = error.message ?: desktopText(data.preferences.language, "runtime.request_failed")
                 updateConversation(conversationId) { conversation ->
                     val last = conversation.messages.lastOrNull()
                     if (last?.role == "assistant" && last.content.isEmpty() && last.reasoning.isEmpty()) {
@@ -839,7 +852,7 @@ private fun RikkaHubDesktop(
         if (generationJobs.containsKey(conversationId)) return
         val conversation = data.conversations.firstOrNull { it.id == conversationId } ?: return
         if (targetTokens <= 0 || keepRecentMessages < 0 || conversation.messages.size <= keepRecentMessages) {
-            generationErrors[conversationId] = "没有足够的消息可压缩"
+            generationErrors[conversationId] = desktopText(data.preferences.language, "runtime.not_enough_messages")
             return
         }
         val messagesToCompress = conversation.messages.dropLast(keepRecentMessages)
@@ -862,14 +875,14 @@ private fun RikkaHubDesktop(
                 client.stream(config, listOf(ChatMessage(role = "user", content = request))).collect { delta ->
                     summary += delta.content
                 }
-                check(summary.isNotBlank()) { "压缩模型没有返回摘要" }
+                check(summary.isNotBlank()) { desktopText(data.preferences.language, "runtime.compression_empty") }
                 updateConversation(conversationId) { current ->
                     current.replaceHistoryWithSummary(summary, keepRecentMessages)
                 }
             } catch (_: CancellationException) {
                 // Cancellation leaves the original conversation untouched.
             } catch (error: Throwable) {
-                generationErrors[conversationId] = error.message ?: "压缩对话失败"
+                generationErrors[conversationId] = error.message ?: desktopText(data.preferences.language, "runtime.compression_failed")
             } finally {
                 generationJobs.remove(conversationId)
             }
@@ -899,7 +912,7 @@ private fun RikkaHubDesktop(
                 client.stream(config, listOf(ChatMessage(role = "user", content = request))).collect { delta ->
                     result += delta.content
                 }
-                check(result.isNotBlank()) { "翻译模型没有返回内容" }
+                check(result.isNotBlank()) { desktopText(data.preferences.language, "runtime.translation_empty") }
                 updateConversation(target.conversationId) { current ->
                     current.copy(
                         messages = current.messages.mapIndexed { index, item ->
@@ -914,7 +927,7 @@ private fun RikkaHubDesktop(
             } catch (_: CancellationException) {
                 // Cancellation leaves the original message untouched.
             } catch (error: Throwable) {
-                generationErrors[target.conversationId] = error.message ?: "翻译失败"
+                generationErrors[target.conversationId] = error.message ?: desktopText(data.preferences.language, "runtime.translation_failed")
             } finally {
                 generationJobs.remove(target.conversationId)
                 translatedMessageId?.let { messageId -> jumpToMessageId = messageId }
@@ -1039,10 +1052,14 @@ private fun RikkaHubDesktop(
                         onAssistantCopy = ::copyAssistant,
                         onAssistantDelete = ::deleteAssistant,
                         onExportData = {
-                            runCatching { exportBackup() }.getOrElse { "导出失败：${it.message}" }
+                            runCatching { exportBackup() }.getOrElse {
+                                desktopText(data.preferences.language, "runtime.export_failed").replace("%s", it.message.orEmpty())
+                            }
                         },
                         onImportData = {
-                            runCatching { importBackup() }.getOrElse { "导入失败：${it.message}" }
+                            runCatching { importBackup() }.getOrElse {
+                                desktopText(data.preferences.language, "runtime.import_failed").replace("%s", it.message.orEmpty())
+                            }
                         },
                         onResetData = ::resetDesktopData,
                         onWebSearchSettingsChange = { update(data.copy(webSearchSettings = it)) },
@@ -1265,7 +1282,8 @@ private fun RikkaHubDesktop(
 
     renameTarget?.let { target ->
         TextEditDialog(
-            title = "重命名对话",
+            title = desktopText(data.preferences.language, "dialog.rename_conversation"),
+            language = data.preferences.language,
             initialValue = target.title,
             singleLine = true,
             onDismiss = { renameTarget = null },
@@ -1282,7 +1300,8 @@ private fun RikkaHubDesktop(
 
     conversationPromptTarget?.let { target ->
         TextEditDialog(
-            title = "对话系统提示词",
+            title = desktopText(data.preferences.language, "dialog.conversation_system_prompt"),
+            language = data.preferences.language,
             initialValue = target.systemPrompt,
             allowBlank = true,
             onDismiss = { conversationPromptTarget = null },
@@ -1296,7 +1315,8 @@ private fun RikkaHubDesktop(
     }
     folderCreateTarget?.let { target ->
         TextEditDialog(
-            title = "新建文件夹",
+            title = desktopText(data.preferences.language, "chat.new_folder"),
+            language = data.preferences.language,
             initialValue = "",
             singleLine = true,
             onDismiss = { folderCreateTarget = null },
@@ -1316,6 +1336,7 @@ private fun RikkaHubDesktop(
         } else {
             CompressionDialog(
                 messageCount = conversation.messages.size,
+                language = data.preferences.language,
                 onDismiss = { compressionTarget = null },
                 onConfirm = { targetTokens, keepRecentMessages, additionalPrompt ->
                     compressionTarget = null
@@ -1325,10 +1346,15 @@ private fun RikkaHubDesktop(
         }
     }
     if (showConversationStats) {
-        ConversationStatsDialog(conversation = selected, onDismiss = { showConversationStats = false })
+        ConversationStatsDialog(
+            conversation = selected,
+            language = data.preferences.language,
+            onDismiss = { showConversationStats = false }
+        )
     }
     translationTarget?.let { target ->
         TranslationDialog(
+            language = data.preferences.language,
             onDismiss = { translationTarget = null },
             onConfirm = { language ->
                 translationTarget = null
@@ -1338,6 +1364,7 @@ private fun RikkaHubDesktop(
     }
     if (attachmentPickerOpen) {
         DesktopAttachmentPickerDialog(
+            language = data.preferences.language,
             onDismiss = { attachmentPickerOpen = false },
             onSelect = { files ->
                 attachmentPickerOpen = false
@@ -1348,14 +1375,18 @@ private fun RikkaHubDesktop(
                             conversation.copy(draftAttachments = pendingAttachments, updatedAt = System.currentTimeMillis())
                         }
                     },
-                    onFailure = { error -> generationErrors[selected.id] = error.message ?: "无法添加文件" }
+                    onFailure = { error ->
+                        generationErrors[selected.id] = error.message
+                            ?: desktopText(data.preferences.language, "runtime.add_attachment_failed")
+                    }
                 )
             }
         )
     }
     markdownExportTarget?.let { conversation ->
         DesktopSaveFileDialog(
-            title = "将对话导出为 Markdown",
+            title = desktopText(data.preferences.language, "file.export_conversation_markdown"),
+            language = data.preferences.language,
             suggestedName = "${conversation.title.ifBlank { "conversation" }.take(64)}.md",
             requiredExtension = "md",
             onDismiss = { markdownExportTarget = null },
@@ -1366,21 +1397,24 @@ private fun RikkaHubDesktop(
                         exportConversationMarkdown(conversation, data.configForConversation(conversation).systemPrompt)
                     )
                 }.onFailure { error ->
-                    generationErrors[conversation.id] = "导出失败：${error.message ?: "未知错误"}"
+                    generationErrors[conversation.id] = desktopText(data.preferences.language, "runtime.export_failed")
+                        .replace("%s", error.message ?: desktopText(data.preferences.language, "runtime.unknown_error"))
                 }
             }
         )
     }
     if (backupExportRequested) {
         DesktopSaveFileDialog(
-            title = "导出 RikkaHub 备份",
+            title = desktopText(data.preferences.language, "file.export_backup"),
+            language = data.preferences.language,
             suggestedName = "rikkahub-desktop-backup.json",
             requiredExtension = "json",
             onDismiss = { backupExportRequested = false },
             onSave = { destination ->
                 backupExportRequested = false
                 runCatching { store.exportData(destination.toPath(), data) }.onFailure { error ->
-                    generationErrors[data.selectedConversationId] = "导出失败：${error.message ?: "未知错误"}"
+                    generationErrors[data.selectedConversationId] = desktopText(data.preferences.language, "runtime.export_failed")
+                        .replace("%s", error.message ?: desktopText(data.preferences.language, "runtime.unknown_error"))
                 }
             }
         )
@@ -1388,6 +1422,7 @@ private fun RikkaHubDesktop(
     pendingAgentApproval?.let { pending ->
         DesktopAgentApprovalDialog(
             request = pending.request,
+            language = data.preferences.language,
             onApprove = { autoApprove -> pending.answer.complete(DesktopAgentApprovalDecision(true, autoApprove)) },
             onDeny = { pending.answer.complete(DesktopAgentApprovalDecision(false, false)) }
         )
@@ -1406,6 +1441,7 @@ private data class DesktopAgentApprovalDecision(val approved: Boolean, val autoA
 @Composable
 private fun DesktopAgentApprovalDialog(
     request: DesktopAgentApprovalRequest,
+    language: DesktopLanguage,
     onApprove: (Boolean) -> Unit,
     onDeny: () -> Unit
 ) {
@@ -1415,22 +1451,22 @@ private fun DesktopAgentApprovalDialog(
         title = { Text(request.title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Agent 请求此操作，是否允许？")
+                Text(desktopText(language, "agent.approval_request"))
                 Text(request.detail, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                 Text(
                     when (request.kind) {
                         DesktopAgentApprovalKind.SHELL -> when (request.backend) {
                             DesktopAgentBackend.DOCKER -> if (request.network) {
-                                "将在受限 Docker 容器中执行，并临时使用宿主网络；完成后恢复到无外网的隔离容器。"
+                                desktopText(language, "agent.docker_network_warning")
                             } else {
-                                "将在受限 Docker 容器中执行；容器仅挂载选定工作区。"
+                                desktopText(language, "agent.docker_warning")
                             }
-                            DesktopAgentBackend.LOCAL -> "本机 Shell 以当前用户权限运行；请确认命令及其影响。"
-                            null -> "请确认命令及其影响。"
+                            DesktopAgentBackend.LOCAL -> desktopText(language, "agent.local_shell_warning")
+                            null -> desktopText(language, "agent.confirm_impact")
                         }
-                        DesktopAgentApprovalKind.IMAGE_PULL -> "将从镜像仓库下载内容到本机 Docker 缓存。"
-                        DesktopAgentApprovalKind.SKILL -> "Skill 指令可能影响后续 Agent 行为。"
-                        DesktopAgentApprovalKind.WRITE -> "文件修改限制在已选定的工作区目录内。"
+                        DesktopAgentApprovalKind.IMAGE_PULL -> desktopText(language, "agent.image_pull_warning")
+                        DesktopAgentApprovalKind.SKILL -> desktopText(language, "agent.skill_warning")
+                        DesktopAgentApprovalKind.WRITE -> desktopText(language, "agent.write_warning")
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
@@ -1442,10 +1478,10 @@ private fun DesktopAgentApprovalDialog(
                         label = {
                             Text(
                                 when (request.rememberedGrant()?.scope) {
-                                    DesktopAgentApprovalScope.DOCKER_SHELL -> "本对话内自动批准此工作区的 Docker 命令"
-                                    DesktopAgentApprovalScope.DOCKER_NETWORK -> "本对话内自动批准此工作区的 Docker 联网命令"
-                                    DesktopAgentApprovalScope.IMAGE_PULL -> "本对话内自动批准此工作区的此镜像下载"
-                                    else -> "本对话内自动批准此类操作"
+                                    DesktopAgentApprovalScope.DOCKER_SHELL -> desktopText(language, "agent.remember_docker_shell")
+                                    DesktopAgentApprovalScope.DOCKER_NETWORK -> desktopText(language, "agent.remember_docker_network")
+                                    DesktopAgentApprovalScope.IMAGE_PULL -> desktopText(language, "agent.remember_image_pull")
+                                    else -> desktopText(language, "agent.remember_operation")
                                 }
                             )
                         }
@@ -1453,14 +1489,15 @@ private fun DesktopAgentApprovalDialog(
                 }
             }
         },
-        confirmButton = { Button(onClick = { onApprove(autoApprove) }) { Text("允许") } },
-        dismissButton = { TextButton(onClick = onDeny) { Text("拒绝") } }
+        confirmButton = { Button(onClick = { onApprove(autoApprove) }) { Text(desktopText(language, "agent.allow")) } },
+        dismissButton = { TextButton(onClick = onDeny) { Text(desktopText(language, "agent.deny")) } }
     )
 }
 
 @Composable
 private fun CompressionDialog(
     messageCount: Int,
+    language: DesktopLanguage,
     onDismiss: () -> Unit,
     onConfirm: (targetTokens: Int, keepRecentMessages: Int, additionalPrompt: String) -> Unit
 ) {
@@ -1472,25 +1509,25 @@ private fun CompressionDialog(
     val valid = target != null && target > 0 && keep != null && keep >= 0 && keep < messageCount
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("压缩对话历史") },
+        title = { Text(desktopText(language, "dialog.compress_history")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "将较早消息生成摘要，并保留最近消息。压缩前的完整历史会保存为可恢复快照。",
+                    desktopText(language, "dialog.compress_history_description"),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp
                 )
                 OutlinedTextField(
                     value = targetTokens,
                     onValueChange = { value -> if (value.all(Char::isDigit)) targetTokens = value },
-                    label = { Text("目标 Token 数") },
+                    label = { Text(desktopText(language, "dialog.target_tokens")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = keepRecentMessages,
                     onValueChange = { value -> if (value.all(Char::isDigit)) keepRecentMessages = value },
-                    label = { Text("保留最近消息数（共 $messageCount 条）") },
+                    label = { Text(desktopText(language, "dialog.keep_recent_messages").replace("%d", messageCount.toString())) },
                     isError = keep != null && (keep < 0 || keep >= messageCount),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -1498,7 +1535,7 @@ private fun CompressionDialog(
                 OutlinedTextField(
                     value = additionalPrompt,
                     onValueChange = { additionalPrompt = it },
-                    label = { Text("附加说明（可选）") },
+                    label = { Text(desktopText(language, "dialog.additional_instructions")) },
                     minLines = 2,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1508,53 +1545,55 @@ private fun CompressionDialog(
             Button(
                 enabled = valid,
                 onClick = { onConfirm(target!!, keep!!, additionalPrompt) }
-            ) { Text("压缩") }
+            ) { Text(desktopText(language, "dialog.compress")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(desktopText(language, "common.cancel")) } }
     )
 }
 
 @Composable
-private fun ConversationStatsDialog(conversation: DesktopConversation, onDismiss: () -> Unit) {
+private fun ConversationStatsDialog(conversation: DesktopConversation, language: DesktopLanguage, onDismiss: () -> Unit) {
     val stats = conversation.stats()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("对话统计") },
+        title = { Text(desktopText(language, "chat.statistics")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                ConversationStatRow("消息", "${stats.messageCount} 条（用户 ${stats.userMessageCount} / 助手 ${stats.assistantMessageCount}）")
-                ConversationStatRow("附件", "${stats.attachmentCount} 个")
-                ConversationStatRow("文本与思维链字符", stats.characterCount.toString())
-                ConversationStatRow("输入 Token", stats.promptTokens.toString())
-                ConversationStatRow("输出 Token", stats.completionTokens.toString())
-                ConversationStatRow("缓存 Token", stats.cachedTokens.toString())
-                ConversationStatRow("创建时间", MessageTimeFormatter.format(Instant.ofEpochMilli(conversation.createdAt)))
-                ConversationStatRow("更新时间", MessageTimeFormatter.format(Instant.ofEpochMilli(conversation.updatedAt)))
+                ConversationStatRow(desktopText(language, "stats.messages"), "${stats.messageCount} (${stats.userMessageCount} / ${stats.assistantMessageCount})")
+                ConversationStatRow(desktopText(language, "stats.attachments"), stats.attachmentCount.toString())
+                ConversationStatRow(desktopText(language, "stats.characters"), stats.characterCount.toString())
+                ConversationStatRow(desktopText(language, "message.input_tokens"), stats.promptTokens.toString())
+                ConversationStatRow(desktopText(language, "message.output_tokens"), stats.completionTokens.toString())
+                ConversationStatRow(desktopText(language, "message.cached_tokens"), stats.cachedTokens.toString())
+                ConversationStatRow(desktopText(language, "stats.created_at"), MessageTimeFormatter.format(Instant.ofEpochMilli(conversation.createdAt)))
+                ConversationStatRow(desktopText(language, "stats.updated_at"), MessageTimeFormatter.format(Instant.ofEpochMilli(conversation.updatedAt)))
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(desktopText(language, "chat.close")) } }
     )
 }
 
 @Composable
-private fun TranslationDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
-    var language by remember { mutableStateOf("中文") }
+private fun TranslationDialog(language: DesktopLanguage, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var targetLanguage by remember(language) { mutableStateOf(desktopText(language, "language.chinese")) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("翻译消息") },
+        title = { Text(desktopText(language, "dialog.translate_message")) },
         text = {
             OutlinedTextField(
-                value = language,
-                onValueChange = { language = it },
-                label = { Text("目标语言") },
+                value = targetLanguage,
+                onValueChange = { targetLanguage = it },
+                label = { Text(desktopText(language, "dialog.target_language")) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
         },
         confirmButton = {
-            Button(onClick = { onConfirm(language.trim()) }, enabled = language.isNotBlank()) { Text("翻译") }
+            Button(onClick = { onConfirm(targetLanguage.trim()) }, enabled = targetLanguage.isNotBlank()) {
+                Text(desktopText(language, "message.translate"))
+            }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(desktopText(language, "common.cancel")) } }
     )
 }
 
@@ -1567,7 +1606,11 @@ private fun ConversationStatRow(label: String, value: String) {
 }
 
 @Composable
-private fun DesktopAttachmentPickerDialog(onDismiss: () -> Unit, onSelect: (List<File>) -> Unit) {
+private fun DesktopAttachmentPickerDialog(
+    language: DesktopLanguage,
+    onDismiss: () -> Unit,
+    onSelect: (List<File>) -> Unit
+) {
     var directory by remember { mutableStateOf(File(System.getProperty("user.home"))) }
     var selectedPaths by remember { mutableStateOf(emptySet<String>()) }
     val entries = remember(directory) {
@@ -1577,7 +1620,7 @@ private fun DesktopAttachmentPickerDialog(onDismiss: () -> Unit, onSelect: (List
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("添加附件") },
+        title = { Text(desktopText(language, "file.add_attachments")) },
         text = {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1589,7 +1632,7 @@ private fun DesktopAttachmentPickerDialog(onDismiss: () -> Unit, onSelect: (List
                             }
                         },
                         enabled = directory.parentFile != null
-                    ) { Icon(Lucide.ChevronLeft, "上级目录") }
+                    ) { Icon(Lucide.ChevronLeft, desktopText(language, "file.parent_directory")) }
                     Text(directory.path, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
                 }
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
@@ -1612,7 +1655,7 @@ private fun DesktopAttachmentPickerDialog(onDismiss: () -> Unit, onSelect: (List
                             Icon(if (entry.isDirectory) Lucide.ChevronRight else Lucide.Paperclip, null, Modifier.size(17.dp))
                             Text(entry.name, Modifier.padding(start = 9.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             if (!entry.isDirectory && entry.path in selectedPaths) {
-                                Icon(Lucide.Sparkles, "已选择", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                                Icon(Lucide.Sparkles, desktopText(language, "file.selected"), Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                             }
                         }
                     }
@@ -1621,16 +1664,17 @@ private fun DesktopAttachmentPickerDialog(onDismiss: () -> Unit, onSelect: (List
         },
         confirmButton = {
             Button(onClick = { onSelect(selectedPaths.map(::File)) }, enabled = selectedPaths.isNotEmpty()) {
-                Text("添加（${selectedPaths.size}）")
+                Text(desktopText(language, "file.add_count").replace("%d", selectedPaths.size.toString()))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(desktopText(language, "common.cancel")) } }
     )
 }
 
 @Composable
 private fun DesktopSaveFileDialog(
     title: String,
+    language: DesktopLanguage,
     suggestedName: String,
     requiredExtension: String,
     onDismiss: () -> Unit,
@@ -1656,7 +1700,7 @@ private fun DesktopSaveFileDialog(
                     IconButton(
                         onClick = { directory.parentFile?.let { directory = it } },
                         enabled = directory.parentFile != null
-                    ) { Icon(Lucide.ChevronLeft, "上级目录") }
+                    ) { Icon(Lucide.ChevronLeft, desktopText(language, "file.parent_directory")) }
                     Text(
                         directory.path,
                         Modifier.weight(1f),
@@ -1682,16 +1726,18 @@ private fun DesktopSaveFileDialog(
                     value = fileName,
                     onValueChange = { fileName = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("文件名") },
+                    label = { Text(desktopText(language, "file.file_name")) },
                     isError = fileName.isNotBlank() && !validName,
                     singleLine = true
                 )
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(File(directory, normalizedName)) }, enabled = validName) { Text("保存") }
+            Button(onClick = { onSave(File(directory, normalizedName)) }, enabled = validName) {
+                Text(desktopText(language, "common.save"))
+            }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(desktopText(language, "common.cancel")) } }
     )
 }
 
@@ -1713,6 +1759,7 @@ private fun ConversationSidebar(
     onSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val language = data.preferences.language
     val appIcon = rememberDesktopResourcePainter("icon.png")
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -1755,13 +1802,13 @@ private fun ConversationSidebar(
                 }
                 Column(Modifier.padding(start = 10.dp)) {
                     Text("RikkaHub", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                    Text("欢迎回来", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    Text(desktopText(language, "sidebar.welcome"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 }
             }
             Spacer(Modifier.height(16.dp))
-            DrawerAction(Lucide.Plus, "新建对话", onNew)
-            DrawerAction(Lucide.Search, "搜索对话") { searching = !searching }
-            DrawerAction(Lucide.Star, if (showFavorites) "返回对话" else "收藏消息") {
+            DrawerAction(Lucide.Plus, desktopText(language, "sidebar.new_chat"), onNew)
+            DrawerAction(Lucide.Search, desktopText(language, "sidebar.search_chats")) { searching = !searching }
+            DrawerAction(Lucide.Star, desktopText(language, if (showFavorites) "sidebar.back_to_chats" else "sidebar.favorite_messages")) {
                 showFavorites = !showFavorites
             }
             if (searching) {
@@ -1769,7 +1816,7 @@ private fun ConversationSidebar(
                     query,
                     { query = it },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                    placeholder = { Text("搜索") },
+                    placeholder = { Text(desktopText(language, "sidebar.search")) },
                     leadingIcon = { Icon(Lucide.Search, null, Modifier.size(17.dp)) },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp)
@@ -1785,7 +1832,7 @@ private fun ConversationSidebar(
                 ) {
                     Icon(Lucide.Bot, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
-                        filterAssistant?.name ?: "全部助手",
+                        filterAssistant?.name ?: desktopText(language, "sidebar.all_assistants"),
                         Modifier.padding(start = 9.dp).weight(1f),
                         fontSize = 13.sp,
                         maxLines = 1,
@@ -1795,7 +1842,7 @@ private fun ConversationSidebar(
                 }
                 DropdownMenu(assistantFilterOpen, onDismissRequest = { assistantFilterOpen = false }) {
                     DropdownMenuItem(
-                        text = { Text("全部助手") },
+                        text = { Text(desktopText(language, "sidebar.all_assistants")) },
                         onClick = {
                             assistantFilterId = null
                             assistantFilterOpen = false
@@ -1826,11 +1873,11 @@ private fun ConversationSidebar(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Lucide.Sparkles, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(tagFilter ?: "全部标签", Modifier.padding(start = 9.dp).weight(1f), fontSize = 13.sp, maxLines = 1)
+                    Text(tagFilter ?: desktopText(language, "sidebar.all_tags"), Modifier.padding(start = 9.dp).weight(1f), fontSize = 13.sp, maxLines = 1)
                     Icon(Lucide.ChevronDown, null, Modifier.size(15.dp))
                 }
                 DropdownMenu(tagFilterOpen, onDismissRequest = { tagFilterOpen = false }) {
-                    DropdownMenuItem(text = { Text("全部标签") }, onClick = { tagFilter = null; tagFilterOpen = false })
+                    DropdownMenuItem(text = { Text(desktopText(language, "sidebar.all_tags")) }, onClick = { tagFilter = null; tagFilterOpen = false })
                     tags.forEach { tag ->
                         DropdownMenuItem(text = { Text(tag) }, onClick = { tagFilter = tag; tagFilterOpen = false })
                     }
@@ -1840,6 +1887,7 @@ private fun ConversationSidebar(
                 FolderCapsuleBar(
                     folders = availableFolders,
                     selectedFolderId = folderFilterId,
+                    language = language,
                     onSelect = { folderFilterId = it },
                     onCreate = { onCreateFolder(assistantFilterId ?: data.activeAssistant().id) },
                     onRename = { renameFolder = it },
@@ -1854,7 +1902,7 @@ private fun ConversationSidebar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    if (showFavorites) "收藏消息" else "对话",
+                    desktopText(language, if (showFavorites) "sidebar.favorite_messages" else "sidebar.chats"),
                     modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp,
@@ -1865,9 +1913,9 @@ private fun ConversationSidebar(
                         TextButton(onClick = { sortMenuOpen = true }) {
                             Text(
                                 if (data.preferences.conversationSort == DesktopConversationSort.RECENT) {
-                                    "最近"
+                                    desktopText(language, "sidebar.recent")
                                 } else {
-                                    "最常用"
+                                    desktopText(language, "sidebar.most_active")
                                 },
                                 fontSize = 12.sp
                             )
@@ -1878,7 +1926,10 @@ private fun ConversationSidebar(
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            if (sort == DesktopConversationSort.RECENT) "按最近时间" else "按使用频率"
+                                            desktopText(
+                                                language,
+                                                if (sort == DesktopConversationSort.RECENT) "sidebar.sort_recent" else "sidebar.sort_most_active"
+                                            )
                                         )
                                     },
                                     onClick = {
@@ -1902,7 +1953,7 @@ private fun ConversationSidebar(
                         ) {
                             Text(conversation.title, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                             Text(
-                                message.content.ifBlank { message.reasoning }.ifBlank { "工具调用" },
+                                message.content.ifBlank { message.reasoning }.ifBlank { desktopText(language, "sidebar.tool_call") },
                                 Modifier.padding(top = 3.dp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp,
@@ -1916,7 +1967,7 @@ private fun ConversationSidebar(
                     conversationRows.forEach { item ->
                         val conversation = item.conversation
                         if (folderFilterId == null && item.branchDepth == 0) {
-                            val timelineLabel = conversationTimelineLabel(conversation.updatedAt)
+                            val timelineLabel = conversationTimelineLabel(conversation.updatedAt, language)
                             if (timelineLabel != previousTimelineLabel) {
                                 item(key = "timeline:$timelineLabel") {
                                     ConversationTimelineHeader(timelineLabel)
@@ -1928,6 +1979,7 @@ private fun ConversationSidebar(
                         ConversationRow(
                             conversation = conversation,
                             branchDepth = item.branchDepth,
+                            language = language,
                             selected = !settingsSelected && conversation.id == data.selectedConversationId,
                             generating = conversation.id in generatingConversationIds,
                             onClick = { onSelect(conversation.id) },
@@ -1954,16 +2006,17 @@ private fun ConversationSidebar(
                     .padding(horizontal = 10.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Lucide.Settings, "设置", Modifier.size(19.dp))
+                Icon(Lucide.Settings, desktopText(language, "settings.title"), Modifier.size(19.dp))
                 Column(Modifier.padding(start = 10.dp).weight(1f)) {
-                    Text("设置", fontSize = 14.sp)
+                    Text(desktopText(language, "settings.title"), fontSize = 14.sp)
                 }
             }
         }
     }
     renameFolder?.let { folder ->
         TextEditDialog(
-            title = "重命名文件夹",
+            title = desktopText(language, "sidebar.rename_folder"),
+            language = language,
             initialValue = folder.name,
             singleLine = true,
             onDismiss = { renameFolder = null },
@@ -1979,6 +2032,7 @@ private fun ConversationSidebar(
 private fun FolderCapsuleBar(
     folders: List<DesktopFolder>,
     selectedFolderId: String?,
+    language: DesktopLanguage,
     onSelect: (String?) -> Unit,
     onCreate: () -> Unit,
     onRename: (DesktopFolder) -> Unit,
@@ -1991,7 +2045,7 @@ private fun FolderCapsuleBar(
     ) {
         item {
             FolderCapsule(
-                label = "聊天",
+                label = desktopText(language, "sidebar.chats"),
                 selected = selectedFolderId == null,
                 onClick = { onSelect(null) }
             )
@@ -2008,7 +2062,7 @@ private fun FolderCapsuleBar(
                 )
                 DropdownMenu(menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(
-                        text = { Text("重命名") },
+                        text = { Text(desktopText(language, "chat.rename")) },
                         leadingIcon = { Icon(Lucide.Pencil, null, Modifier.size(17.dp)) },
                         onClick = {
                             menuOpen = false
@@ -2016,7 +2070,7 @@ private fun FolderCapsuleBar(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("删除") },
+                        text = { Text(desktopText(language, "message.delete")) },
                         leadingIcon = { Icon(Lucide.Trash2, null, Modifier.size(17.dp)) },
                         onClick = {
                             menuOpen = false
@@ -2028,7 +2082,7 @@ private fun FolderCapsuleBar(
         }
         item {
             FolderCapsule(
-                label = "新建",
+                label = desktopText(language, "common.new"),
                 selected = false,
                 icon = Lucide.Plus,
                 onClick = onCreate
@@ -2081,15 +2135,19 @@ private fun ConversationTimelineHeader(label: String) {
     )
 }
 
-private fun conversationTimelineLabel(updatedAt: Long, today: LocalDate = LocalDate.now()): String {
+private fun conversationTimelineLabel(
+    updatedAt: Long,
+    language: DesktopLanguage,
+    today: LocalDate = LocalDate.now()
+): String {
     val date = Instant.ofEpochMilli(updatedAt).atZone(ZoneId.systemDefault()).toLocalDate()
     val daysAgo = ChronoUnit.DAYS.between(date, today)
     return when (daysAgo) {
-        0L -> "今天"
-        1L -> "昨天"
-        2L -> "前天"
-        in 3L..30L -> "$daysAgo 天前"
-        else -> "${date.monthValue} 月 ${date.dayOfMonth} 日"
+        0L -> desktopText(language, "timeline.today")
+        1L -> desktopText(language, "timeline.yesterday")
+        2L -> desktopText(language, "timeline.day_before_yesterday")
+        in 3L..30L -> desktopText(language, "timeline.days_ago").replace("%d", daysAgo.toString())
+        else -> date.toString()
     }
 }
 
@@ -2109,6 +2167,7 @@ private fun DrawerAction(icon: androidx.compose.ui.graphics.vector.ImageVector, 
 private fun ConversationRow(
     conversation: DesktopConversation,
     branchDepth: Int,
+    language: DesktopLanguage,
     selected: Boolean,
     generating: Boolean,
     onClick: () -> Unit,
@@ -2127,7 +2186,7 @@ private fun ConversationRow(
         if (branchDepth > 0) {
             Icon(
                 Lucide.GitFork,
-                "对话分支",
+                desktopText(language, "conversation.branch"),
                 Modifier.padding(end = 7.dp).size(15.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2136,15 +2195,15 @@ private fun ConversationRow(
         if (generating) {
             CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
         } else if (conversation.isPinned) {
-            Icon(Lucide.Pin, "已置顶", Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary)
+            Icon(Lucide.Pin, desktopText(language, "conversation.pinned"), Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary)
         }
         Box {
             IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(34.dp)) {
-            Icon(Lucide.Ellipsis, "对话选项", Modifier.size(17.dp))
+            Icon(Lucide.Ellipsis, desktopText(language, "chat.options"), Modifier.size(17.dp))
             }
             DropdownMenu(menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
-                    text = { Text(if (conversation.isPinned) "取消置顶" else "置顶") },
+                    text = { Text(desktopText(language, if (conversation.isPinned) "conversation.unpin" else "conversation.pin")) },
                     leadingIcon = {
                         Icon(if (conversation.isPinned) Lucide.PinOff else Lucide.Pin, null, Modifier.size(18.dp))
                     },
@@ -2155,7 +2214,7 @@ private fun ConversationRow(
                 )
                 HorizontalDivider()
                 DropdownMenuItem(
-                    text = { Text("移至聊天") },
+                    text = { Text(desktopText(language, "conversation.move_to_chat")) },
                     leadingIcon = { Icon(Lucide.Folder, null, Modifier.size(18.dp)) },
                     onClick = {
                         menuOpen = false
@@ -2164,7 +2223,7 @@ private fun ConversationRow(
                 )
                 folders.forEach { folder ->
                     DropdownMenuItem(
-                        text = { Text("移至 ${folder.name}") },
+                        text = { Text(desktopText(language, "conversation.move_to_folder").replace("%s", folder.name)) },
                         leadingIcon = { Icon(Lucide.Folder, null, Modifier.size(18.dp)) },
                         onClick = {
                             menuOpen = false
@@ -2174,7 +2233,7 @@ private fun ConversationRow(
                 }
                 HorizontalDivider()
                 DropdownMenuItem(
-                    text = { Text("删除") },
+                    text = { Text(desktopText(language, "message.delete")) },
                     leadingIcon = { Icon(Lucide.Trash2, null, Modifier.size(18.dp)) },
                     onClick = {
                         menuOpen = false
@@ -2250,6 +2309,7 @@ private fun ChatPane(
 ) {
     var conversationMenuOpen by remember { mutableStateOf(false) }
     var folderMenuOpen by remember { mutableStateOf(false) }
+    val language = preferences.language
     val listState = rememberLazyListState()
     val hazeState = rememberHazeState()
     var composerHeightPx by remember { mutableStateOf(164) }
@@ -2318,7 +2378,7 @@ private fun ChatPane(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (showMenu) {
-                IconButton(onClick = onMenu) { Icon(Lucide.Menu, "打开对话列表") }
+                IconButton(onClick = onMenu) { Icon(Lucide.Menu, desktopText(language, "chat.open_conversations")) }
             }
             Surface(
                 onClick = onRename,
@@ -2337,11 +2397,11 @@ private fun ChatPane(
             }
             Box {
                 IconButton(onClick = { conversationMenuOpen = true }) {
-                    Icon(Lucide.Ellipsis, "对话选项")
+                    Icon(Lucide.Ellipsis, desktopText(language, "chat.options"))
                 }
                 DropdownMenu(conversationMenuOpen, onDismissRequest = { conversationMenuOpen = false }) {
                     DropdownMenuItem(
-                        text = { Text("重命名") },
+                        text = { Text(desktopText(language, "chat.rename")) },
                         leadingIcon = { Icon(Lucide.Pencil, null, Modifier.size(18.dp)) },
                         onClick = {
                             conversationMenuOpen = false
@@ -2349,7 +2409,7 @@ private fun ChatPane(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("导出 Markdown") },
+                        text = { Text(desktopText(language, "chat.export_markdown")) },
                         leadingIcon = { Icon(Lucide.Download, null, Modifier.size(18.dp)) },
                         onClick = {
                             conversationMenuOpen = false
@@ -2357,7 +2417,7 @@ private fun ChatPane(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("生成标题") },
+                        text = { Text(desktopText(language, "chat.generate_title")) },
                         leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
                         enabled = !isGenerating && conversation.messages.isNotEmpty(),
                         onClick = {
@@ -2366,7 +2426,7 @@ private fun ChatPane(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("对话统计") },
+                        text = { Text(desktopText(language, "chat.statistics")) },
                         enabled = conversation.messages.isNotEmpty(),
                         onClick = {
                             conversationMenuOpen = false
@@ -2374,7 +2434,7 @@ private fun ChatPane(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("生成回复建议") },
+                        text = { Text(desktopText(language, "chat.generate_suggestions")) },
                         leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
                         enabled = !isGenerating && conversation.messages.isNotEmpty(),
                         onClick = {
@@ -2384,7 +2444,7 @@ private fun ChatPane(
                     )
                     HorizontalDivider()
                     DropdownMenuItem(
-                        text = { Text("压缩历史") },
+                        text = { Text(desktopText(language, "chat.compress_history")) },
                         leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
                         enabled = !isGenerating && conversation.messages.size > 1,
                         onClick = {
@@ -2397,9 +2457,9 @@ private fun ChatPane(
                             text = {
                                 Text(
                                     if (conversation.systemPrompt.isBlank()) {
-                                        "设置系统提示词"
+                                        desktopText(language, "chat.set_system_prompt")
                                     } else {
-                                        "编辑系统提示词"
+                                        desktopText(language, "chat.edit_system_prompt")
                                     }
                                 )
                             },
@@ -2414,7 +2474,14 @@ private fun ChatPane(
                         DropdownMenuItem(
                             text = {
                                 Text(
-                                    if (conversation.usesPromptInjections(assistant)) "禁用本对话世界书" else "启用本对话世界书"
+                                    desktopText(
+                                        language,
+                                        if (conversation.usesPromptInjections(assistant)) {
+                                            "chat.disable_lorebooks"
+                                        } else {
+                                            "chat.enable_lorebooks"
+                                        }
+                                    )
                                 )
                             },
                             leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
@@ -2431,9 +2498,14 @@ private fun ChatPane(
                             DropdownMenuItem(
                                 text = {
                                     Column {
-                                        Text("恢复历史快照 ${index + 1}: ${branch.name}")
                                         Text(
-                                            "${branch.messages.size} 条消息",
+                                            desktopText(language, "chat.restore_snapshot")
+                                                .replace("%d", (index + 1).toString())
+                                                .replace("%s", branch.name)
+                                        )
+                                        Text(
+                                            desktopText(language, "chat.snapshot_messages")
+                                                .replace("%d", branch.messages.size.toString()),
                                             fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -2442,7 +2514,7 @@ private fun ChatPane(
                                 leadingIcon = { Icon(Lucide.RotateCcw, null, Modifier.size(18.dp)) },
                                 trailingIcon = {
                                     IconButton(onClick = { onDeleteBranch(branch.id) }, modifier = Modifier.size(28.dp)) {
-                                        Icon(Lucide.Trash2, "删除历史快照", Modifier.size(15.dp))
+                                        Icon(Lucide.Trash2, desktopText(language, "chat.delete_snapshot"), Modifier.size(15.dp))
                                     }
                                 },
                                 onClick = {
@@ -2456,11 +2528,11 @@ private fun ChatPane(
             }
             Box {
                 IconButton(onClick = { folderMenuOpen = true }) {
-                    Icon(Lucide.Folder, "移动到文件夹")
+                    Icon(Lucide.Folder, desktopText(language, "chat.move_to_folder"))
                 }
                 DropdownMenu(folderMenuOpen, onDismissRequest = { folderMenuOpen = false }) {
                     DropdownMenuItem(
-                        text = { Text("未分类") },
+                        text = { Text(desktopText(language, "chat.uncategorized")) },
                                      onClick = {
                                          folderMenuOpen = false
                                          onMoveToFolder(null)
@@ -2477,7 +2549,7 @@ private fun ChatPane(
                     }
                     HorizontalDivider()
                     DropdownMenuItem(
-                        text = { Text("新建文件夹") },
+                        text = { Text(desktopText(language, "chat.new_folder")) },
                                      leadingIcon = { Icon(Lucide.Plus, null, Modifier.size(18.dp)) },
                                      onClick = {
                                          folderMenuOpen = false
@@ -2486,7 +2558,7 @@ private fun ChatPane(
                     )
                 }
             }
-            IconButton(onClick = onNew) { Icon(Lucide.Plus, "新建对话") }
+            IconButton(onClick = onNew) { Icon(Lucide.Plus, desktopText(language, "sidebar.new_chat")) }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
 
@@ -2498,7 +2570,7 @@ private fun ChatPane(
                 contentAlignment = Alignment.TopCenter
             ) {
                 if (conversation.messages.isEmpty()) {
-                    EmptyConversation(model, assistant.quickMessages, onPromptChange)
+                    EmptyConversation(model, assistant.quickMessages, preferences.language, onPromptChange)
                 } else {
                     LazyColumn(
                         state = listState,
@@ -2590,6 +2662,7 @@ private fun ChatPane(
                     onLeft = preferences.messageJumperOnLeft,
                     state = listState,
                     messageCount = displayItems.size,
+                    language = preferences.language,
                     onPointerOverChange = { pointerOverMessageJumper = it }
                 )
             }
@@ -2616,6 +2689,7 @@ private fun ChatPane(
                 client = client,
                 assistant = assistant,
                 assistants = assistants,
+                language = preferences.language,
                 onAssistantSelect = onAssistantSelect,
                 mcpServers = mcpServers,
                 mcpClient = mcpClient,
@@ -2634,12 +2708,12 @@ private fun ChatPane(
             Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(horizontal = 20.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(it, Modifier.weight(1f), color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 13.sp)
-                    TextButton(onClick = onDismissError) { Text("关闭") }
+                    TextButton(onClick = onDismissError) { Text(desktopText(language, "chat.close")) }
                 }
             }
             DropdownMenu(folderMenuOpen, onDismissRequest = { folderMenuOpen = false }) {
                 DropdownMenuItem(
-                    text = { Text("聊天") },
+                    text = { Text(desktopText(language, "sidebar.chats")) },
                     onClick = {
                         folderMenuOpen = false
                         onMoveToFolder(null)
@@ -2684,6 +2758,7 @@ private fun BoxScope.DesktopMessageJumper(
     onLeft: Boolean,
     state: LazyListState,
     messageCount: Int,
+    language: DesktopLanguage,
     onPointerOverChange: (Boolean) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -2702,10 +2777,10 @@ private fun BoxScope.DesktopMessageJumper(
         exit = fadeOut(tween(220)) + slideOutHorizontally(tween(220), targetOffsetX = horizontalOffset)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            MessageJumperButton(Lucide.ArrowUpToLine, "跳转到顶部", color) {
+            MessageJumperButton(Lucide.ArrowUpToLine, desktopText(language, "jumper.top"), color) {
                 scope.launch { state.animateScrollToItem(0) }
             }
-            MessageJumperButton(Lucide.ArrowUp, "上一条消息", color) {
+            MessageJumperButton(Lucide.ArrowUp, desktopText(language, "jumper.previous"), color) {
                 scope.launch { state.animateScrollToItem((state.firstVisibleItemIndex - 1).coerceAtLeast(0)) }
             }
             Surface(
@@ -2718,12 +2793,12 @@ private fun BoxScope.DesktopMessageJumper(
                     Text("$currentMessage/$messageCount", fontSize = 10.sp)
                 }
             }
-            MessageJumperButton(Lucide.ArrowDown, "下一条消息", color) {
+            MessageJumperButton(Lucide.ArrowDown, desktopText(language, "jumper.next"), color) {
                 scope.launch {
                     state.animateScrollToItem((state.firstVisibleItemIndex + 1).coerceAtMost(messageCount))
                 }
             }
-            MessageJumperButton(Lucide.ArrowDownToLine, "跳转到底部", color) {
+            MessageJumperButton(Lucide.ArrowDownToLine, desktopText(language, "jumper.bottom"), color) {
                 scope.launch { state.animateScrollToItem(messageCount) }
             }
         }
@@ -2772,6 +2847,7 @@ private fun SoftMessageReveal(messageId: String, content: @Composable () -> Unit
 private fun EmptyConversation(
     model: String,
     quickMessages: List<DesktopQuickMessage>,
+    language: DesktopLanguage,
     onQuickMessageSelect: (String) -> Unit
 ) {
     Column(
@@ -2783,7 +2859,7 @@ private fun EmptyConversation(
             Icon(Lucide.Sparkles, null, Modifier.padding(16.dp).size(28.dp), tint = MaterialTheme.colorScheme.primary)
         }
         Spacer(Modifier.height(16.dp))
-        Text("有什么可以帮你的？", fontSize = 24.sp, fontWeight = FontWeight.Medium)
+        Text(desktopText(language, "empty_chat.greeting"), fontSize = 24.sp, fontWeight = FontWeight.Medium)
         Text(model, Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
         if (quickMessages.isNotEmpty()) {
             FlowRow(
@@ -2827,8 +2903,9 @@ private fun MessageBlock(
     onAskUserAnswer: (DesktopToolCall, String) -> Unit
 ) {
     val isUser = message.role == "user"
+    val language = preferences.language
     val configuredUserNickname = preferences.userNickname.trim()
-    val userNickname = configuredUserNickname.ifBlank { "你" }
+    val userNickname = configuredUserNickname.ifBlank { desktopText(language, "user.you") }
     val hasVisibleExecutionSteps = executionSteps.any {
         it !is DesktopExecutionStep.Reasoning || preferences.showReasoning
     }
@@ -2891,7 +2968,7 @@ private fun MessageBlock(
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 if (configuredUserNickname.isBlank()) {
-                                    Icon(Lucide.UserRound, "用户头像", Modifier.size(16.dp))
+                                    Icon(Lucide.UserRound, desktopText(language, "message.user_avatar"), Modifier.size(16.dp))
                                 } else {
                                     Text(
                                         userNickname.take(1),
@@ -2919,18 +2996,18 @@ private fun MessageBlock(
                             modifier = Modifier.widthIn(min = 300.dp, max = 630.dp),
                             minLines = 3,
                             maxLines = 12,
-                            placeholder = { Text("编辑消息") }
+                            placeholder = { Text(desktopText(language, "message.edit")) }
                         )
                         Row(
                             Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            TextButton(onClick = onCancelEdit) { Text("取消") }
+                            TextButton(onClick = onCancelEdit) { Text(desktopText(language, "common.cancel")) }
                             Button(
                                 onClick = { onSaveEdit(editedContent.trim()) },
                                 enabled = editedContent.isNotBlank()
-                            ) { Text("提交") }
+                            ) { Text(desktopText(language, "common.submit")) }
                         }
                     }
                 } else {
@@ -2971,6 +3048,7 @@ private fun MessageBlock(
                     generating = generating,
                     autoCollapse = preferences.autoCollapseReasoning,
                     showReasoning = preferences.showReasoning,
+                    language = language,
                     markdownOptions = markdownOptions,
                     onAskUserAnswer = onAskUserAnswer,
                 )
@@ -2982,7 +3060,7 @@ private fun MessageBlock(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp)
-                    Text("思考中...", Modifier.padding(start = 9.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(desktopText(language, "message.thinking"), Modifier.padding(start = 9.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else if (!timelineAfterContent && displayContent.isNotBlank()) {
                 assistantContent()
@@ -2994,7 +3072,7 @@ private fun MessageBlock(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 message.attachments.forEach { attachment ->
-                    AttachmentPreview(attachment)
+                    AttachmentPreview(attachment, language)
                 }
             }
         }
@@ -3003,12 +3081,13 @@ private fun MessageBlock(
                 messageId = message.id,
                 translation = message.translation,
                 targetLanguage = message.translationTargetLanguage,
+                language = language,
                 markdownOptions = markdownOptions
             )
         }
         if (!isUser && message.citations.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("来源", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text(desktopText(language, "message.sources"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -3028,7 +3107,9 @@ private fun MessageBlock(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    citation.title.ifBlank { "来源 ${index + 1}" },
+                                    citation.title.ifBlank {
+                                        desktopText(language, "message.source_number").replace("%d", (index + 1).toString())
+                                    },
                                     fontSize = 11.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -3052,7 +3133,7 @@ private fun MessageBlock(
                 message.promptTokens?.let { tokens ->
                     Icon(
                         Lucide.Upload,
-                        "输入 Token",
+                        desktopText(language, "message.input_tokens"),
                         Modifier.size(12.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -3065,7 +3146,7 @@ private fun MessageBlock(
                 message.completionTokens?.let { tokens ->
                     Icon(
                         Lucide.Download,
-                        "输出 Token",
+                        desktopText(language, "message.output_tokens"),
                         Modifier.size(12.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -3078,7 +3159,7 @@ private fun MessageBlock(
                 message.cachedTokens?.let { tokens ->
                     Icon(
                         Lucide.Database,
-                        "缓存 Token",
+                        desktopText(language, "message.cached_tokens"),
                         Modifier.size(12.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -3096,7 +3177,7 @@ private fun MessageBlock(
             if (variants.size > 1) {
                 MessageAction(
                     Lucide.ChevronLeft,
-                    "上一个版本",
+                    desktopText(language, "message.previous_version"),
                     enabled = actionsEnabled && currentVariantIndex > 0
                 ) { onSelectVariant(currentVariantIndex - 1) }
                 Text(
@@ -3107,37 +3188,37 @@ private fun MessageBlock(
                 )
                 MessageAction(
                     Lucide.ChevronRight,
-                    "下一个版本",
+                    desktopText(language, "message.next_version"),
                     enabled = actionsEnabled && currentVariantIndex < variants.lastIndex
                 ) { onSelectVariant(currentVariantIndex + 1) }
             }
-            MessageAction(if (copied) Lucide.Check else Lucide.Copy, "复制", enabled = displayContent.isNotEmpty()) {
+            MessageAction(if (copied) Lucide.Check else Lucide.Copy, desktopText(language, "message.copy"), enabled = displayContent.isNotEmpty()) {
                 clipboardScope.launch {
                     clipboard.setClipEntry(ClipEntry(StringSelection(displayContent)))
                     copyVersion++
                 }
             }
-            MessageAction(Lucide.GitFork, "从此处分支", enabled = actionsEnabled, onClick = onFork)
+            MessageAction(Lucide.GitFork, desktopText(language, "message.fork"), enabled = actionsEnabled, onClick = onFork)
             if (!isUser) {
-                MessageAction(Lucide.RotateCcw, "重新生成", enabled = actionsEnabled, onClick = onRegenerate)
+                MessageAction(Lucide.RotateCcw, desktopText(language, "message.regenerate"), enabled = actionsEnabled, onClick = onRegenerate)
             }
-            MessageAction(Lucide.Languages, "翻译", enabled = actionsEnabled && displayContent.isNotBlank(), onClick = onTranslate)
+            MessageAction(Lucide.Languages, desktopText(language, "message.translate"), enabled = actionsEnabled && displayContent.isNotBlank(), onClick = onTranslate)
             MessageAction(
                 if (message.isFavorite) FilledStar else Lucide.Star,
-                if (message.isFavorite) "取消收藏" else "收藏",
+                desktopText(language, if (message.isFavorite) "message.unfavorite" else "message.favorite"),
                 enabled = actionsEnabled,
                 onClick = onToggleFavorite
             )
             if (isUser) {
-                MessageAction(Lucide.Pencil, "编辑", enabled = actionsEnabled, onClick = onEdit)
+                MessageAction(Lucide.Pencil, desktopText(language, "message.edit"), enabled = actionsEnabled, onClick = onEdit)
             }
-            MessageAction(Lucide.Trash2, "删除", enabled = actionsEnabled, onClick = onDelete)
+            MessageAction(Lucide.Trash2, desktopText(language, "message.delete"), enabled = actionsEnabled, onClick = onDelete)
         }
     }
 }
 
 @Composable
-private fun AttachmentPreview(attachment: DesktopAttachment) {
+private fun AttachmentPreview(attachment: DesktopAttachment, language: DesktopLanguage) {
     val bitmap = remember(attachment.data, attachment.kind) {
         if (attachment.kind != DesktopAttachmentKind.IMAGE) null else runCatching {
             org.jetbrains.skia.Image.makeFromEncoded(Base64.getDecoder().decode(attachment.data))
@@ -3166,7 +3247,9 @@ private fun AttachmentPreview(attachment: DesktopAttachment) {
             ) {
                 Icon(Lucide.Paperclip, null, Modifier.size(14.dp))
                 Text(
-                    if (attachment.kind == DesktopAttachmentKind.AUDIO) "音频 · ${attachment.name}" else attachment.name,
+                    if (attachment.kind == DesktopAttachmentKind.AUDIO) {
+                        "${desktopText(language, "attachment.audio")} · ${attachment.name}"
+                    } else attachment.name,
                     Modifier.padding(start = 6.dp),
                     fontSize = 11.sp
                 )
@@ -3191,6 +3274,7 @@ private fun DesktopExecutionTimeline(
     generating: Boolean,
     autoCollapse: Boolean,
     showReasoning: Boolean,
+    language: DesktopLanguage,
     markdownOptions: MarkdownRenderOptions,
     onAskUserAnswer: (DesktopToolCall, String) -> Unit,
 ) {
@@ -3222,12 +3306,17 @@ private fun DesktopExecutionTimeline(
                 ) {
                     Icon(
                         if (expanded) Lucide.ChevronDown else Lucide.ChevronRight,
-                        if (expanded) "收起执行过程" else "展开执行过程",
+                        desktopText(language, if (expanded) "timeline.collapse_execution" else "timeline.expand_execution"),
                         Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        if (expanded) "执行过程" else "展开 ${visibleSteps.size - renderedSteps.size} 个步骤",
+                        if (expanded) {
+                            desktopText(language, "timeline.execution")
+                        } else {
+                            desktopText(language, "timeline.expand_steps")
+                                .replace("%d", (visibleSteps.size - renderedSteps.size).toString())
+                        },
                         Modifier.padding(start = 7.dp),
                         color = MaterialTheme.colorScheme.primary,
                         fontSize = 12.sp,
@@ -3245,6 +3334,7 @@ private fun DesktopExecutionTimeline(
                 DesktopExecutionTimelineStep(
                     step = step,
                     generating = generating,
+                    language = language,
                     markdownOptions = markdownOptions,
                     onAskUserAnswer = onAskUserAnswer,
                 )
@@ -3257,6 +3347,7 @@ private fun DesktopExecutionTimeline(
 private fun DesktopExecutionTimelineStep(
     step: DesktopExecutionStep,
     generating: Boolean,
+    language: DesktopLanguage,
     markdownOptions: MarkdownRenderOptions,
     onAskUserAnswer: (DesktopToolCall, String) -> Unit,
 ) {
@@ -3268,9 +3359,11 @@ private fun DesktopExecutionTimelineStep(
                 modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Lucide.Lightbulb, "思考过程", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                Icon(Lucide.Lightbulb, desktopText(language, "timeline.reasoning"), Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                 Text(
-                    message.reasoningDurationMillis?.let { "思考了 ${formatReasoningDuration(it)} 秒" } ?: "思考过程",
+                    message.reasoningDurationMillis?.let {
+                        desktopText(language, "timeline.reasoning_duration").replace("%s", formatReasoningDuration(it))
+                    } ?: desktopText(language, "timeline.reasoning"),
                     Modifier.padding(start = 7.dp).weight(1f),
                     color = MaterialTheme.colorScheme.primary,
                     fontSize = 12.sp,
@@ -3289,18 +3382,19 @@ private fun DesktopExecutionTimelineStep(
 
         is DesktopExecutionStep.ToolCall -> {
             if (step.call.name == DesktopAskUserToolName && step.result == null) {
-                AskUserToolStep(step.call, onAskUserAnswer)
+                AskUserToolStep(step.call, language, onAskUserAnswer)
             } else {
                 DesktopToolCallTimelineStep(
                     toolCall = step.call,
                     result = step.result,
                     generating = generating && step.result == null,
+                    language = language,
                     markdownOptions = markdownOptions,
                 )
             }
         }
 
-        is DesktopExecutionStep.ToolResult -> DesktopToolResultTimelineStep(step.message.content, markdownOptions)
+        is DesktopExecutionStep.ToolResult -> DesktopToolResultTimelineStep(step.message.content, language, markdownOptions)
     }
 }
 
@@ -3309,20 +3403,21 @@ private fun DesktopToolCallTimelineStep(
     toolCall: DesktopToolCall,
     result: ChatMessage?,
     generating: Boolean,
+    language: DesktopLanguage,
     markdownOptions: MarkdownRenderOptions,
 ) {
     var expanded by remember(toolCall.id) { mutableStateOf(false) }
     val input = toolCall.arguments.takeIf { it.isNotBlank() && it != "{}" }
     val output = result?.content?.takeIf { it.isNotBlank() }
     val hasDetails = input != null || output != null
-    val status = if (generating && result == null) "正在调用" else "调用完成"
+    val status = desktopText(language, if (generating && result == null) "tool.calling" else "tool.completed")
     Row(
         modifier = Modifier.fillMaxWidth().clickable(enabled = hasDetails) { expanded = !expanded }.padding(vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(Lucide.Wrench, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
         Text(
-            "${toolCall.displayName()} · $status",
+            "${toolCall.displayName(language)} · $status",
             Modifier.padding(start = 7.dp).weight(1f),
             color = MaterialTheme.colorScheme.primary,
             fontSize = 12.sp,
@@ -3340,12 +3435,12 @@ private fun DesktopToolCallTimelineStep(
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             input?.let { value ->
-                DesktopToolDetail("输入") {
+                DesktopToolDetail(desktopText(language, "tool.input")) {
                     Text(value, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 }
             }
             output?.let { value ->
-                DesktopToolDetail("输出") {
+                DesktopToolDetail(desktopText(language, "tool.output")) {
                     MarkdownContent(value, Modifier.fillMaxWidth(), markdownOptions)
                 }
             }
@@ -3369,7 +3464,7 @@ private fun DesktopToolDetail(label: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun DesktopToolResultTimelineStep(content: String, markdownOptions: MarkdownRenderOptions) {
+private fun DesktopToolResultTimelineStep(content: String, language: DesktopLanguage, markdownOptions: MarkdownRenderOptions) {
     var expanded by remember(content) { mutableStateOf(false) }
     Row(
         modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 7.dp),
@@ -3377,7 +3472,7 @@ private fun DesktopToolResultTimelineStep(content: String, markdownOptions: Mark
     ) {
         Icon(Lucide.Wrench, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
         Text(
-            "工具结果",
+            desktopText(language, "tool.result"),
             Modifier.padding(start = 7.dp).weight(1f),
             color = MaterialTheme.colorScheme.primary,
             fontSize = 12.sp,
@@ -3389,7 +3484,7 @@ private fun DesktopToolResultTimelineStep(content: String, markdownOptions: Mark
     }
     if (expanded && content.isNotBlank()) {
         Box(Modifier.fillMaxWidth().padding(start = 23.dp, bottom = 8.dp)) {
-            DesktopToolDetail("输出") {
+            DesktopToolDetail(desktopText(language, "tool.output")) {
                 MarkdownContent(content, Modifier.fillMaxWidth(), markdownOptions)
             }
         }
@@ -3404,7 +3499,11 @@ private data class DesktopAskUserQuestion(
 )
 
 @Composable
-private fun AskUserToolStep(toolCall: DesktopToolCall, onSubmit: (DesktopToolCall, String) -> Unit) {
+private fun AskUserToolStep(
+    toolCall: DesktopToolCall,
+    language: DesktopLanguage,
+    onSubmit: (DesktopToolCall, String) -> Unit
+) {
     val questions = remember(toolCall.arguments) {
         runCatching {
             Json.parseToJsonElement(toolCall.arguments).jsonObject["questions"]?.jsonArray.orEmpty()
@@ -3435,7 +3534,7 @@ private fun AskUserToolStep(toolCall: DesktopToolCall, onSubmit: (DesktopToolCal
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("需要你的回答", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text(desktopText(language, "tool.answer_required"), fontSize = 13.sp, fontWeight = FontWeight.Medium)
             questions.forEach { question ->
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(question.question, fontSize = 13.sp)
@@ -3524,7 +3623,7 @@ private fun AskUserToolStep(toolCall: DesktopToolCall, onSubmit: (DesktopToolCal
                 },
                 modifier = Modifier.align(Alignment.End)
             ) {
-                Text("提交")
+                Text(desktopText(language, "common.submit"))
             }
         }
     }
@@ -3533,17 +3632,17 @@ private fun AskUserToolStep(toolCall: DesktopToolCall, onSubmit: (DesktopToolCal
 private fun formatReasoningDuration(durationMillis: Long): String =
     String.format(java.util.Locale.getDefault(), "%.1f", durationMillis.coerceAtLeast(0) / 1_000.0)
 
-private fun DesktopToolCall.displayName(): String = when (name) {
-    DesktopWebSearchToolName -> "搜索网页"
-    DesktopCurrentTimeToolName -> "获取时间"
-    DesktopMemoryToolName -> "管理记忆"
-    DesktopAgentListFilesToolName -> "列出文件"
-    DesktopAgentSearchFilesToolName -> "搜索文件"
-    DesktopAgentReadFileToolName -> "读取文件"
-    DesktopAgentWriteFileToolName -> "写入文件"
-    DesktopAgentEditFileToolName -> "编辑文件"
-    DesktopAgentShellToolName -> "执行命令"
-    DesktopUseSkillToolName -> "使用技能"
+private fun DesktopToolCall.displayName(language: DesktopLanguage): String = when (name) {
+    DesktopWebSearchToolName -> desktopText(language, "tool.web_search")
+    DesktopCurrentTimeToolName -> desktopText(language, "tool.current_time")
+    DesktopMemoryToolName -> desktopText(language, "tool.memory")
+    DesktopAgentListFilesToolName -> desktopText(language, "tool.list_files")
+    DesktopAgentSearchFilesToolName -> desktopText(language, "tool.search_files")
+    DesktopAgentReadFileToolName -> desktopText(language, "tool.read_file")
+    DesktopAgentWriteFileToolName -> desktopText(language, "tool.write_file")
+    DesktopAgentEditFileToolName -> desktopText(language, "tool.edit_file")
+    DesktopAgentShellToolName -> desktopText(language, "tool.run_command")
+    DesktopUseSkillToolName -> desktopText(language, "tool.use_skill")
     else -> name
         .substringAfterLast("__")
         .removePrefix("agent_")
@@ -3556,10 +3655,12 @@ private fun TranslationBlock(
     messageId: String,
     translation: String,
     targetLanguage: String,
+    language: DesktopLanguage,
     markdownOptions: MarkdownRenderOptions
 ) {
     var expanded by remember(messageId) { mutableStateOf(true) }
-    val title = "翻译${targetLanguage.takeIf { it.isNotBlank() }?.let { "（$it）" }.orEmpty()}"
+    val title = desktopText(language, "message.translation") +
+        targetLanguage.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -3574,7 +3675,7 @@ private fun TranslationBlock(
             ) {
                 Icon(
                     if (expanded) Lucide.ChevronDown else Lucide.ChevronRight,
-                    if (expanded) "收起$title" else "展开$title",
+                    desktopText(language, if (expanded) "common.collapse" else "common.expand") + title,
                     Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.onTertiaryContainer
                 )
@@ -3622,6 +3723,7 @@ private fun ModelPickerMenu(
     selectedProviderId: String,
     selectedModel: String,
     reasoningEffort: String,
+    language: DesktopLanguage,
     client: OpenAiClient,
     onSelect: (String, String) -> Unit,
     onReasoningEffortChange: (String) -> Unit,
@@ -3646,8 +3748,9 @@ private fun ModelPickerMenu(
         loadingBalanceIds[provider.id] = true
         scope.launch {
             balances[provider.id] = runCatching {
-                "余额：${client.getCachedBalance(provider.config, forceRefresh = forceRefresh)}"
-            }.getOrElse { "余额查询失败：${it.message ?: "未知错误"}" }
+                desktopText(language, "model_picker.balance")
+                    .replace("%s", client.getCachedBalance(provider.config, forceRefresh = forceRefresh))
+            }.getOrElse { desktopText(language, "model_picker.balance_failed") }
             loadingBalanceIds.remove(provider.id)
         }
     }
@@ -3660,22 +3763,23 @@ private fun ModelPickerMenu(
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("选择模型", Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text(desktopText(language, "model_picker.title"), Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
             IconButton(onClick = onSettings, modifier = Modifier.size(30.dp)) {
-                Icon(Lucide.Settings, "管理服务商", Modifier.size(16.dp))
+                Icon(Lucide.Settings, desktopText(language, "model_picker.manage_providers"), Modifier.size(16.dp))
             }
         }
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("筛选模型") },
+            placeholder = { Text(desktopText(language, "model_picker.filter")) },
             singleLine = true
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("推理强度", Modifier.weight(1f), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(desktopText(language, "model_picker.reasoning"), Modifier.weight(1f), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
-                listOf("默认", "低", "中", "高")[reasoningSliderValue.roundToInt().coerceIn(0, 3)],
+                listOf("model_picker.default", "model_picker.low", "model_picker.medium", "model_picker.high")
+                    .map { desktopText(language, it) }[reasoningSliderValue.roundToInt().coerceIn(0, 3)],
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.primary
@@ -3691,8 +3795,8 @@ private fun ModelPickerMenu(
             steps = 2
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            listOf("默认", "低", "中", "高").forEach { label ->
-                Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            listOf("model_picker.default", "model_picker.low", "model_picker.medium", "model_picker.high").forEach { key ->
+                Text(desktopText(language, key), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         HorizontalDivider()
@@ -3710,7 +3814,7 @@ private fun ModelPickerMenu(
                     Text(provider.name, Modifier.padding(start = 6.dp).weight(1f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                     if (provider.config.balanceOptions.enabled) {
                         Text(
-                            balances[provider.id] ?: "查询余额中",
+                            balances[provider.id] ?: desktopText(language, "model_picker.checking_balance"),
                             fontSize = 10.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1
@@ -3723,7 +3827,11 @@ private fun ModelPickerMenu(
                             if (loadingBalanceIds[provider.id] == true) {
                                 CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
                             } else {
-                                Icon(Lucide.RotateCcw, "刷新 ${provider.name} 余额", Modifier.size(14.dp))
+                                Icon(
+                                    Lucide.RotateCcw,
+                                    desktopText(language, "model_picker.refresh_balance").replace("%s", provider.name),
+                                    Modifier.size(14.dp)
+                                )
                             }
                         }
                     }
@@ -3738,10 +3846,10 @@ private fun ModelPickerMenu(
                         Column(Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(availableModel, Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                                if (selected) Icon(Lucide.Sparkles, "当前模型", Modifier.size(14.dp), MaterialTheme.colorScheme.primary)
+                                if (selected) Icon(Lucide.Sparkles, desktopText(language, "model_picker.current_model"), Modifier.size(14.dp), MaterialTheme.colorScheme.primary)
                             }
                             Text(
-                                modelCapabilityLabels(availableModel).joinToString(" · "),
+                                modelCapabilityLabels(availableModel, language).joinToString(" · "),
                                 fontSize = 10.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -3753,13 +3861,13 @@ private fun ModelPickerMenu(
     }
 }
 
-private fun modelCapabilityLabels(model: String): List<String> {
+private fun modelCapabilityLabels(model: String, language: DesktopLanguage): List<String> {
     val normalized = model.lowercase()
     return buildList {
-        add("文本")
-        if (listOf("gpt-4o", "gpt-4.1", "gemini", "claude", "qwen-vl", "vision").any(normalized::contains)) add("视觉")
-        if (listOf("o1", "o3", "r1", "reasoner", "thinking", "deepseek-r").any(normalized::contains)) add("推理")
-        if (!listOf("embedding", "image", "tts", "whisper").any(normalized::contains)) add("工具")
+        add(desktopText(language, "model_capability.text"))
+        if (listOf("gpt-4o", "gpt-4.1", "gemini", "claude", "qwen-vl", "vision").any(normalized::contains)) add(desktopText(language, "model_capability.vision"))
+        if (listOf("o1", "o3", "r1", "reasoner", "thinking", "deepseek-r").any(normalized::contains)) add(desktopText(language, "model_capability.reasoning"))
+        if (!listOf("embedding", "image", "tts", "whisper").any(normalized::contains)) add(desktopText(language, "model_capability.tools"))
     }
 }
 
@@ -3787,6 +3895,7 @@ private fun Composer(
     client: OpenAiClient,
     assistant: DesktopAssistantProfile,
     assistants: List<DesktopAssistantProfile>,
+    language: DesktopLanguage,
     onAssistantSelect: (String) -> Unit,
     mcpServers: List<DesktopMcpServer>,
     mcpClient: DesktopMcpClient,
@@ -3889,7 +3998,7 @@ private fun Composer(
                                     Icon(Lucide.Paperclip, null, Modifier.size(14.dp))
                                     Text(
                                         if (attachment.kind == DesktopAttachmentKind.AUDIO) {
-                                            "音频 · ${attachment.name}"
+                                            "${desktopText(language, "attachment.audio")} · ${attachment.name}"
                                         } else {
                                             attachment.name
                                         },
@@ -3900,7 +4009,7 @@ private fun Composer(
                                     IconButton(
                                         onClick = { onRemoveAttachment(attachment) },
                                         modifier = Modifier.size(28.dp)
-                                    ) { Icon(Lucide.Trash2, "移除附件", Modifier.size(14.dp)) }
+                                    ) { Icon(Lucide.Trash2, desktopText(language, "attachment.remove"), Modifier.size(14.dp)) }
                                 }
                             }
                         }
@@ -3932,12 +4041,12 @@ private fun Composer(
                                 true
                             } else false
                         },
-                    placeholder = { Text("给 RikkaHub 发送消息") },
+                    placeholder = { Text(desktopText(language, "composer.placeholder")) },
                     trailingIcon = {
                         IconButton(onClick = { composerExpanded = !composerExpanded }) {
                             Icon(
                                 if (composerExpanded) Lucide.Minimize2 else Lucide.Maximize2,
-                                if (composerExpanded) "收起输入框" else "展开输入框",
+                                desktopText(language, if (composerExpanded) "composer.collapse" else "composer.expand"),
                                 Modifier.size(18.dp)
                             )
                         }
@@ -3955,12 +4064,12 @@ private fun Composer(
                 )
                 Row(Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onAddAttachments, modifier = Modifier.size(34.dp)) {
-                        Icon(Lucide.Paperclip, "添加文件", Modifier.size(18.dp))
+                        Icon(Lucide.Paperclip, desktopText(language, "composer.add_attachment"), Modifier.size(18.dp))
                     }
                     IconButton(onClick = onToggleWebSearch, modifier = Modifier.size(34.dp)) {
                         Icon(
                             Lucide.Globe,
-                            if (webSearchEnabled) "关闭联网搜索" else "开启联网搜索",
+                            desktopText(language, if (webSearchEnabled) "composer.disable_web_search" else "composer.enable_web_search"),
                             Modifier.size(18.dp),
                             tint = if (webSearchEnabled) {
                                 MaterialTheme.colorScheme.primary
@@ -3973,7 +4082,7 @@ private fun Composer(
                         IconButton(onClick = { mcpMenuOpen = true }, modifier = Modifier.size(34.dp)) {
                             Icon(
                                 Lucide.Wrench,
-                                "管理 MCP 服务",
+                                desktopText(language, "mcp.manage"),
                                 Modifier.size(18.dp),
                                 tint = if (mcpServers.any { it.enabled && it.id in assistant.mcpServerIds }) {
                                     MaterialTheme.colorScheme.primary
@@ -3990,6 +4099,7 @@ private fun Composer(
                                 servers = mcpServers,
                                 selectedServerIds = assistant.mcpServerIds,
                                 mcpClient = mcpClient,
+                                language = language,
                                 onServersChange = onMcpServersChange,
                                 onSelectedServerIdsChange = onAssistantMcpServerIdsChange,
                                 onOpenSettings = {
@@ -4002,14 +4112,14 @@ private fun Composer(
                     if (assistant.quickMessages.isNotEmpty()) {
                         Box {
                             IconButton(onClick = { quickMessageMenuOpen = true }, modifier = Modifier.size(34.dp)) {
-                                Icon(Lucide.Plus, "快捷消息", Modifier.size(18.dp))
+                                Icon(Lucide.Plus, desktopText(language, "composer.quick_messages"), Modifier.size(18.dp))
                             }
                             DropdownMenu(quickMessageMenuOpen, onDismissRequest = { quickMessageMenuOpen = false }) {
                                 assistant.quickMessages.forEach { message ->
                                     DropdownMenuItem(
                                         text = {
                                             Column {
-                                                Text(message.title.ifBlank { "未命名" }, fontSize = 13.sp)
+                                                Text(message.title.ifBlank { desktopText(language, "common.unnamed") }, fontSize = 13.sp)
                                                 Text(
                                                     message.content,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -4056,7 +4166,7 @@ private fun Composer(
                             }
                             HorizontalDivider()
                             DropdownMenuItem(
-                                text = { Text("管理助手与标签") },
+                                text = { Text(desktopText(language, "composer.manage_assistants")) },
                                 leadingIcon = { Icon(Lucide.Settings, null, Modifier.size(17.dp)) },
                                 onClick = {
                                     assistantMenuOpen = false
@@ -4085,6 +4195,7 @@ private fun Composer(
                                 selectedProviderId = selectedProviderId,
                                 selectedModel = model,
                                 reasoningEffort = assistant.reasoningEffort,
+                                language = language,
                                 client = client,
                                 onSelect = { providerId, selectedModel ->
                                     modelMenuOpen = false
@@ -4120,14 +4231,14 @@ private fun Composer(
                             if (isGenerating) {
                                 Icon(
                                     Lucide.Square,
-                                    "停止生成",
+                                    desktopText(language, "composer.stop_generation"),
                                     Modifier.size(16.dp),
                                     tint = MaterialTheme.colorScheme.onPrimary
                                 )
                             } else {
                                 Icon(
                                     Lucide.Send,
-                                    "发送；长按仅添加消息",
+                                    desktopText(language, "composer.send"),
                                     Modifier.size(18.dp),
                                     tint = if (sendEnabled) {
                                         MaterialTheme.colorScheme.onPrimary
@@ -4150,6 +4261,7 @@ private fun McpQuickManager(
     servers: List<DesktopMcpServer>,
     selectedServerIds: Set<String>,
     mcpClient: DesktopMcpClient,
+    language: DesktopLanguage,
     onServersChange: (List<DesktopMcpServer>) -> Unit,
     onSelectedServerIdsChange: (Set<String>) -> Unit,
     onOpenSettings: () -> Unit
@@ -4192,9 +4304,10 @@ private fun McpQuickManager(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text("MCP 服务", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text(desktopText(language, "mcp.title"), fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Text(
-                    "${servers.count { it.enabled && it.id in selectedServerIds }} 个服务用于当前助手",
+                    desktopText(language, "mcp.services_for_assistant")
+                        .replace("%d", servers.count { it.enabled && it.id in selectedServerIds }.toString()),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp
                 )
@@ -4202,14 +4315,14 @@ private fun McpQuickManager(
             TextButton(
                 onClick = { servers.forEach(::check) },
                 enabled = servers.any(::canCheck)
-            ) { Text("检测全部") }
+            ) { Text(desktopText(language, "mcp.check_all")) }
             IconButton(onClick = onOpenSettings, modifier = Modifier.size(34.dp)) {
-                Icon(Lucide.Settings, "打开 MCP 设置", Modifier.size(17.dp))
+                Icon(Lucide.Settings, desktopText(language, "mcp.open_settings"), Modifier.size(17.dp))
             }
         }
         if (servers.isEmpty()) {
             Text(
-                "尚未配置 MCP 服务",
+                desktopText(language, "mcp.no_servers"),
                 Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp
@@ -4219,10 +4332,12 @@ private fun McpQuickManager(
             if (index > 0) HorizontalDivider()
             val state = availability[server.id] ?: McpAvailability.UNKNOWN
             val status = when (state) {
-                McpAvailability.UNKNOWN -> if (server.tools.isEmpty()) "尚未检测" else "已同步 ${server.tools.size} 个工具"
-                McpAvailability.CHECKING -> "正在检测"
-                McpAvailability.AVAILABLE -> "可用 · ${server.tools.size} 个工具"
-                McpAvailability.UNAVAILABLE -> "不可用"
+                McpAvailability.UNKNOWN -> if (server.tools.isEmpty()) desktopText(language, "mcp.not_checked") else {
+                    desktopText(language, "mcp.tools_synced").replace("%d", server.tools.size.toString())
+                }
+                McpAvailability.CHECKING -> desktopText(language, "mcp.checking")
+                McpAvailability.AVAILABLE -> desktopText(language, "mcp.available_tools").replace("%d", server.tools.size.toString())
+                McpAvailability.UNAVAILABLE -> desktopText(language, "mcp.unavailable")
             }
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
@@ -4230,7 +4345,7 @@ private fun McpQuickManager(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(server.name.ifBlank { "未命名 MCP 服务" }, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Text(server.name.ifBlank { desktopText(language, "mcp.unnamed_service") }, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         Text(
                             status,
                             color = when (state) {
@@ -4249,12 +4364,12 @@ private fun McpQuickManager(
                         if (state == McpAvailability.CHECKING) {
                             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                         } else {
-                            Icon(Lucide.RotateCcw, "检测可用性", Modifier.size(16.dp))
+                    Icon(Lucide.RotateCcw, desktopText(language, "mcp.check"), Modifier.size(16.dp))
                         }
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("当前助手", Modifier.weight(1f), fontSize = 12.sp)
+                    Text(desktopText(language, "mcp.current_assistant"), Modifier.weight(1f), fontSize = 12.sp)
                     Switch(
                         checked = server.id in selectedServerIds,
                         onCheckedChange = { selected ->
@@ -4263,7 +4378,7 @@ private fun McpQuickManager(
                             )
                         }
                     )
-                    Text("启用", Modifier.padding(start = 10.dp, end = 6.dp), fontSize = 12.sp)
+                    Text(desktopText(language, "mcp.enabled"), Modifier.padding(start = 10.dp, end = 6.dp), fontSize = 12.sp)
                     Switch(
                         checked = server.enabled,
                         onCheckedChange = { enabled ->
@@ -4282,6 +4397,7 @@ private fun McpQuickManager(
 private fun TextEditDialog(
     title: String,
     initialValue: String,
+    language: DesktopLanguage = DesktopLanguage.SYSTEM,
     singleLine: Boolean = false,
     allowBlank: Boolean = false,
     onDismiss: () -> Unit,
@@ -4302,8 +4418,10 @@ private fun TextEditDialog(
             )
         },
         confirmButton = {
-            Button(onClick = { onSave(value) }, enabled = allowBlank || value.isNotBlank()) { Text("保存") }
+            Button(onClick = { onSave(value) }, enabled = allowBlank || value.isNotBlank()) {
+                Text(desktopText(language, "common.save"))
+            }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(desktopText(language, "common.cancel")) } }
     )
 }
