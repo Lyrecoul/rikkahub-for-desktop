@@ -25,7 +25,9 @@ jobs:
     steps:
       - name: Install build tools
         run: |
-          pacman -Syu --noconfirm base-devel git jdk17-openjdk
+          pacman -Syu --noconfirm \
+            base-devel git jdk17-openjdk \
+            libx11 libxext libxi libxrender libxtst freetype2 fontconfig
           id builduser >/dev/null 2>&1 || useradd --create-home builduser
       - uses: actions/checkout@v4
       - name: Configure Java
