@@ -10,19 +10,54 @@
   <img src="docs/img/desktop.png" alt="RikkaHub desktop" width="450" />
 </div>
 
-## Build
+RikkaHub is a native Linux chat client built with Kotlin and Compose Desktop. It connects to OpenAI-compatible model services and keeps models, conversations, tools, and personal preferences in one desktop application.
 
-Requires JDK 17 or newer.
+## Features
+
+- **OpenAI-compatible APIs**: Add a custom service URL and API key, test the connection, and discover available models. Presets are included for services such as OpenAI, DeepSeek, OpenRouter, and SiliconFlow.
+- **Multi-model conversations**: Select models per conversation or assistant, with streaming responses, reasoning output, model capability indicators, context compression, and conversation branches.
+- **Attachments and rich content**: Add images, audio, text, and documents to messages. Markdown, code highlighting, LaTeX math, and Mermaid diagrams are supported.
+- **Tools and agents**: Configure MCP services and optionally enable web search, local time, long-term memory, and workspace agent tools. Agent actions involving local files, commands, or network access require confirmation.
+- **Conversation management**: Search, pin, rename, and organize chats; export an individual conversation as Markdown or back up providers, preferences, and chats as JSON.
+- **Localization and appearance**: Simplified Chinese, English, and additional interface languages are available, alongside system-aware light/dark modes and several accent themes.
+
+## Quick Start
+
+RikkaHub requires **JDK 17 or newer**. Clone the repository and run this from its root:
 
 ```bash
 ./gradlew :desktop:run
+```
+
+On first launch, open Settings and add a model provider. Enter an OpenAI-compatible base URL and API key, then use **Test and fetch models** to confirm the connection. Keys are handled by the desktop secure store and are not included in conversation exports.
+
+## Build and Package
+
+Development, native distribution, and test commands:
+
+```bash
+# Run the desktop app
+./gradlew :desktop:run
+
+# Create a distributable app for the current platform
 ./gradlew :desktop:createDistributable
+
+# Run tests
+./gradlew :desktop:test
+
+# Build and install the Arch Linux package
 cd packaging/arch && makepkg -si
 ```
 
-The Arch package bundles a Java runtime. Configuration is stored in
-`$XDG_CONFIG_HOME/rikkahub/desktop.json` (or `~/.config/rikkahub/desktop.json`), and conversations are stored
-separately under `conversations/`.
+Gradle is configured with DEB and RPM native package targets. Generated files are placed under `desktop/build/compose/binaries/`. The Arch package recipe lives in `packaging/arch/` and uses the system Java runtime.
+
+## Local Data
+
+Configuration is stored in `$XDG_CONFIG_HOME/rikkahub/desktop.json` (or `~/.config/rikkahub/desktop.json`), while each conversation is saved separately under `conversations/` in the same directory. Settings can export a JSON backup. Resetting local data permanently removes local providers, assistants, preferences, and conversations.
+
+## Technology
+
+RikkaHub is built with Kotlin, Compose Desktop, Ktor/OkHttp, and Kotlinx Serialization, and integrates the Model Context Protocol (MCP) Kotlin SDK. The Gradle Wrapper is included, so a separate Gradle installation is unnecessary.
 
 ## License
 
