@@ -2301,17 +2301,6 @@ private fun ConversationRow(
             }
             DropdownMenu(menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
-                    text = { Text(desktopText(language, if (conversation.isPinned) "conversation.unpin" else "conversation.pin")) },
-                    leadingIcon = {
-                        Icon(if (conversation.isPinned) Lucide.PinOff else Lucide.Pin, null, Modifier.size(18.dp))
-                    },
-                    onClick = {
-                        menuOpen = false
-                        onPin()
-                    }
-                )
-                HorizontalDivider()
-                DropdownMenuItem(
                     text = { Text(desktopText(language, "conversation.move_to_chat")) },
                     leadingIcon = { Icon(Lucide.Folder, null, Modifier.size(18.dp)) },
                     onClick = {
@@ -2330,6 +2319,16 @@ private fun ConversationRow(
                     )
                 }
                 HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text(desktopText(language, if (conversation.isPinned) "conversation.unpin" else "conversation.pin")) },
+                    leadingIcon = {
+                        Icon(if (conversation.isPinned) Lucide.PinOff else Lucide.Pin, null, Modifier.size(18.dp))
+                    },
+                    onClick = {
+                        menuOpen = false
+                        onPin()
+                    }
+                )
                 DropdownMenuItem(
                     text = { Text(desktopText(language, "message.delete")) },
                     leadingIcon = { Icon(Lucide.Trash2, null, Modifier.size(18.dp)) },
