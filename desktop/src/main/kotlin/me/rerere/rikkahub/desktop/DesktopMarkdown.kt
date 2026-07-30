@@ -669,6 +669,15 @@ private fun MermaidDiagram(block: MarkdownBlock.Code, options: MarkdownRenderOpt
         var showFullscreen by remember(block.content) { mutableStateOf(false) }
         var scale by remember(bitmap) { mutableFloatStateOf(1f) }
         var translation by remember(bitmap) { mutableStateOf(Offset.Zero) }
+        var copyVersion by remember(block.content) { mutableStateOf(0) }
+        var copied by remember(block.content) { mutableStateOf(false) }
+        LaunchedEffect(copyVersion) {
+            if (copyVersion > 0) {
+                copied = true
+                delay(1_000)
+                copied = false
+            }
+        }
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(8.dp),
@@ -718,8 +727,11 @@ private fun MermaidDiagram(block: MarkdownBlock.Code, options: MarkdownRenderOpt
                             }
                         }
                     } else {
-                        MermaidViewportButton(Lucide.Copy, "复制代码") {
-                            scope.launch { clipboard.setClipEntry(ClipEntry(StringSelection(block.content))) }
+                        MermaidCopyButton(copied = copied) {
+                            scope.launch {
+                                clipboard.setClipEntry(ClipEntry(StringSelection(block.content)))
+                                copyVersion++
+                            }
                         }
                     }
                 }
@@ -851,6 +863,19 @@ private fun MermaidViewportButton(
 ) {
     androidx.compose.material3.IconButton(onClick = onClick, modifier = Modifier.size(30.dp)) {
         androidx.compose.material3.Icon(icon, description, Modifier.size(16.dp))
+    }
+}
+
+@Composable
+private fun MermaidCopyButton(copied: Boolean, onClick: () -> Unit) {
+    androidx.compose.material3.IconButton(onClick = onClick, modifier = Modifier.size(30.dp)) {
+        AnimatedContent(
+            targetState = if (copied) Lucide.Check else Lucide.Copy,
+            transitionSpec = { fadeIn(tween(150)) togetherWith fadeOut(tween(150)) },
+            label = "mermaidCopyIcon"
+        ) { icon ->
+            androidx.compose.material3.Icon(icon, "复制代码", Modifier.size(16.dp))
+        }
     }
 }
 
