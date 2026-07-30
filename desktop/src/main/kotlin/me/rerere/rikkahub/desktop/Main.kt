@@ -119,6 +119,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
@@ -2431,6 +2432,7 @@ private fun ChatPane(
     val displayItems = remember(conversation.messages) {
         buildDesktopChatDisplayItems(conversation.messages)
     }
+    val navigationItems = remember(displayItems) { buildDesktopMessageNavigationItems(displayItems) }
     var showMessageJumper by remember(conversation.id) { mutableStateOf(false) }
     var pointerOverMessageJumper by remember(conversation.id) { mutableStateOf(false) }
     var pointerOverMessageJumperEdge by remember(conversation.id) { mutableStateOf(false) }
@@ -2824,9 +2826,16 @@ private fun ChatPane(
                     visible = showMessageJumper && !listState.isScrollInProgress,
                     onLeft = preferences.messageJumperOnLeft,
                     state = listState,
-                    messageCount = displayItems.size,
+                    items = navigationItems,
                     language = preferences.language,
-                    onPointerOverChange = { pointerOverMessageJumper = it }
+                    onPointerOverChange = { pointerOverMessageJumper = it },
+                    onMessageSelected = { messageId ->
+                        highlightedMessageId = messageId
+                        scope.launch {
+                            delay(1_800)
+                            if (highlightedMessageId == messageId) highlightedMessageId = null
+                        }
+                    }
                 )
             }
             Composer(
@@ -2963,22 +2972,34 @@ private fun BoxScope.DesktopMessageJumper(
     visible: Boolean,
     onLeft: Boolean,
     state: LazyListState,
-    messageCount: Int,
+    items: List<DesktopMessageNavigationItem>,
     language: DesktopLanguage,
-    onPointerOverChange: (Boolean) -> Unit
+    onPointerOverChange: (Boolean) -> Unit,
+    onMessageSelected: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val alignment = if (onLeft) Alignment.CenterStart else Alignment.CenterEnd
     val color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f)
     val horizontalOffset: (Int) -> Int = { width -> if (onLeft) -width else width }
+    val messageCount = items.size
     val currentMessage = state.firstVisibleItemIndex.coerceIn(0, messageCount.coerceAtLeast(1) - 1) + 1
+    var previewOpen by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var pointerOverControls by remember { mutableStateOf(false) }
+    val filteredItems = remember(items, query) { items.filterForNavigation(query) }
 
     AnimatedVisibility(
         visible = visible,
         modifier = Modifier.align(alignment)
             .padding(horizontal = 12.dp)
-            .onPointerEvent(PointerEventType.Enter) { onPointerOverChange(true) }
-            .onPointerEvent(PointerEventType.Exit) { onPointerOverChange(false) },
+            .onPointerEvent(PointerEventType.Enter) {
+                pointerOverControls = true
+                onPointerOverChange(true)
+            }
+            .onPointerEvent(PointerEventType.Exit) {
+                pointerOverControls = false
+                if (!previewOpen) onPointerOverChange(false)
+            },
         enter = fadeIn(tween(180)) + slideInHorizontally(tween(180), initialOffsetX = horizontalOffset),
         exit = fadeOut(tween(220)) + slideOutHorizontally(tween(220), targetOffsetX = horizontalOffset)
     ) {
@@ -2989,14 +3010,89 @@ private fun BoxScope.DesktopMessageJumper(
             MessageJumperButton(Lucide.ArrowUp, desktopText(language, "jumper.previous"), color) {
                 scope.launch { state.animateScrollToItem((state.firstVisibleItemIndex - 1).coerceAtLeast(0)) }
             }
-            Surface(
-                modifier = Modifier.size(width = 40.dp, height = 28.dp),
-                shape = RoundedCornerShape(6.dp),
-                color = color,
-                tonalElevation = 2.dp
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text("$currentMessage/$messageCount", fontSize = 10.sp)
+            Box {
+                Surface(
+                    onClick = { previewOpen = true },
+                    modifier = Modifier.size(width = 40.dp, height = 28.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    color = color,
+                    tonalElevation = 2.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("$currentMessage/$messageCount", fontSize = 10.sp)
+                    }
+                }
+                DropdownMenu(
+                    expanded = previewOpen,
+                    onDismissRequest = {
+                        previewOpen = false
+                        onPointerOverChange(pointerOverControls)
+                    },
+                    offset = if (onLeft) DpOffset(48.dp, 0.dp) else DpOffset((-348).dp, 0.dp),
+                    modifier = Modifier.width(340.dp)
+                ) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        singleLine = true,
+                        placeholder = { Text(desktopText(language, "jumper.search_messages")) },
+                        leadingIcon = { Icon(Lucide.Search, null, Modifier.size(18.dp)) }
+                    )
+                    if (filteredItems.isEmpty()) {
+                        Text(
+                            desktopText(language, "jumper.no_matching_messages"),
+                            Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.sp
+                        )
+                    } else {
+                        Column(
+                            Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())
+                        ) {
+                            filteredItems.forEach { item ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    desktopText(language, if (item.role == "user") "jumper.user" else "jumper.assistant"),
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                                Text(
+                                                    MessageTimeFormatter.format(Instant.ofEpochMilli(item.createdAt)),
+                                                    Modifier.padding(start = 8.dp),
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontSize = 11.sp
+                                                )
+                                            }
+                                            Text(
+                                                item.summary.ifBlank { desktopText(language, "jumper.empty_message") },
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (item.role == "user") Lucide.UserRound else Lucide.Bot,
+                                            null,
+                                            Modifier.size(18.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        previewOpen = false
+                                        onPointerOverChange(pointerOverControls)
+                                        onMessageSelected(item.messageId)
+                                        scope.launch { state.animateScrollToItem(item.displayIndex) }
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
             MessageJumperButton(Lucide.ArrowDown, desktopText(language, "jumper.next"), color) {

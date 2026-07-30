@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class DesktopChatTimelineTest {
     @Test
@@ -97,5 +98,35 @@ class DesktopChatTimelineTest {
         assertEquals(true, turn.timelineAfterContent)
         assertEquals("command output", assertIs<DesktopExecutionStep.ToolCall>(turn.steps[0]).result?.content)
         assertEquals("Done", assertIs<DesktopChatDisplayItem.Message>(items[1]).message.content)
+    }
+
+    @Test
+    fun buildsSearchableNavigationItemsFromVisibleMessages() {
+        val call = DesktopToolCall("call", "search")
+        val messages = listOf(
+            ChatMessage("user", "Find Kotlin docs", createdAt = 10),
+            ChatMessage("assistant", "", toolCalls = listOf(call), createdAt = 20),
+            ChatMessage("tool", "tool output", toolCallId = call.id, createdAt = 30),
+            ChatMessage("assistant", "Kotlin documentation", createdAt = 40)
+        )
+
+        val navigationItems = buildDesktopMessageNavigationItems(buildDesktopChatDisplayItems(messages))
+
+        assertEquals(2, navigationItems.size)
+        assertEquals("Find Kotlin docs", navigationItems[0].summary)
+        assertEquals("Kotlin documentation", navigationItems[1].summary)
+        assertEquals(1, navigationItems[1].displayIndex)
+        assertEquals(listOf("Kotlin documentation"), navigationItems.filterForNavigation("DOCUMENT").map { it.content })
+    }
+
+    @Test
+    fun navigationSearchExcludesToolContentAndNormalizesSummaries() {
+        val items = listOf(
+            DesktopMessageNavigationItem(0, "user", "user", " first\n  message ", 0),
+            DesktopMessageNavigationItem(1, "tool", "tool", "private result", 0)
+        )
+
+        assertEquals("first message", items.first().summary)
+        assertTrue(items.filterForNavigation("private").isEmpty())
     }
 }

@@ -43,6 +43,7 @@ internal fun desktopText(language: DesktopLanguage, key: String): String {
     return texts[key]
         ?: DesktopNavigationTranslations[resolvedLanguage]?.get(key)
         ?: DesktopCommonTranslations[resolvedLanguage]?.get(key)
+        ?: DesktopMessageJumperTranslations[resolvedLanguage]?.get(key)
         ?: EnglishDesktopTranslations[key]
         ?: key
 }

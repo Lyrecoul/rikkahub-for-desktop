@@ -40,6 +40,36 @@ internal sealed interface DesktopExecutionStep {
     data class ToolResult(val message: ChatMessage) : DesktopExecutionStep
 }
 
+internal data class DesktopMessageNavigationItem(
+    val displayIndex: Int,
+    val messageId: String,
+    val role: String,
+    val content: String,
+    val createdAt: Long,
+) {
+    val summary: String = content.trim().replace(Regex("\\s+"), " ").take(160)
+}
+
+/** Builds the searchable navigation list from the same presentation items as the chat. */
+internal fun buildDesktopMessageNavigationItems(
+    displayItems: List<DesktopChatDisplayItem>
+): List<DesktopMessageNavigationItem> = displayItems.mapIndexed { displayIndex, item ->
+    val message = when (item) {
+        is DesktopChatDisplayItem.Message -> item.message
+        is DesktopChatDisplayItem.AssistantTurn -> item.message
+    }
+    DesktopMessageNavigationItem(displayIndex, message.id, message.role, message.content, message.createdAt)
+}
+
+/** Only visible user and assistant text is searchable; tool and reasoning details remain in the message view. */
+internal fun List<DesktopMessageNavigationItem>.filterForNavigation(query: String): List<DesktopMessageNavigationItem> {
+    val normalizedQuery = query.trim()
+    if (normalizedQuery.isEmpty()) return this
+    return filter { item ->
+        item.role in setOf("user", "assistant") && item.content.contains(normalizedQuery, ignoreCase = true)
+    }
+}
+
 internal fun buildDesktopChatDisplayItems(messages: List<ChatMessage>): List<DesktopChatDisplayItem> {
     val items = mutableListOf<DesktopChatDisplayItem>()
     var index = 0
