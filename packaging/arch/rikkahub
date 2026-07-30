@@ -1,10 +1,13 @@
 #!/bin/sh
 
 app_dir=/usr/lib/rikkahub
+classpath=$(sed -n 's|^app\.classpath=\$APPDIR/||p' "$app_dir/rikkahub.cfg" | \
+  sed "s|^|$app_dir/|" | \
+  paste -sd: -)
 
 exec /usr/bin/java \
   -Dcompose.application.resources.dir="$app_dir/resources" \
   -Dcompose.application.configure.swing.globals=true \
   -Dskiko.library.path="$app_dir" \
-  -cp "$app_dir/*" \
+  -cp "$classpath" \
   me.rerere.rikkahub.desktop.MainKt "$@"

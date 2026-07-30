@@ -1,6 +1,6 @@
 pkgname=rikkahub
 pkgver=2.4.3
-pkgrel=3
+pkgrel=4
 pkgdesc='RikkaHub desktop LLM chat client'
 arch=('x86_64')
 url='https://github.com/rikkahub/rikkahub'
@@ -18,8 +18,14 @@ build() {
 
 package() {
   local app_dir="$startdir/../../desktop/build/compose/binaries/main/app/rikkahub"
+  local app_lib="$app_dir/lib/app"
   install -d "$pkgdir/usr/lib/rikkahub" "$pkgdir/usr/bin" "$pkgdir/usr/share/applications" "$pkgdir/usr/share/pixmaps" "$pkgdir/usr/share/icons/hicolor/192x192/apps"
-  cp -a "$app_dir/lib/app/." "$pkgdir/usr/lib/rikkahub/"
+  install -Dm644 "$app_lib/rikkahub.cfg" "$pkgdir/usr/lib/rikkahub/rikkahub.cfg"
+  sed -n 's|^app\.classpath=\$APPDIR/||p' "$app_lib/rikkahub.cfg" | while IFS= read -r jar; do
+    install -Dm644 "$app_lib/$jar" "$pkgdir/usr/lib/rikkahub/$jar"
+  done
+  install -Dm755 "$app_lib/libskiko-linux-x64.so" "$pkgdir/usr/lib/rikkahub/libskiko-linux-x64.so"
+  cp -a "$app_lib/resources/." "$pkgdir/usr/lib/rikkahub/resources/"
   install -Dm755 "$startdir/rikkahub" "$pkgdir/usr/bin/rikkahub"
   install -Dm644 "$startdir/../../desktop/src/main/resources/icon.png" "$pkgdir/usr/share/pixmaps/rikkahub.png"
   install -Dm644 "$startdir/../../desktop/src/main/resources/icon.png" "$pkgdir/usr/share/icons/hicolor/192x192/apps/rikkahub.png"
