@@ -21,9 +21,8 @@ internal fun DesktopLanguage.resolved(): DesktopLanguage = when (this) {
     else -> this
 }
 
-internal val DesktopLanguage.displayName: String
-    get() = when (this) {
-        DesktopLanguage.SYSTEM -> "System default"
+internal fun DesktopLanguage.displayName(language: DesktopLanguage): String = when (this) {
+        DesktopLanguage.SYSTEM -> desktopText(language, "language.system_default")
         DesktopLanguage.ENGLISH -> "English"
         DesktopLanguage.CHINESE_SIMPLIFIED -> "简体中文"
         DesktopLanguage.CHINESE_TRADITIONAL -> "繁體中文"

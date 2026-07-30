@@ -208,6 +208,47 @@ private const val SmoothScrollFrameDelayMillis = 7L
 private const val SmoothScrollAccelerationDeltaMillis = 50L
 private const val SmoothScrollAccelerationMax = 3f
 
+private fun DesktopData.settingsContentDiffersFrom(other: DesktopData): Boolean =
+    config != other.config ||
+        preferences != other.preferences ||
+        globalMemories != other.globalMemories ||
+        providers != other.providers ||
+        selectedProviderId != other.selectedProviderId ||
+        assistants != other.assistants ||
+        selectedAssistantId != other.selectedAssistantId ||
+        webSearchSettings != other.webSearchSettings ||
+        mcpServers != other.mcpServers
+
+private fun DesktopData.modifiedSettingsSectionsFrom(other: DesktopData): Set<DesktopSettingsSection> = buildSet {
+    val current = preferences
+    val saved = other.preferences
+    if (
+        current.colorMode != saved.colorMode || current.themeColor != saved.themeColor ||
+        current.fontFamily != saved.fontFamily || current.language != saved.language || current.fontScale != saved.fontScale
+    ) add(DesktopSettingsSection.GENERAL)
+    if (
+        current.showUserAvatar != saved.showUserAvatar || current.userNickname != saved.userNickname ||
+        current.showModelIcon != saved.showModelIcon || current.showModelName != saved.showModelName ||
+        current.showAssistantBubble != saved.showAssistantBubble || current.showMessageTimestamp != saved.showMessageTimestamp ||
+        current.showReasoning != saved.showReasoning || current.autoCollapseReasoning != saved.autoCollapseReasoning ||
+        current.codeBlockAutoWrap != saved.codeBlockAutoWrap || current.enableChineseTypography != saved.enableChineseTypography ||
+        current.enableMermaidRendering != saved.enableMermaidRendering || current.enableMermaidCli != saved.enableMermaidCli ||
+        current.mermaidCliPath != saved.mermaidCliPath || current.mermaidUseSystemBrowser != saved.mermaidUseSystemBrowser
+    ) add(DesktopSettingsSection.MESSAGE_DISPLAY)
+    if (
+        current.sendOnEnter != saved.sendOnEnter || current.enableAutoScroll != saved.enableAutoScroll ||
+        current.enableSmoothScroll != saved.enableSmoothScroll || current.showMessageJumper != saved.showMessageJumper ||
+        current.messageJumperOnLeft != saved.messageJumperOnLeft
+    ) add(DesktopSettingsSection.INTERACTION)
+    if (globalMemories != other.globalMemories || webSearchSettings != other.webSearchSettings || mcpServers != other.mcpServers) {
+        add(DesktopSettingsSection.DATA)
+    }
+    if (assistants != other.assistants || selectedAssistantId != other.selectedAssistantId) add(DesktopSettingsSection.ASSISTANTS)
+    if (providers != other.providers || selectedProviderId != other.selectedProviderId || config != other.config) {
+        add(DesktopSettingsSection.PROVIDERS)
+    }
+}
+
 private data class SmoothScrollImpulse(
     val distance: Float,
     val startTimeNanos: Long,
@@ -329,6 +370,10 @@ private fun RikkaHubDesktop(
     var pendingAttachments by remember { mutableStateOf<List<DesktopAttachment>>(emptyList()) }
     var showSettings by remember { mutableStateOf(false) }
     var settingsSection by remember { mutableStateOf(DesktopSettingsSection.GENERAL) }
+    var settingsDraft by remember { mutableStateOf<DesktopData?>(null) }
+    var settingsExitConfirmationOpen by remember { mutableStateOf(false) }
+    var pendingSettingsExit by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingSettingsExitLanguage by remember { mutableStateOf<DesktopLanguage?>(null) }
     var showSidebar by remember { mutableStateOf(true) }
     var sidebarPreferredWidth by remember { mutableStateOf(292.dp) }
     var sidebarResizeHovered by remember { mutableStateOf(false) }
@@ -374,6 +419,56 @@ private fun RikkaHubDesktop(
                     generationErrors[next.selectedConversationId] = desktopText(next.preferences.language, "runtime.save_failed")
                         .replace("%s", error.message ?: desktopText(next.preferences.language, "runtime.unknown_error"))
                 }
+        }
+    }
+
+    fun openSettings(section: DesktopSettingsSection) {
+        settingsSection = section
+        settingsDraft = data
+        showSettings = true
+    }
+
+    fun updateSettingsDraft(transform: (DesktopData) -> DesktopData) {
+        settingsDraft = transform(settingsDraft ?: data)
+    }
+
+    fun saveSettingsDraft() {
+        val draft = (settingsDraft ?: data).let { current ->
+            pendingSettingsExitLanguage?.let { language ->
+                current.copy(preferences = current.preferences.copy(language = language))
+            } ?: current
+        }
+        val deletedProviderIds = data.providers.map(DesktopProviderProfile::id) - draft.providers.map(DesktopProviderProfile::id).toSet()
+        deletedProviderIds.forEach(store::deleteProviderSecret)
+        val deletedAssistantIds = data.assistants.map(DesktopAssistantProfile::id) - draft.assistants.map(DesktopAssistantProfile::id).toSet()
+        val dataWithDeletedAssistants = deletedAssistantIds.fold(data) { current, assistantId ->
+            current.deleteAssistantProfile(assistantId)
+        }
+        update(dataWithDeletedAssistants.copy(
+            config = draft.config,
+            preferences = draft.preferences,
+            globalMemories = draft.globalMemories,
+            providers = draft.providers,
+            selectedProviderId = draft.selectedProviderId,
+            assistants = draft.assistants,
+            selectedAssistantId = draft.selectedAssistantId,
+            webSearchSettings = draft.webSearchSettings,
+            mcpServers = draft.mcpServers
+        ))
+    }
+
+    fun requestSettingsExit(afterExit: () -> Unit = {}, language: DesktopLanguage? = null) {
+        val draft = settingsDraft
+        val changedLanguage = language?.takeIf { it != data.preferences.language }
+        if ((draft != null && draft.settingsContentDiffersFrom(data)) || changedLanguage != null) {
+            pendingSettingsExit = afterExit
+            pendingSettingsExitLanguage = changedLanguage
+            settingsExitConfirmationOpen = true
+        } else {
+            settingsDraft = null
+            pendingSettingsExitLanguage = null
+            showSettings = false
+            afterExit()
         }
     }
 
@@ -484,6 +579,7 @@ private fun RikkaHubDesktop(
         prompt = ""
         pendingAttachments = emptyList()
         update(imported)
+        settingsDraft = imported
         return desktopText(data.preferences.language, "file.imported_backup").replace("%s", source.toPath().toString())
     }
 
@@ -496,7 +592,9 @@ private fun RikkaHubDesktop(
         prompt = ""
         pendingAttachments = emptyList()
         store.clearSecrets(data)
-        update(DesktopData())
+        val resetData = DesktopData()
+        update(resetData)
+        settingsDraft = resetData
     }
 
     fun chooseAttachments(): List<DesktopAttachment>? {
@@ -1004,8 +1102,7 @@ private fun RikkaHubDesktop(
         BoxWithConstraints(
             Modifier.fillMaxSize().onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && event.isCtrlPressed && event.key == Key.N) {
-                    newConversation()
-                    showSettings = false
+                    requestSettingsExit(::newConversation)
                     true
                 } else {
                     false
@@ -1023,22 +1120,25 @@ private fun RikkaHubDesktop(
                     settingsSelected = showSettings,
                     generatingConversationIds = generationJobs.keys,
                     onSelect = {
-                        update(data.copy(selectedConversationId = it))
-                        jumpToMessageId = null
-                        showSettings = false
-                        if (compact) showSidebar = false
+                        requestSettingsExit(afterExit = {
+                            update(data.copy(selectedConversationId = it))
+                            jumpToMessageId = null
+                            if (compact) showSidebar = false
+                        })
                     },
                     onSelectFavorite = { conversationId, messageId ->
-                        update(data.copy(selectedConversationId = conversationId))
-                        jumpToMessageId = messageId
-                        jumpToMessageRequest++
-                        showSettings = false
-                        if (compact) showSidebar = false
+                        requestSettingsExit(afterExit = {
+                            update(data.copy(selectedConversationId = conversationId))
+                            jumpToMessageId = messageId
+                            jumpToMessageRequest++
+                            if (compact) showSidebar = false
+                        })
                     },
                     onNew = {
-                        newConversation()
-                        showSettings = false
-                        if (compact) showSidebar = false
+                        requestSettingsExit(afterExit = {
+                            newConversation()
+                            if (compact) showSidebar = false
+                        })
                     },
                     onDelete = { id ->
                         generationJobs.remove(id)?.cancel()
@@ -1059,8 +1159,7 @@ private fun RikkaHubDesktop(
                         update(data.copy(preferences = data.preferences.copy(conversationSort = sort)))
                     },
                     onSettings = {
-                        settingsSection = DesktopSettingsSection.GENERAL
-                        showSettings = true
+                        openSettings(DesktopSettingsSection.GENERAL)
                         if (compact) showSidebar = false
                     },
                     modifier = Modifier.width(sidebarWidth)
@@ -1095,30 +1194,73 @@ private fun RikkaHubDesktop(
             }
             if (!compact || !showSidebar) {
                 if (showSettings) {
+                    val settingsData = settingsDraft ?: data
+                    val modifiedProviderIds = settingsData.providers.filter { provider ->
+                        data.providers.firstOrNull { it.id == provider.id } != provider
+                    }.mapTo(mutableSetOf(), DesktopProviderProfile::id)
+                    val modifiedAssistantIds = settingsData.assistants.filter { assistant ->
+                        data.assistants.firstOrNull { it.id == assistant.id } != assistant
+                    }.mapTo(mutableSetOf(), DesktopAssistantProfile::id)
+                    val modifiedSections = settingsData.modifiedSettingsSectionsFrom(data)
                     DesktopSettingsPane(
-                        providers = data.providers.ifEmpty { listOf(data.activeProvider()) },
-                        selectedProviderId = data.activeProvider().id,
-                        assistants = data.assistants.ifEmpty { listOf(data.activeAssistant()) },
-                        selectedAssistantId = data.activeAssistant().id,
-                        preferences = data.preferences,
-                        globalMemories = data.globalMemories,
-                        webSearchSettings = data.webSearchSettings,
+                        providers = settingsData.providers.ifEmpty { listOf(settingsData.activeProvider()) },
+                        selectedProviderId = settingsData.activeProvider().id,
+                        assistants = settingsData.assistants.ifEmpty { listOf(settingsData.activeAssistant()) },
+                        selectedAssistantId = settingsData.activeAssistant().id,
+                        preferences = settingsData.preferences,
+                        globalMemories = settingsData.globalMemories,
+                        webSearchSettings = settingsData.webSearchSettings,
                         client = client,
-                        mcpServers = data.mcpServers,
+                        mcpServers = settingsData.mcpServers,
                         mcpClient = mcpClient,
                         initialSection = settingsSection,
                         showMenu = compact,
                         onMenu = { showSidebar = true },
-                        onBack = { showSettings = false },
-                        onProviderSelect = ::selectProvider,
-                        onProviderSave = ::saveProvider,
-                        onProviderAdd = ::addProvider,
-                        onProviderDelete = ::deleteProvider,
-                        onAssistantSelect = ::selectAssistantProfile,
-                        onAssistantSave = ::saveAssistant,
-                        onAssistantAdd = ::addAssistant,
-                        onAssistantCopy = ::copyAssistant,
-                        onAssistantDelete = ::deleteAssistant,
+                        onBack = { language -> requestSettingsExit(language = language) },
+                        modifiedProviderIds = modifiedProviderIds,
+                        modifiedAssistantIds = modifiedAssistantIds,
+                        modifiedSections = modifiedSections,
+                        hasUnsavedChanges = settingsData.settingsContentDiffersFrom(data),
+                        onSaveAll = {
+                            saveSettingsDraft()
+                            settingsDraft = null
+                        },
+                        onProviderSelect = { providerId -> updateSettingsDraft { it.selectProviderConfig(providerId) } },
+                        onProviderSave = { profile -> updateSettingsDraft { it.saveProviderProfile(profile) } },
+                        onProviderAdd = {
+                            val profile = DesktopProviderProfile(
+                                name = desktopText(settingsData.preferences.language, "defaults.new_provider"),
+                                config = DesktopConfig(model = "", systemPrompt = settingsData.config.systemPrompt)
+                            )
+                            updateSettingsDraft {
+                                it.copy(
+                                    config = profile.config,
+                                    providers = it.providers.ifEmpty { listOf(it.activeProvider()) } + profile,
+                                    selectedProviderId = profile.id
+                                )
+                            }
+                        },
+                        onProviderDelete = { providerId -> updateSettingsDraft { it.deleteProviderProfile(providerId) } },
+                        onAssistantSelect = { assistantId ->
+                            updateSettingsDraft {
+                                if (it.assistants.any { assistant -> assistant.id == assistantId }) {
+                                    it.copy(selectedAssistantId = assistantId)
+                                } else {
+                                    it
+                                }
+                            }
+                        },
+                        onAssistantSave = { profile -> updateSettingsDraft { it.saveAssistantProfile(profile) } },
+                        onAssistantAdd = {
+                            val assistant = DesktopAssistantProfile(name = desktopText(settingsData.preferences.language, "defaults.new_assistant"))
+                            updateSettingsDraft { it.copy(assistants = it.assistants + assistant, selectedAssistantId = assistant.id) }
+                        },
+                        onAssistantCopy = { assistantId ->
+                            val source = (settingsDraft ?: data).assistants.firstOrNull { it.id == assistantId } ?: return@DesktopSettingsPane
+                            val copy = source.copy(id = UUID.randomUUID().toString(), name = "${source.name} copy")
+                            updateSettingsDraft { it.copy(assistants = it.assistants + copy, selectedAssistantId = copy.id) }
+                        },
+                        onAssistantDelete = { assistantId -> updateSettingsDraft { it.deleteAssistantProfile(assistantId) } },
                         onExportData = {
                             runCatching { exportBackup() }.getOrElse {
                                 desktopText(data.preferences.language, "runtime.export_failed").replace("%s", it.message.orEmpty())
@@ -1130,10 +1272,12 @@ private fun RikkaHubDesktop(
                             }
                         },
                         onResetData = ::resetDesktopData,
-                        onWebSearchSettingsChange = { update(data.copy(webSearchSettings = it)) },
-                        onMcpServersChange = { update(data.copy(mcpServers = it)) },
-                        onPreferencesChange = { update(data.copy(preferences = it)) },
-                        onGlobalMemoriesChange = { update(data.copy(globalMemories = it.filter { memory -> memory.content.isNotBlank() })) }
+                        onWebSearchSettingsChange = { value -> updateSettingsDraft { it.copy(webSearchSettings = value) } },
+                        onMcpServersChange = { servers -> updateSettingsDraft { it.copy(mcpServers = servers) } },
+                        onPreferencesChange = { value -> updateSettingsDraft { it.copy(preferences = value) } },
+                        onGlobalMemoriesChange = { memories ->
+                            updateSettingsDraft { it.copy(globalMemories = memories.filter { memory -> memory.content.isNotBlank() }) }
+                        }
                     )
                 } else {
                     ChatPane(
@@ -1162,12 +1306,10 @@ private fun RikkaHubDesktop(
                         onMenu = { showSidebar = true },
                         onNew = ::newConversation,
                         onSettings = {
-                            settingsSection = DesktopSettingsSection.PROVIDERS
-                            showSettings = true
+                            openSettings(DesktopSettingsSection.PROVIDERS)
                         },
                         onAssistantSettings = {
-                            settingsSection = DesktopSettingsSection.ASSISTANTS
-                            showSettings = true
+                            openSettings(DesktopSettingsSection.ASSISTANTS)
                         },
                         onProviderModelSelect = { providerId, selectedModel ->
                             selectAssistantModel(selectedAssistant.id, providerId, selectedModel)
@@ -1182,8 +1324,7 @@ private fun RikkaHubDesktop(
                             saveAssistant(selectedAssistant.copy(mcpServerIds = serverIds))
                         },
                         onMcpSettings = {
-                            settingsSection = DesktopSettingsSection.PROVIDERS
-                            showSettings = true
+                            openSettings(DesktopSettingsSection.PROVIDERS)
                         },
                         onToggleWebSearch = {
                             updateConversation(selected.id) { conversation ->
@@ -1353,6 +1494,46 @@ private fun RikkaHubDesktop(
         }
     }
         }
+
+    if (settingsExitConfirmationOpen) {
+        AlertDialog(
+            onDismissRequest = {
+                settingsExitConfirmationOpen = false
+                pendingSettingsExit = null
+                pendingSettingsExitLanguage = null
+            },
+            title = { Text(desktopText(data.preferences.language, "settings.unsaved_changes_title")) },
+            text = { Text(desktopText(data.preferences.language, "settings.unsaved_changes_description")) },
+            confirmButton = {
+                Button(onClick = {
+                    saveSettingsDraft()
+                    settingsDraft = null
+                    pendingSettingsExitLanguage = null
+                    showSettings = false
+                    settingsExitConfirmationOpen = false
+                    pendingSettingsExit?.invoke()
+                    pendingSettingsExit = null
+                }) { Text(desktopText(data.preferences.language, "common.save")) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        settingsExitConfirmationOpen = false
+                        pendingSettingsExit = null
+                        pendingSettingsExitLanguage = null
+                    }) { Text(desktopText(data.preferences.language, "common.cancel")) }
+                    TextButton(onClick = {
+                        settingsDraft = null
+                        pendingSettingsExitLanguage = null
+                        showSettings = false
+                        settingsExitConfirmationOpen = false
+                        pendingSettingsExit?.invoke()
+                        pendingSettingsExit = null
+                    }) { Text(desktopText(data.preferences.language, "settings.discard_changes")) }
+                }
+            }
+        )
+    }
 
     renameTarget?.let { target ->
         TextEditDialog(

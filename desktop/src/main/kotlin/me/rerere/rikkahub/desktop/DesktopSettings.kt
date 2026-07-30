@@ -122,7 +122,12 @@ internal fun DesktopSettingsPane(
     initialSection: DesktopSettingsSection,
     showMenu: Boolean,
     onMenu: () -> Unit,
-    onBack: () -> Unit,
+    onBack: (DesktopLanguage?) -> Unit,
+    modifiedProviderIds: Set<String>,
+    modifiedAssistantIds: Set<String>,
+    modifiedSections: Set<DesktopSettingsSection>,
+    hasUnsavedChanges: Boolean,
+    onSaveAll: () -> Unit,
     onProviderSelect: (String) -> Unit,
     onProviderSave: (DesktopProviderProfile) -> Unit,
     onProviderAdd: () -> Unit,
@@ -144,7 +149,9 @@ internal fun DesktopSettingsPane(
     val selectedAssistant = assistants.firstOrNull { it.id == selectedAssistantId } ?: assistants.first()
     var draftProvider by remember(selectedProvider) { mutableStateOf(selectedProvider) }
     var draftAssistant by remember(selectedAssistant) { mutableStateOf(selectedAssistant) }
+    var draftLanguage by remember(preferences.language) { mutableStateOf(preferences.language) }
     var apiKeyVisible by remember { mutableStateOf(false) }
+    var webSearchApiKeyVisible by remember { mutableStateOf(false) }
     var connectionState by remember(selectedProvider.id) {
         mutableStateOf<ConnectionState>(ConnectionState.Idle)
     }
@@ -188,6 +195,35 @@ internal fun DesktopSettingsPane(
         draftProvider.config.customHeaders.all { it.name.isNotBlank() } && draftProvider.config.customBodies.all { body ->
             body.key.isNotBlank() && runCatching { Json.parseToJsonElement(body.value) }.isSuccess
         }
+    }
+    val assistantDraftValid = draftAssistant.name.isNotBlank() &&
+        draftAssistant.presetMessages.all { it.content.isNotBlank() } &&
+        draftAssistant.quickMessages.all { it.content.isNotBlank() } &&
+        messageTemplateValid && regexRulesValid && assistantBodiesValid && memoriesValid && injectionsValid
+    val providerDraftValid = draftProvider.name.isNotBlank() && providerBodiesValid &&
+        draftProvider.config.baseUrl.isNotBlank() && draftProvider.config.model.isNotBlank()
+    val assistantDraftChanged = draftAssistant != selectedAssistant
+    val providerDraftChanged = draftProvider != selectedProvider
+    val effectiveModifiedSections = if (draftLanguage != preferences.language) {
+        modifiedSections + DesktopSettingsSection.GENERAL
+    } else {
+        modifiedSections
+    }
+    fun saveDraftLanguage() {
+        if (draftLanguage != preferences.language) onPreferencesChange(preferences.copy(language = draftLanguage))
+    }
+    fun saveCurrentProfileDrafts() {
+        if (assistantDraftChanged && assistantDraftValid) onAssistantSave(draftAssistant)
+        if (providerDraftChanged && providerDraftValid) onProviderSave(draftProvider)
+    }
+    fun requestBack() {
+        saveCurrentProfileDrafts()
+        onBack(draftLanguage.takeIf { it != preferences.language })
+    }
+    fun saveAll() {
+        saveDraftLanguage()
+        saveCurrentProfileDrafts()
+        onSaveAll()
     }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
@@ -250,7 +286,7 @@ internal fun DesktopSettingsPane(
             Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = if (showMenu) onMenu else onBack) {
+            IconButton(onClick = if (showMenu) onMenu else ::requestBack) {
                 Icon(if (showMenu) Lucide.Menu else Lucide.ArrowLeft, desktopText(preferences.language, "settings.back"))
             }
             Column(Modifier.padding(start = 4.dp)) {
@@ -261,6 +297,16 @@ internal fun DesktopSettingsPane(
                     fontSize = 12.sp
                 )
             }
+            Spacer(Modifier.weight(1f))
+            Button(
+                onClick = ::saveAll,
+                enabled = (hasUnsavedChanges || assistantDraftChanged || providerDraftChanged || draftLanguage != preferences.language) &&
+                    (!assistantDraftChanged || assistantDraftValid) &&
+                    (!providerDraftChanged || providerDraftValid)
+            ) {
+                Icon(Lucide.Save, null, Modifier.size(17.dp))
+                Text(desktopText(preferences.language, "common.save"), Modifier.padding(start = 7.dp))
+            }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
 
@@ -269,6 +315,7 @@ internal fun DesktopSettingsPane(
                 DesktopSettingsNavigation(
                     activeSection = activeSection,
                     language = preferences.language,
+                    modifiedSections = effectiveModifiedSections,
                     onSectionClick = { section ->
                         activeSection = section
                         sectionNavigationJob?.cancel()
@@ -302,7 +349,7 @@ internal fun DesktopSettingsPane(
                         sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
                     }
                 ) {
-                        SettingsSection(desktopText(preferences.language, "settings.section.general"), Lucide.Palette) {
+                    SettingsSection(desktopText(preferences.language, "settings.section.general"), Lucide.Palette, DesktopSettingsSection.GENERAL in effectiveModifiedSections) {
                         SettingsRow(
                             title = desktopText(preferences.language, "settings.color_mode"),
                             description = desktopText(preferences.language, "settings.color_mode_description")
@@ -359,8 +406,9 @@ internal fun DesktopSettingsPane(
                             description = desktopText(preferences.language, "settings.language_description")
                         ) {
                             DesktopLanguageSelector(
-                                selected = preferences.language,
-                                onSelect = { onPreferencesChange(preferences.copy(language = it)) }
+                                selected = draftLanguage,
+                                displayLanguage = preferences.language,
+                                onSelect = { draftLanguage = it }
                             )
                         }
                         SettingsDivider()
@@ -387,7 +435,7 @@ internal fun DesktopSettingsPane(
                         sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
                     }
                 ) {
-                    SettingsSection(desktopText(preferences.language, "settings.section.messages"), Lucide.MessageSquareText) {
+                    SettingsSection(desktopText(preferences.language, "settings.section.messages"), Lucide.MessageSquareText, DesktopSettingsSection.MESSAGE_DISPLAY in modifiedSections) {
                         PreferenceSwitch(
                             desktopText(preferences.language, "settings.show_user_avatar"),
                             desktopText(preferences.language, "settings.show_user_avatar_description"),
@@ -503,7 +551,7 @@ internal fun DesktopSettingsPane(
                         sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
                     }
                 ) {
-                    SettingsSection(desktopText(preferences.language, "settings.section.interaction"), Lucide.Keyboard) {
+                    SettingsSection(desktopText(preferences.language, "settings.section.interaction"), Lucide.Keyboard, DesktopSettingsSection.INTERACTION in modifiedSections) {
                         PreferenceSwitch(
                             desktopText(preferences.language, "settings.send_on_enter"),
                             desktopText(preferences.language, "settings.send_on_enter_description"),
@@ -544,7 +592,7 @@ internal fun DesktopSettingsPane(
                         sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
                     }
                 ) {
-                    SettingsSection(desktopText(preferences.language, "settings.section.data"), Lucide.Save) {
+                    SettingsSection(desktopText(preferences.language, "settings.section.data"), Lucide.Save, DesktopSettingsSection.DATA in modifiedSections) {
                         SettingsRow(
                             title = desktopText(preferences.language, "settings.export_backup"),
                             description = desktopText(preferences.language, "settings.export_backup_description")
@@ -625,6 +673,18 @@ internal fun DesktopSettingsPane(
                                         onValueChange = { onWebSearchSettingsChange(webSearchSettings.withApiKey(it.trim())) },
                                         modifier = Modifier.fillMaxWidth(),
                                         label = { Text("${webSearchSettings.providerType.displayName} ${desktopText(preferences.language, "settings.api_key")}") },
+                                        visualTransformation = if (webSearchApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                        trailingIcon = {
+                                            IconButton(onClick = { webSearchApiKeyVisible = !webSearchApiKeyVisible }) {
+                                                Icon(
+                                                    if (webSearchApiKeyVisible) Lucide.EyeOff else Lucide.Eye,
+                                                    desktopText(
+                                                        preferences.language,
+                                                        if (webSearchApiKeyVisible) "settings.hide_api_key" else "settings.show_api_key"
+                                                    )
+                                                )
+                                            }
+                                        },
                                         singleLine = true
                                     )
                                 }
@@ -682,7 +742,7 @@ internal fun DesktopSettingsPane(
                         sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
                     }
                 ) {
-                    SettingsSection(desktopText(preferences.language, "settings.section.assistants"), Lucide.Bot) {
+                    SettingsSection(desktopText(preferences.language, "settings.section.assistants"), Lucide.Bot, DesktopSettingsSection.ASSISTANTS in modifiedSections) {
                         FlowRow(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -691,8 +751,20 @@ internal fun DesktopSettingsPane(
                             assistants.forEach { assistant ->
                                 FilterChip(
                                     selected = assistant.id == selectedAssistant.id,
-                                    onClick = { onAssistantSelect(assistant.id) },
-                                    label = { Text(assistant.name) },
+                                    onClick = {
+                                        saveCurrentProfileDrafts()
+                                        onAssistantSelect(assistant.id)
+                                    },
+                                    label = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(assistant.name)
+                                            if (assistant.id in modifiedAssistantIds ||
+                                                (assistant.id == selectedAssistant.id && assistantDraftChanged)
+                                            ) {
+                                                Text("*", Modifier.padding(start = 4.dp), color = MaterialTheme.colorScheme.primary)
+                                            }
+                                        }
+                                    },
                                     leadingIcon = { Icon(Lucide.Bot, null, Modifier.size(16.dp)) }
                                 )
                             }
@@ -1666,10 +1738,7 @@ internal fun DesktopSettingsPane(
                                     onAssistantSave(draftAssistant)
                                     scope.launch { feedbackHostState.showSnackbar(desktopText(preferences.language, "assistant.saved")) }
                                 },
-                                enabled = draftAssistant.name.isNotBlank() &&
-                                    draftAssistant.presetMessages.all { it.content.isNotBlank() } &&
-                                    draftAssistant.quickMessages.all { it.content.isNotBlank() } &&
-                                    messageTemplateValid && regexRulesValid && assistantBodiesValid && memoriesValid && injectionsValid,
+                                enabled = assistantDraftValid,
                                 modifier = Modifier.align(Alignment.End)
                             ) {
                                 Icon(Lucide.Save, null, Modifier.size(17.dp))
@@ -1685,7 +1754,7 @@ internal fun DesktopSettingsPane(
                         sectionAnchorsReady = sectionCoordinates.size == DesktopSettingsSection.entries.size
                     }
                 ) {
-                    SettingsSection(desktopText(preferences.language, "settings.section.providers"), Lucide.ServerCog) {
+                    SettingsSection(desktopText(preferences.language, "settings.section.providers"), Lucide.ServerCog, DesktopSettingsSection.PROVIDERS in modifiedSections) {
                         FlowRow(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1694,8 +1763,20 @@ internal fun DesktopSettingsPane(
                             providers.forEach { provider ->
                                 FilterChip(
                                     selected = provider.id == selectedProvider.id,
-                                    onClick = { onProviderSelect(provider.id) },
-                                    label = { Text(provider.name) },
+                                    onClick = {
+                                        saveCurrentProfileDrafts()
+                                        onProviderSelect(provider.id)
+                                    },
+                                    label = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(provider.name)
+                                            if (provider.id in modifiedProviderIds ||
+                                                (provider.id == selectedProvider.id && providerDraftChanged)
+                                            ) {
+                                                Text("*", Modifier.padding(start = 4.dp), color = MaterialTheme.colorScheme.primary)
+                                            }
+                                        }
+                                    },
                                     leadingIcon = {
                                         DesktopProviderIcon(provider.name, Modifier.size(16.dp))
                                     }
@@ -2068,9 +2149,7 @@ internal fun DesktopSettingsPane(
                                         onProviderSave(draftProvider)
                                         scope.launch { feedbackHostState.showSnackbar(desktopText(preferences.language, "settings.provider_saved")) }
                                     },
-                                    enabled = draftProvider.name.isNotBlank() && providerBodiesValid &&
-                                        draftProvider.config.baseUrl.isNotBlank() &&
-                                        draftProvider.config.model.isNotBlank()
+                                    enabled = providerDraftValid
                                 ) {
                                     Icon(Lucide.Save, null, Modifier.size(17.dp))
                                     Text(desktopText(preferences.language, "settings.save_provider"), Modifier.padding(start = 7.dp))
@@ -2081,7 +2160,7 @@ internal fun DesktopSettingsPane(
                 }
 
                 Box {
-                    TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(onClick = ::requestBack, modifier = Modifier.fillMaxWidth()) {
                         Icon(Lucide.ChevronLeft, null, Modifier.size(17.dp))
                         Text(desktopText(preferences.language, "settings.back_to_chat"), Modifier.padding(start = 6.dp))
                     }
@@ -2207,20 +2286,24 @@ private fun FontFamilySelector(
 }
 
 @Composable
-private fun DesktopLanguageSelector(selected: DesktopLanguage, onSelect: (DesktopLanguage) -> Unit) {
+private fun DesktopLanguageSelector(
+    selected: DesktopLanguage,
+    displayLanguage: DesktopLanguage,
+    onSelect: (DesktopLanguage) -> Unit
+) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.widthIn(min = 180.dp, max = 240.dp)) {
-            Text(selected.displayName, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(selected.displayName(displayLanguage), Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Icon(Lucide.ChevronDown, null, Modifier.padding(start = 6.dp).size(16.dp))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DesktopLanguage.entries.forEach { language ->
+            DesktopLanguage.entries.forEach { option ->
                 DropdownMenuItem(
-                    text = { Text(language.displayName) },
+                    text = { Text(option.displayName(displayLanguage)) },
                     onClick = {
                         expanded = false
-                        onSelect(language)
+                        onSelect(option)
                     }
                 )
             }
@@ -2348,7 +2431,7 @@ private fun RequestOverridesEditor(
 }
 
 @Composable
-private fun SettingsSection(title: String, icon: ImageVector, content: @Composable () -> Unit) {
+private fun SettingsSection(title: String, icon: ImageVector, modified: Boolean, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             Modifier.padding(horizontal = 4.dp),
@@ -2362,6 +2445,9 @@ private fun SettingsSection(title: String, icon: ImageVector, content: @Composab
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold
             )
+            if (modified) {
+                Text("*", Modifier.padding(start = 5.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            }
         }
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -2377,6 +2463,7 @@ private fun SettingsSection(title: String, icon: ImageVector, content: @Composab
 private fun DesktopSettingsNavigation(
     activeSection: DesktopSettingsSection,
     language: DesktopLanguage,
+    modifiedSections: Set<DesktopSettingsSection>,
     onSectionClick: (DesktopSettingsSection) -> Unit
 ) {
     Column(
@@ -2426,6 +2513,14 @@ private fun DesktopSettingsNavigation(
                         fontSize = 14.sp,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
                     )
+                    if (section in modifiedSections) {
+                        Text(
+                            "*",
+                            Modifier.padding(start = 5.dp),
+                            color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }
