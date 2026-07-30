@@ -253,6 +253,7 @@ private data class TranslationTarget(
 
 private data class RenderedChatItem(
     val messageIndex: Int,
+    val startMessageIndex: Int,
     val message: ChatMessage,
     val executionSteps: List<DesktopExecutionStep>,
     val timelineAfterContent: Boolean,
@@ -2742,6 +2743,7 @@ private fun ChatPane(
                             val renderedItem = when (item) {
                                 is DesktopChatDisplayItem.Message -> RenderedChatItem(
                                     item.messageIndex,
+                                    item.messageIndex,
                                     item.message,
                                     emptyList(),
                                     false,
@@ -2749,6 +2751,7 @@ private fun ChatPane(
                                 )
                                 is DesktopChatDisplayItem.AssistantTurn -> RenderedChatItem(
                                     item.messageIndex,
+                                    item.startMessageIndex,
                                     item.message,
                                     item.steps,
                                     item.timelineAfterContent,
@@ -2778,12 +2781,12 @@ private fun ChatPane(
                                                 onSaveMessageEdit(renderedItem.messageIndex, content)
                                                 editingMessageIndex = null
                                             },
-                                            onDelete = { onDeleteMessage(renderedItem.messageIndex) },
+                                            onDelete = { onDeleteMessage(renderedItem.startMessageIndex) },
                                             onToggleFavorite = { onToggleMessageFavorite(renderedItem.messageIndex) },
                                             onFork = { onForkAtMessage(renderedItem.messageIndex) },
                                             onTranslate = { onTranslateMessage(renderedItem.messageIndex) },
                                             highlighted = renderedItem.highlighted,
-                                            onRegenerate = { onRegenerateMessage(renderedItem.messageIndex) },
+                                            onRegenerate = { onRegenerateMessage(renderedItem.startMessageIndex) },
                                             onSelectVariant = { variantIndex ->
                                                 onSelectMessageVariant(renderedItem.messageIndex, variantIndex)
                                             },

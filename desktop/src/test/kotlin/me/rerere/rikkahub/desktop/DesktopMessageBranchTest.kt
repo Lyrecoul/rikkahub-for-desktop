@@ -2,6 +2,7 @@ package me.rerere.rikkahub.desktop
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class DesktopMessageBranchTest {
@@ -272,6 +273,24 @@ class DesktopMessageBranchTest {
     }
 
     @Test
+    fun deletingACollapsedToolTurnRemovesAllOfItsPersistedSteps() {
+        val toolCall = DesktopToolCall("call", "search")
+        val original = listOf(
+            ChatMessage("user", "question"),
+            ChatMessage("assistant", "", toolCalls = listOf(toolCall)),
+            ChatMessage("tool", "result", toolCallId = toolCall.id),
+            ChatMessage("assistant", "answer"),
+            ChatMessage("user", "follow-up")
+        )
+        val turn = assertIs<DesktopChatDisplayItem.AssistantTurn>(buildDesktopChatDisplayItems(original)[1])
+
+        val deleted = DesktopConversation(messages = original).deleteMessageAt(turn.startMessageIndex)
+
+        assertEquals(listOf("question"), deleted.messages.map { it.content })
+        assertEquals(original, deleted.branches.single().messages)
+    }
+
+    @Test
     fun deletingTheLastMessageDoesNotCreateAnUnnecessarySnapshot() {
         val conversation = DesktopConversation(messages = listOf(ChatMessage("user", "draft")))
 
@@ -298,6 +317,27 @@ class DesktopMessageBranchTest {
         assertEquals(listOf("question", ""), regenerated.messages.map { it.content })
         assertEquals(listOf("question", "first answer", "follow-up"), regenerated.branches.single().messages.map { it.content })
         assertEquals("重新生成前历史", regenerated.branches.single().name)
+    }
+
+    @Test
+    fun regeneratingACollapsedToolTurnStartsBeforeItsFirstStep() {
+        val toolCall = DesktopToolCall("call", "search")
+        val original = listOf(
+            ChatMessage("user", "question"),
+            ChatMessage("assistant", "", toolCalls = listOf(toolCall)),
+            ChatMessage("tool", "result", toolCallId = toolCall.id),
+            ChatMessage("assistant", "answer")
+        )
+        val turn = assertIs<DesktopChatDisplayItem.AssistantTurn>(buildDesktopChatDisplayItems(original)[1])
+        val target = original[turn.startMessageIndex]
+
+        val regenerated = DesktopConversation(messages = original).prepareGeneration(
+            requestMessages = original.take(turn.startMessageIndex),
+            alternativeTarget = target
+        )
+
+        assertEquals(listOf("question", ""), regenerated.messages.map { it.content })
+        assertEquals(original, regenerated.branches.single().messages)
     }
 
     @Test

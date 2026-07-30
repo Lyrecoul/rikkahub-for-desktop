@@ -17,6 +17,8 @@ internal sealed interface DesktopChatDisplayItem {
 
     data class AssistantTurn(
         override val messageIndex: Int,
+        /** The first persisted message represented by this collapsed turn. */
+        val startMessageIndex: Int,
         val message: ChatMessage,
         val steps: List<DesktopExecutionStep>,
         val messageIds: Set<String>,
@@ -115,6 +117,7 @@ internal fun buildDesktopChatDisplayItems(messages: List<ChatMessage>): List<Des
         if (hasExecution) {
             items += DesktopChatDisplayItem.AssistantTurn(
                 anchorIndex,
+                index,
                 anchor,
                 steps,
                 messageIds,

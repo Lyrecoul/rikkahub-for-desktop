@@ -23,6 +23,8 @@ class DesktopChatTimelineTest {
 
         assertEquals(2, items.size)
         val turn = assertIs<DesktopChatDisplayItem.AssistantTurn>(items[1])
+        assertEquals(1, turn.startMessageIndex)
+        assertEquals(5, turn.messageIndex)
         assertEquals("Here is the answer", turn.message.content)
         assertEquals(messages.drop(1).map { it.id }.toSet(), turn.messageIds)
         assertEquals(4, turn.steps.size)
@@ -43,6 +45,7 @@ class DesktopChatTimelineTest {
         val turn = assertIs<DesktopChatDisplayItem.AssistantTurn>(buildDesktopChatDisplayItems(messages)[1])
 
         assertEquals(1, turn.messageIndex)
+        assertEquals(1, turn.startMessageIndex)
         assertEquals(2, turn.steps.size)
         assertNull(assertIs<DesktopExecutionStep.ToolCall>(turn.steps[1]).result)
     }
