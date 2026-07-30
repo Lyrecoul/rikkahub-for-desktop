@@ -344,7 +344,7 @@ private fun RikkaHubDesktop(
     var attachmentPickerOpen by remember { mutableStateOf(false) }
     var markdownExportTarget by remember { mutableStateOf<DesktopConversation?>(null) }
     var backupExportRequested by remember { mutableStateOf(false) }
-    var mermaidImageExportTarget by remember { mutableStateOf<ByteArray?>(null) }
+    var mermaidImageExportTarget by remember { mutableStateOf<MermaidRenderResult?>(null) }
     val conversationScrollPositions = remember { mutableMapOf<String, Pair<Int, Int>>() }
     val pendingAskUserAnswers = remember { mutableStateMapOf<String, CompletableDeferred<String>>() }
     var pendingAgentApproval by remember { mutableStateOf<PendingDesktopAgentApproval?>(null) }
@@ -1506,18 +1506,31 @@ private fun RikkaHubDesktop(
             }
         )
     }
-    mermaidImageExportTarget?.let { imageBytes ->
+    mermaidImageExportTarget?.let { renderedDiagram ->
         DesktopSaveFileDialog(
             title = desktopText(data.preferences.language, "mermaid.save_image"),
             language = data.preferences.language,
             suggestedName = "mermaid-diagram.png",
             requiredExtension = "png",
+            allowedExtensions = listOf("png", "svg"),
             onDismiss = { mermaidImageExportTarget = null },
             onSave = { destination ->
                 mermaidImageExportTarget = null
-                runCatching { destination.writeBytes(imageBytes) }.onFailure { error ->
-                    generationErrors[data.selectedConversationId] = desktopText(data.preferences.language, "runtime.save_failed")
-                        .replace("%s", error.message ?: desktopText(data.preferences.language, "runtime.unknown_error"))
+                scope.launch {
+                    runCatching {
+                        val bytes = withContext(Dispatchers.IO) {
+                            if (destination.extension.equals("svg", ignoreCase = true)) {
+                                DesktopMermaidRenderer.renderSvg(renderedDiagram)
+                                    ?: error("Mermaid SVG rendering failed")
+                            } else {
+                                renderedDiagram.pngBytes
+                            }
+                        }
+                        destination.writeBytes(bytes)
+                    }.onFailure { error ->
+                        generationErrors[data.selectedConversationId] = desktopText(data.preferences.language, "runtime.save_failed")
+                            .replace("%s", error.message ?: desktopText(data.preferences.language, "runtime.unknown_error"))
+                    }
                 }
             }
         )
@@ -1780,18 +1793,21 @@ private fun DesktopSaveFileDialog(
     language: DesktopLanguage,
     suggestedName: String,
     requiredExtension: String,
+    allowedExtensions: List<String> = listOf(requiredExtension),
     onDismiss: () -> Unit,
     onSave: (File) -> Unit
 ) {
     var directory by remember { mutableStateOf(File(System.getProperty("user.home"))) }
     var fileName by remember(suggestedName) { mutableStateOf(suggestedName) }
+    val extensions = allowedExtensions.map { it.lowercase() }.distinct().ifEmpty { listOf(requiredExtension.lowercase()) }
+    var selectedExtension by remember(suggestedName, extensions) { mutableStateOf(extensions.first()) }
     val entries = remember(directory) {
         directory.listFiles().orEmpty()
             .filter { it.isDirectory || it.isFile }
             .sortedWith(compareByDescending<File> { it.isDirectory }.thenBy { it.name.lowercase() })
     }
     val normalizedName = fileName.trim().let { name ->
-        if (File(name).extension.equals(requiredExtension, ignoreCase = true)) name else "$name.$requiredExtension"
+        if (File(name).extension.equals(selectedExtension, ignoreCase = true)) name else "$name.$selectedExtension"
     }
     val validName = fileName.trim().isNotBlank() && File(normalizedName).name == normalizedName
     AlertDialog(
@@ -1833,6 +1849,20 @@ private fun DesktopSaveFileDialog(
                     isError = fileName.isNotBlank() && !validName,
                     singleLine = true
                 )
+                if (extensions.size > 1) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        extensions.forEach { extension ->
+                            FilterChip(
+                                selected = selectedExtension == extension,
+                                onClick = {
+                                    selectedExtension = extension
+                                    fileName = fileName.substringBeforeLast('.', fileName) + ".${extension}"
+                                },
+                                label = { Text(extension.uppercase()) }
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -2385,7 +2415,7 @@ private fun ChatPane(
     jumpToMessageRequest: Int,
     conversationScrollPositions: MutableMap<String, Pair<Int, Int>>,
     onAskUserAnswer: (String, DesktopToolCall, String) -> Unit,
-    onSaveMermaidImage: (ByteArray) -> Unit,
+    onSaveMermaidImage: (MermaidRenderResult) -> Unit,
     showMenu: Boolean,
     onMenu: () -> Unit,
     onNew: () -> Unit,
@@ -3223,7 +3253,7 @@ private fun MessageBlock(
     onRegenerate: () -> Unit,
     onSelectVariant: (Int) -> Unit,
     onAskUserAnswer: (DesktopToolCall, String) -> Unit,
-    onSaveMermaidImage: (ByteArray) -> Unit
+    onSaveMermaidImage: (MermaidRenderResult) -> Unit
 ) {
     val isUser = message.role == "user"
     val language = preferences.language

@@ -19,7 +19,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -56,6 +55,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
@@ -137,7 +137,7 @@ internal data class MarkdownRenderOptions(
     val mermaidCliPath: String = "",
     val mermaidUseSystemBrowser: Boolean = false,
     val language: DesktopLanguage = DesktopLanguage.SYSTEM,
-    val onSaveMermaidImage: ((ByteArray) -> Unit)? = null
+    val onSaveMermaidImage: ((MermaidRenderResult) -> Unit)? = null
 )
 
 internal object DesktopMarkdownParser {
@@ -645,24 +645,24 @@ private fun MermaidDiagram(block: MarkdownBlock.Code, options: MarkdownRenderOpt
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    var imageBytes by remember(block.content, dark, options.mermaidCliPath, options.mermaidUseSystemBrowser) {
-        mutableStateOf<ByteArray?>(null)
+    var renderResult by remember(block.content, dark, options.mermaidCliPath, options.mermaidUseSystemBrowser) {
+        mutableStateOf<MermaidRenderResult?>(null)
     }
     LaunchedEffect(block.content, dark, options.mermaidCliPath, options.mermaidUseSystemBrowser) {
-        imageBytes = withContext(Dispatchers.IO) {
+        renderResult = withContext(Dispatchers.IO) {
             DesktopMermaidRenderer.render(
                 block.content, dark, options.mermaidUseSystemBrowser, options.mermaidCliPath
             )
         }
     }
-    val bitmap = remember(imageBytes) {
-        imageBytes?.let { bytes ->
+    val bitmap = remember(renderResult?.pngBytes) {
+        renderResult?.pngBytes?.let { bytes ->
             runCatching { org.jetbrains.skia.Image.makeFromEncoded(bytes).toComposeImageBitmap() }.getOrNull()
         }
     }
-    val renderedImageBytes = imageBytes
+    val renderedResult = renderResult
 
-    if (bitmap == null || bitmap.width <= 0 || bitmap.height <= 0 || renderedImageBytes == null) {
+    if (bitmap == null || bitmap.width <= 0 || bitmap.height <= 0 || renderedResult == null) {
         CodeBlock(block, options)
     } else {
         var showDiagram by remember(block.content) { mutableStateOf(true) }
@@ -711,7 +711,7 @@ private fun MermaidDiagram(block: MarkdownBlock.Code, options: MarkdownRenderOpt
                                 translation = Offset.Zero
                             }
                             MermaidViewportButton(Lucide.Download, desktopText(options.language, "mermaid.save_image")) {
-                                options.onSaveMermaidImage?.invoke(renderedImageBytes)
+                                options.onSaveMermaidImage?.invoke(renderedResult)
                             }
                             MermaidViewportButton(Lucide.Maximize2, desktopText(options.language, "mermaid.fullscreen")) {
                                 showFullscreen = true
@@ -805,7 +805,8 @@ private fun MermaidViewport(
                 translationX = translation.x
                 translationY = translation.y
             },
-            contentScale = ContentScale.Fit
+            contentScale = ContentScale.Fit,
+            filterQuality = FilterQuality.High
         )
     }
 }

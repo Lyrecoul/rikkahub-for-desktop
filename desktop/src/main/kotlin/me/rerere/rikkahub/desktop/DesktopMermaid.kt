@@ -22,6 +22,14 @@ private val ChromiumExecutableCandidates = listOf(
 
 private val MermaidCliNames = listOf("mmdc", "mermaid-cli")
 
+internal data class MermaidRenderResult(
+    val pngBytes: ByteArray,
+    val source: String,
+    val dark: Boolean,
+    val useSystemBrowser: Boolean,
+    val cliPath: String
+)
+
 internal object DesktopMermaidRenderer {
     private const val RenderTimeoutSeconds = 45L
     private data class CacheKey(
@@ -31,11 +39,17 @@ internal object DesktopMermaidRenderer {
         val cliPath: String
     )
 
-    private val cache = mutableMapOf<CacheKey, ByteArray?>()
+    private val cache = mutableMapOf<CacheKey, MermaidRenderResult?>()
+    private val svgCache = mutableMapOf<CacheKey, ByteArray?>()
 
-    fun render(source: String, dark: Boolean, useSystemBrowser: Boolean, cliPath: String): ByteArray? = synchronized(cache) {
+    fun render(source: String, dark: Boolean, useSystemBrowser: Boolean, cliPath: String): MermaidRenderResult? = synchronized(cache) {
         val key = CacheKey(source, dark, useSystemBrowser, cliPath)
         if (key in cache) cache[key] else renderUncached(source, dark, useSystemBrowser, cliPath).also { cache[key] = it }
+    }
+
+    fun renderSvg(result: MermaidRenderResult): ByteArray? = synchronized(svgCache) {
+        val key = CacheKey(result.source, result.dark, result.useSystemBrowser, result.cliPath)
+        if (key in svgCache) svgCache[key] else renderSvgUncached(result, key).also { svgCache[key] = it }
     }
 
     private fun renderUncached(
@@ -43,36 +57,35 @@ internal object DesktopMermaidRenderer {
         dark: Boolean,
         useSystemBrowser: Boolean,
         cliPath: String
-    ): ByteArray? {
+    ): MermaidRenderResult? {
         val chromiumExecutable = if (useSystemBrowser) findChromiumExecutable() else null
         val executable = findMermaidCli(cliPath) ?: return null
         val directory = runCatching { Files.createTempDirectory("rikkahub-mermaid-") }.getOrNull() ?: return null
         val input = directory.resolve("diagram.mmd")
-        val output = directory.resolve("diagram.png")
+        val pngOutput = directory.resolve("diagram.png")
         try {
             Files.writeString(input, source, StandardCharsets.UTF_8)
-            val process = ProcessBuilder(
-                executable.toString(), "-i", input.toString(), "-o", output.toString(),
-                "-t", if (dark) "dark" else "default",
-                "-b", "transparent", "-s", "3", "-q"
-            ).apply {
-                if (chromiumExecutable != null) {
-                    environment()["PUPPETEER_EXECUTABLE_PATH"] = chromiumExecutable.toString()
-                } else {
-                    environment().remove("PUPPETEER_EXECUTABLE_PATH")
-                }
-            }
-                .redirectErrorStream(true)
-                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                .start()
-            if (!process.waitFor(RenderTimeoutSeconds, TimeUnit.SECONDS)) {
-                process.destroyForcibly()
-                return null
-            }
-            if (process.exitValue() == 0 && Files.isRegularFile(output)) {
-                return Files.readAllBytes(output).takeIf { it.isNotEmpty() }
-            }
+            if (!runMermaidCli(executable, input, pngOutput, dark, chromiumExecutable, scale = 3)) return null
+            return MermaidRenderResult(Files.readAllBytes(pngOutput), source, dark, useSystemBrowser, cliPath)
+        } catch (_: Exception) {
             return null
+        } finally {
+            runCatching { Files.deleteIfExists(input) }
+            runCatching { Files.deleteIfExists(pngOutput) }
+            runCatching { Files.deleteIfExists(directory) }
+        }
+    }
+
+    private fun renderSvgUncached(result: MermaidRenderResult, key: CacheKey): ByteArray? {
+        val chromiumExecutable = if (result.useSystemBrowser) findChromiumExecutable() else null
+        val executable = findMermaidCli(result.cliPath) ?: return null
+        val directory = runCatching { Files.createTempDirectory("rikkahub-mermaid-") }.getOrNull() ?: return null
+        val input = directory.resolve("diagram.mmd")
+        val output = directory.resolve("diagram.svg")
+        try {
+            Files.writeString(input, key.source, StandardCharsets.UTF_8)
+            if (!runMermaidCli(executable, input, output, key.dark, chromiumExecutable)) return null
+            return Files.readAllBytes(output).takeIf { it.isNotEmpty() }
         } catch (_: Exception) {
             return null
         } finally {
@@ -80,6 +93,35 @@ internal object DesktopMermaidRenderer {
             runCatching { Files.deleteIfExists(output) }
             runCatching { Files.deleteIfExists(directory) }
         }
+    }
+
+    private fun runMermaidCli(
+        executable: Path,
+        input: Path,
+        output: Path,
+        dark: Boolean,
+        chromiumExecutable: Path?,
+        scale: Int? = null
+    ): Boolean {
+        val command = buildList {
+            add(executable.toString())
+            addAll(listOf("-i", input.toString(), "-o", output.toString()))
+            addAll(listOf("-t", if (dark) "dark" else "default", "-b", "transparent"))
+            scale?.let { addAll(listOf("-s", it.toString())) }
+            add("-q")
+        }
+        val process = ProcessBuilder(command).apply {
+            if (chromiumExecutable != null) environment()["PUPPETEER_EXECUTABLE_PATH"] = chromiumExecutable.toString()
+            else environment().remove("PUPPETEER_EXECUTABLE_PATH")
+        }
+            .redirectErrorStream(true)
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .start()
+        if (!process.waitFor(RenderTimeoutSeconds, TimeUnit.SECONDS)) {
+            process.destroyForcibly()
+            return false
+        }
+        return process.exitValue() == 0 && Files.isRegularFile(output) && Files.size(output) > 0
     }
 
     private fun findMermaidCli(configuredPath: String): Path? {
