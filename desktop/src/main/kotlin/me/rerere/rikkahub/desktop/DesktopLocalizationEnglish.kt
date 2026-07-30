@@ -459,6 +459,12 @@ internal val EnglishDesktopTranslations = mapOf(
                                      "defaults.new_assistant" to "New assistant",
                                      "file.import_backup" to "Import RikkaHub backup",
                                      "file.imported_backup" to "Imported backup from %s",
-                                     "file.choose_attachments" to "Add images, audio, text, or documents"
+                                     "file.choose_attachments" to "Add images, audio, text, or documents",
+                                     "mermaid.diagram" to "Diagram",
+                                     "mermaid.code" to "Code",
+                                     "mermaid.save_image" to "Save image",
+                                     "mermaid.download" to "Download",
+                                     "mermaid.fullscreen" to "Full screen",
+                                     "mermaid.exit_fullscreen" to "Exit full screen"
                                      ,"provider.connection_success" to "Connected · %d models available"
 )

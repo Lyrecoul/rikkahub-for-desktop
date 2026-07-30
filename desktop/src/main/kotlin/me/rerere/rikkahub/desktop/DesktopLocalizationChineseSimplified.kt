@@ -459,6 +459,12 @@ internal val SimplifiedChineseDesktopTranslations = mapOf(
         "defaults.new_assistant" to "新助手",
         "file.import_backup" to "导入 RikkaHub 备份",
         "file.imported_backup" to "已从 %s 导入备份",
-        "file.choose_attachments" to "添加图片、音频、文本或文档"
+        "file.choose_attachments" to "添加图片、音频、文本或文档",
+        "mermaid.diagram" to "图表",
+        "mermaid.code" to "代码",
+        "mermaid.save_image" to "保存图像",
+        "mermaid.download" to "下载",
+        "mermaid.fullscreen" to "全屏",
+        "mermaid.exit_fullscreen" to "退出全屏"
         ,"provider.connection_success" to "已连接 · 可用 %d 个模型"
 )

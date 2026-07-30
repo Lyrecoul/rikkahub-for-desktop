@@ -301,6 +301,12 @@ internal val RussianDesktopTranslations = mapOf(
                                      "defaults.new_assistant" to "Новый ассистент",
                                      "file.import_backup" to "Импорт резервной копии RikkaHub",
                                      "file.imported_backup" to "Резервная копия импортирована из %s",
-                                     "file.choose_attachments" to "Добавить изображения, аудио, текст или документы"
+                                     "file.choose_attachments" to "Добавить изображения, аудио, текст или документы",
+                                     "mermaid.diagram" to "Диаграмма",
+                                     "mermaid.code" to "Код",
+                                     "mermaid.save_image" to "Сохранить изображение",
+                                     "mermaid.download" to "Скачать",
+                                     "mermaid.fullscreen" to "На весь экран",
+                                     "mermaid.exit_fullscreen" to "Выйти из полноэкранного режима"
                                      ,"provider.connection_success" to "Подключено · доступно моделей: %d"
 )

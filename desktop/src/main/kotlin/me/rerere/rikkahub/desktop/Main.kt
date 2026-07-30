@@ -344,6 +344,7 @@ private fun RikkaHubDesktop(
     var attachmentPickerOpen by remember { mutableStateOf(false) }
     var markdownExportTarget by remember { mutableStateOf<DesktopConversation?>(null) }
     var backupExportRequested by remember { mutableStateOf(false) }
+    var mermaidImageExportTarget by remember { mutableStateOf<ByteArray?>(null) }
     val conversationScrollPositions = remember { mutableMapOf<String, Pair<Int, Int>>() }
     val pendingAskUserAnswers = remember { mutableStateMapOf<String, CompletableDeferred<String>>() }
     var pendingAgentApproval by remember { mutableStateOf<PendingDesktopAgentApproval?>(null) }
@@ -1156,6 +1157,7 @@ private fun RikkaHubDesktop(
                         jumpToMessageRequest = jumpToMessageRequest,
                         conversationScrollPositions = conversationScrollPositions,
                         onAskUserAnswer = ::submitAskUserAnswer,
+                        onSaveMermaidImage = { mermaidImageExportTarget = it },
                         showMenu = compact,
                         onMenu = { showSidebar = true },
                         onNew = ::newConversation,
@@ -1499,6 +1501,22 @@ private fun RikkaHubDesktop(
                 backupExportRequested = false
                 runCatching { store.exportData(destination.toPath(), data) }.onFailure { error ->
                     generationErrors[data.selectedConversationId] = desktopText(data.preferences.language, "runtime.export_failed")
+                        .replace("%s", error.message ?: desktopText(data.preferences.language, "runtime.unknown_error"))
+                }
+            }
+        )
+    }
+    mermaidImageExportTarget?.let { imageBytes ->
+        DesktopSaveFileDialog(
+            title = desktopText(data.preferences.language, "mermaid.save_image"),
+            language = data.preferences.language,
+            suggestedName = "mermaid-diagram.png",
+            requiredExtension = "png",
+            onDismiss = { mermaidImageExportTarget = null },
+            onSave = { destination ->
+                mermaidImageExportTarget = null
+                runCatching { destination.writeBytes(imageBytes) }.onFailure { error ->
+                    generationErrors[data.selectedConversationId] = desktopText(data.preferences.language, "runtime.save_failed")
                         .replace("%s", error.message ?: desktopText(data.preferences.language, "runtime.unknown_error"))
                 }
             }
@@ -2367,6 +2385,7 @@ private fun ChatPane(
     jumpToMessageRequest: Int,
     conversationScrollPositions: MutableMap<String, Pair<Int, Int>>,
     onAskUserAnswer: (String, DesktopToolCall, String) -> Unit,
+    onSaveMermaidImage: (ByteArray) -> Unit,
     showMenu: Boolean,
     onMenu: () -> Unit,
     onNew: () -> Unit,
@@ -2794,7 +2813,8 @@ private fun ChatPane(
                                             },
                                             onAskUserAnswer = { toolCall, answer ->
                                                 onAskUserAnswer(conversation.id, toolCall, answer)
-                                            }
+                                            },
+                                            onSaveMermaidImage = onSaveMermaidImage
                                         )
                                     }
                                 }
@@ -3202,7 +3222,8 @@ private fun MessageBlock(
     highlighted: Boolean,
     onRegenerate: () -> Unit,
     onSelectVariant: (Int) -> Unit,
-    onAskUserAnswer: (DesktopToolCall, String) -> Unit
+    onAskUserAnswer: (DesktopToolCall, String) -> Unit,
+    onSaveMermaidImage: (ByteArray) -> Unit
 ) {
     val isUser = message.role == "user"
     val language = preferences.language
@@ -3231,7 +3252,9 @@ private fun MessageBlock(
         enableMermaidRendering = preferences.enableMermaidRendering,
         enableMermaidCli = preferences.enableMermaidCli,
         mermaidCliPath = preferences.mermaidCliPath,
-        mermaidUseSystemBrowser = preferences.mermaidUseSystemBrowser
+        mermaidUseSystemBrowser = preferences.mermaidUseSystemBrowser,
+        language = preferences.language,
+        onSaveMermaidImage = onSaveMermaidImage
     )
     val highlightAlpha by animateFloatAsState(
         targetValue = if (highlighted) 0.45f else 0f,

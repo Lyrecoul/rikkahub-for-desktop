@@ -301,6 +301,12 @@ internal val KoreanDesktopTranslations = mapOf(
                                     "defaults.new_assistant" to "새 어시스턴트",
                                     "file.import_backup" to "RikkaHub 백업 가져오기",
                                     "file.imported_backup" to "%s에서 백업을 가져왔습니다",
-                                    "file.choose_attachments" to "이미지, 오디오, 텍스트 또는 문서 추가"
+                                    "file.choose_attachments" to "이미지, 오디오, 텍스트 또는 문서 추가",
+                                    "mermaid.diagram" to "다이어그램",
+                                    "mermaid.code" to "코드",
+                                    "mermaid.save_image" to "이미지 저장",
+                                    "mermaid.download" to "다운로드",
+                                    "mermaid.fullscreen" to "전체 화면",
+                                    "mermaid.exit_fullscreen" to "전체 화면 나가기"
                                     ,"provider.connection_success" to "연결됨 · 사용 가능한 모델 %d개"
 )

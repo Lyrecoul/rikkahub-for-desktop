@@ -301,6 +301,12 @@ internal val JapaneseDesktopTranslations = mapOf(
                                       "defaults.new_assistant" to "新しいアシスタント",
                                       "file.import_backup" to "RikkaHub バックアップをインポート",
                                       "file.imported_backup" to "%s からバックアップをインポートしました",
-                                      "file.choose_attachments" to "画像、音声、テキスト、または文書を追加"
+                                      "file.choose_attachments" to "画像、音声、テキスト、または文書を追加",
+                                      "mermaid.diagram" to "図",
+                                      "mermaid.code" to "コード",
+                                      "mermaid.save_image" to "画像を保存",
+                                      "mermaid.download" to "ダウンロード",
+                                      "mermaid.fullscreen" to "全画面",
+                                      "mermaid.exit_fullscreen" to "全画面を終了"
                                       ,"provider.connection_success" to "接続済み · %d モデル利用可能"
 )

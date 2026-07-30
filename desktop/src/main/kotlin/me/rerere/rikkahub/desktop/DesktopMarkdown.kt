@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,6 +38,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -74,9 +76,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogWindow
+import androidx.compose.ui.window.rememberDialogState
 import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Check
+import com.composables.icons.lucide.Download
 import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Maximize2
+import com.composables.icons.lucide.Minimize2
 import com.composables.icons.lucide.RotateCcw
 import com.composables.icons.lucide.ZoomIn
 import com.composables.icons.lucide.ZoomOut
@@ -128,7 +135,9 @@ internal data class MarkdownRenderOptions(
     val enableMermaidRendering: Boolean = false,
     val enableMermaidCli: Boolean = false,
     val mermaidCliPath: String = "",
-    val mermaidUseSystemBrowser: Boolean = false
+    val mermaidUseSystemBrowser: Boolean = false,
+    val language: DesktopLanguage = DesktopLanguage.SYSTEM,
+    val onSaveMermaidImage: ((ByteArray) -> Unit)? = null
 )
 
 internal object DesktopMarkdownParser {
@@ -546,7 +555,29 @@ internal fun List<MarkdownSpan>.withChineseTypography(enabled: Boolean): List<Ma
 
 @Composable
 @OptIn(ExperimentalComposeUiApi::class)
-private fun CodeBlock(block: MarkdownBlock.Code, options: MarkdownRenderOptions) {
+private fun CodeBlock(
+    block: MarkdownBlock.Code,
+    options: MarkdownRenderOptions,
+    framed: Boolean = true,
+    showHeader: Boolean = true
+) {
+    if (framed) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            CodeBlockContent(block, options, showHeader)
+        }
+    } else {
+        CodeBlockContent(block, options, showHeader)
+    }
+}
+
+@Composable
+@OptIn(ExperimentalComposeUiApi::class)
+private fun CodeBlockContent(block: MarkdownBlock.Code, options: MarkdownRenderOptions, showHeader: Boolean) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     var copyVersion by remember(block.content) { mutableStateOf(0) }
@@ -558,13 +589,8 @@ private fun CodeBlock(block: MarkdownBlock.Code, options: MarkdownRenderOptions)
             copied = false
         }
     }
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Column {
+    Column(Modifier.fillMaxWidth()) {
+        if (showHeader) {
             Row(
                 Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHighest)
                     .padding(start = 12.dp, end = 5.dp, top = 4.dp, bottom = 4.dp),
@@ -593,29 +619,32 @@ private fun CodeBlock(block: MarkdownBlock.Code, options: MarkdownRenderOptions)
                     }
                 }
             }
-            Text(
-                highlightedCode(block.content, block.language),
-                if (options.codeBlockAutoWrap) {
-                    Modifier.fillMaxWidth().padding(12.dp)
-                } else {
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(12.dp)
-                },
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp * options.fontScale,
-                lineHeight = 19.sp * options.fontScale,
-                softWrap = options.codeBlockAutoWrap
-            )
         }
+        Text(
+            highlightedCode(block.content, block.language),
+            if (options.codeBlockAutoWrap) {
+                Modifier.fillMaxWidth().padding(12.dp)
+            } else {
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(12.dp)
+            },
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp * options.fontScale,
+            lineHeight = 19.sp * options.fontScale,
+            softWrap = options.codeBlockAutoWrap
+        )
     }
 }
 
 @Composable
+@OptIn(ExperimentalComposeUiApi::class)
 private fun MermaidDiagram(block: MarkdownBlock.Code, options: MarkdownRenderOptions) {
     if (!options.enableMermaidCli) {
         CodeBlock(block, options)
         return
     }
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     var imageBytes by remember(block.content, dark, options.mermaidCliPath, options.mermaidUseSystemBrowser) {
         mutableStateOf<ByteArray?>(null)
     }
@@ -631,16 +660,108 @@ private fun MermaidDiagram(block: MarkdownBlock.Code, options: MarkdownRenderOpt
             runCatching { org.jetbrains.skia.Image.makeFromEncoded(bytes).toComposeImageBitmap() }.getOrNull()
         }
     }
+    val renderedImageBytes = imageBytes
 
-    if (bitmap == null || bitmap.width <= 0 || bitmap.height <= 0) {
+    if (bitmap == null || bitmap.width <= 0 || bitmap.height <= 0 || renderedImageBytes == null) {
         CodeBlock(block, options)
     } else {
-        BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-            val aspectRatio = bitmap.width.toFloat() / bitmap.height
-            val diagramWidth = minOf(maxWidth, 880.dp, 600.dp * aspectRatio)
-            val diagramHeight = diagramWidth / aspectRatio
-            MermaidViewport(bitmap, diagramWidth, diagramHeight)
+        var showDiagram by remember(block.content) { mutableStateOf(true) }
+        var showFullscreen by remember(block.content) { mutableStateOf(false) }
+        var scale by remember(bitmap) { mutableFloatStateOf(1f) }
+        var translation by remember(bitmap) { mutableStateOf(Offset.Zero) }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        .padding(horizontal = 6.dp, vertical = 5.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DisableSelection {
+                        Row {
+                            MermaidModeButton(
+                                text = desktopText(options.language, "mermaid.diagram"),
+                                selected = showDiagram,
+                                onClick = { showDiagram = true }
+                            )
+                            MermaidModeButton(
+                                text = desktopText(options.language, "mermaid.code"),
+                                selected = !showDiagram,
+                                onClick = { showDiagram = false }
+                            )
+                        }
+                    }
+                    if (showDiagram) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            MermaidViewportButton(Lucide.ZoomOut, "缩小") {
+                                scale = (scale / 1.25f).coerceAtLeast(1f)
+                                if (scale == 1f) translation = Offset.Zero
+                            }
+                            MermaidViewportButton(Lucide.ZoomIn, "放大") {
+                                scale = (scale * 1.25f).coerceAtMost(4f)
+                            }
+                            MermaidViewportButton(Lucide.RotateCcw, "重设位置") {
+                                scale = 1f
+                                translation = Offset.Zero
+                            }
+                            MermaidViewportButton(Lucide.Download, desktopText(options.language, "mermaid.save_image")) {
+                                options.onSaveMermaidImage?.invoke(renderedImageBytes)
+                            }
+                            MermaidViewportButton(Lucide.Maximize2, desktopText(options.language, "mermaid.fullscreen")) {
+                                showFullscreen = true
+                            }
+                        }
+                    } else {
+                        MermaidViewportButton(Lucide.Copy, "复制代码") {
+                            scope.launch { clipboard.setClipEntry(ClipEntry(StringSelection(block.content))) }
+                        }
+                    }
+                }
+                if (showDiagram) {
+                BoxWithConstraints(
+                    Modifier.fillMaxWidth().heightIn(min = 420.dp, max = 680.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    MermaidViewport(
+                        bitmap, maxWidth, maxHeight, scale, translation,
+                        onScaleChange = { scale = it },
+                        onTranslationChange = { translation = it }
+                    )
+                }
+                } else {
+                    CodeBlock(block, options, framed = false, showHeader = false)
+                }
+            }
         }
+        if (showFullscreen) {
+            MermaidFullscreenWindow(
+                bitmap = bitmap,
+                language = options.language,
+                onDismiss = { showFullscreen = false }
+            )
+        }
+    }
+}
+
+@Composable
+private fun MermaidModeButton(text: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick),
+        shape = RoundedCornerShape(6.dp),
+        color = if (selected) MaterialTheme.colorScheme.surface else Color.Transparent
+    ) {
+        Text(
+            text,
+            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            fontSize = 13.sp,
+            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -649,60 +770,73 @@ private fun MermaidDiagram(block: MarkdownBlock.Code, options: MarkdownRenderOpt
 private fun MermaidViewport(
     bitmap: androidx.compose.ui.graphics.ImageBitmap,
     width: androidx.compose.ui.unit.Dp,
-    height: androidx.compose.ui.unit.Dp
+    height: androidx.compose.ui.unit.Dp,
+    scale: Float,
+    translation: Offset,
+    onScaleChange: (Float) -> Unit,
+    onTranslationChange: (Offset) -> Unit
+) {
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val updatedScale = (scale * zoomChange).coerceIn(1f, 4f)
+        onTranslationChange(if (updatedScale > 1f || scale > 1f) translation + panChange else Offset.Zero)
+        onScaleChange(updatedScale)
+    }
+
+    Box(
+        Modifier.width(width).height(height).clipToBounds()
+            .onPointerEvent(PointerEventType.Scroll, PointerEventPass.Initial) { event ->
+                val delta = event.changes.firstOrNull()?.scrollDelta?.y ?: return@onPointerEvent
+                if (delta != 0f) {
+                    val updatedScale = (scale * if (delta < 0f) 1.15f else 0.87f).coerceIn(1f, 4f)
+                    onScaleChange(updatedScale)
+                    if (updatedScale == 1f) onTranslationChange(Offset.Zero)
+                    event.changes.forEach { it.consume() }
+                }
+            }
+            .transformable(transformState)
+    ) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = "Mermaid diagram",
+            modifier = Modifier.fillMaxWidth().fillMaxHeight().graphicsLayer {
+                transformOrigin = TransformOrigin.Center
+                scaleX = scale
+                scaleY = scale
+                translationX = translation.x
+                translationY = translation.y
+            },
+            contentScale = ContentScale.Fit
+        )
+    }
+}
+
+@Composable
+private fun MermaidFullscreenWindow(
+    bitmap: androidx.compose.ui.graphics.ImageBitmap,
+    language: DesktopLanguage,
+    onDismiss: () -> Unit
 ) {
     var scale by remember(bitmap) { mutableFloatStateOf(1f) }
     var translation by remember(bitmap) { mutableStateOf(Offset.Zero) }
-    fun reset() {
-        scale = 1f
-        translation = Offset.Zero
-    }
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        val updatedScale = (scale * zoomChange).coerceIn(1f, 4f)
-        if (updatedScale > 1f || scale > 1f) translation += panChange
-        scale = updatedScale
-        if (scale == 1f) translation = Offset.Zero
-    }
-
-    Column(Modifier.width(width).padding(vertical = 4.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                MermaidViewportButton(Lucide.ZoomOut, "缩小") {
-                    scale = (scale / 1.25f).coerceAtLeast(1f)
-                    if (scale == 1f) translation = Offset.Zero
-                }
-                MermaidViewportButton(Lucide.ZoomIn, "放大") { scale = (scale * 1.25f).coerceAtMost(4f) }
-                MermaidViewportButton(Lucide.RotateCcw, "复位") { reset() }
-        }
-        Surface(
-            modifier = Modifier.fillMaxWidth().height(height),
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-        ) {
-            Box(
-                Modifier.fillMaxWidth().fillMaxHeight().clipToBounds()
-                    .onPointerEvent(PointerEventType.Scroll, PointerEventPass.Initial) { event ->
-                        val delta = event.changes.firstOrNull()?.scrollDelta?.y ?: return@onPointerEvent
-                        if (delta != 0f) {
-                            scale = (scale * if (delta < 0f) 1.15f else 0.87f).coerceIn(1f, 4f)
-                            if (scale == 1f) translation = Offset.Zero
-                            event.changes.forEach { it.consume() }
-                        }
-                    }
-                    .transformable(transformState)
-            ) {
-                Image(
+    DialogWindow(
+        onCloseRequest = onDismiss,
+        title = desktopText(language, "mermaid.diagram"),
+        state = rememberDialogState(size = androidx.compose.ui.unit.DpSize(1280.dp, 820.dp))
+    ) {
+        Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+            BoxWithConstraints(Modifier.fillMaxWidth().fillMaxHeight(), contentAlignment = Alignment.Center) {
+                MermaidViewport(
                     bitmap = bitmap,
-                    contentDescription = "Mermaid diagram",
-                    modifier = Modifier.fillMaxWidth().fillMaxHeight().graphicsLayer {
-                        transformOrigin = TransformOrigin.Center
-                        scaleX = scale
-                        scaleY = scale
-                        translationX = translation.x
-                        translationY = translation.y
-                    },
-                    contentScale = ContentScale.Fit
+                    width = maxWidth,
+                    height = maxHeight,
+                    scale = scale,
+                    translation = translation,
+                    onScaleChange = { scale = it },
+                    onTranslationChange = { translation = it }
                 )
+                Row(Modifier.align(Alignment.TopEnd).padding(10.dp)) {
+                    MermaidViewportButton(Lucide.Minimize2, desktopText(language, "mermaid.exit_fullscreen")) { onDismiss() }
+                }
             }
         }
     }

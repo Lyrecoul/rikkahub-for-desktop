@@ -301,6 +301,12 @@ internal val TraditionalChineseDesktopTranslations = mapOf(
         "defaults.new_assistant" to "新助手",
         "file.import_backup" to "匯入 RikkaHub 備份",
         "file.imported_backup" to "已從 %s 匯入備份",
-        "file.choose_attachments" to "新增圖片、音訊、文字或文件"
+        "file.choose_attachments" to "新增圖片、音訊、文字或文件",
+        "mermaid.diagram" to "圖表",
+        "mermaid.code" to "程式碼",
+        "mermaid.save_image" to "儲存圖片",
+        "mermaid.download" to "下載",
+        "mermaid.fullscreen" to "全螢幕",
+        "mermaid.exit_fullscreen" to "離開全螢幕"
         ,"provider.connection_success" to "已連線 · 可用 %d 個模型"
 )

@@ -301,6 +301,12 @@ internal val PortugueseBrazilDesktopTranslations = mapOf(
                                                "defaults.new_assistant" to "Novo assistente",
                                                "file.import_backup" to "Importar backup do RikkaHub",
                                                "file.imported_backup" to "Backup importado de %s",
-                                               "file.choose_attachments" to "Adicionar imagens, áudio, texto ou documentos"
+                                               "file.choose_attachments" to "Adicionar imagens, áudio, texto ou documentos",
+                                               "mermaid.diagram" to "Diagrama",
+                                               "mermaid.code" to "Código",
+                                               "mermaid.save_image" to "Salvar imagem",
+                                               "mermaid.download" to "Baixar",
+                                               "mermaid.fullscreen" to "Tela cheia",
+                                               "mermaid.exit_fullscreen" to "Sair da tela cheia"
                                                ,"provider.connection_success" to "Conectado · %d modelos disponíveis"
 )
