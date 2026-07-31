@@ -29,7 +29,11 @@ class DesktopToolsTest {
             DesktopConfig(memoryEnabled = true),
             listOf(
                 DesktopToolCall("create", DesktopMemoryToolName, "{\"action\":\"create\",\"content\":\"new\"}"),
-                DesktopToolCall("edit", DesktopMemoryToolName, "{\"action\":\"edit\",\"id\":\"one\",\"content\":\"updated\"}"),
+                DesktopToolCall(
+                    "edit",
+                    DesktopMemoryToolName,
+                    "{\"action\":\"edit\",\"id\":\"one\",\"content\":\"updated\"}"
+                ),
                 DesktopToolCall("delete", DesktopMemoryToolName, "{\"action\":\"delete\",\"id\":\"two\"}")
             ),
             handler
@@ -76,7 +80,14 @@ class DesktopToolsTest {
     fun deniedAgentToolReportsTheUserDecision() = runBlocking {
         val result = executeDesktopToolCalls(
             OkHttpClient(),
-            DesktopConfig(agent = DesktopAgentConfig(DesktopAgentWorkspace(workspace.toString(), DesktopAgentBackend.LOCAL))),
+            DesktopConfig(
+                agent = DesktopAgentConfig(
+                    DesktopAgentWorkspace(
+                        workspace.toString(),
+                        DesktopAgentBackend.LOCAL
+                    )
+                )
+            ),
             listOf(DesktopToolCall("call", DesktopAgentShellToolName, "{\"command\":\"pwd\",\"network\":false}")),
             approvalHandler = { _, _ -> false }
         ).single()

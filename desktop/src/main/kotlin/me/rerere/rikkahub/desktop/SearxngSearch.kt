@@ -74,18 +74,73 @@ private suspend fun searchApiProvider(
     require(settings.apiKey.isNotBlank()) { "请配置 ${settings.providerType.name} API 密钥" }
     val count = settings.resultCount.coerceIn(1, 10)
     val (endpoint, body, resultPath) = when (settings.providerType) {
-        DesktopSearchProviderType.TAVILY -> Triple("https://api.tavily.com/search", jsonBody("query" to query, "max_results" to count), "results")
-        DesktopSearchProviderType.ZHIPU -> Triple("https://open.bigmodel.cn/api/paas/v4/web_search", jsonBody("search_query" to query, "search_engine" to "search_std", "count" to count), "search_result")
-        DesktopSearchProviderType.EXA -> Triple("https://api.exa.ai/search", jsonBody("query" to query, "numResults" to count, "contents" to buildJsonObject { put("text", true) }), "results")
-        DesktopSearchProviderType.FIRECRAWL -> Triple("https://api.firecrawl.dev/v2/search", jsonBody("query" to query, "limit" to count), "data.web")
+        DesktopSearchProviderType.TAVILY -> Triple(
+            "https://api.tavily.com/search",
+            jsonBody("query" to query, "max_results" to count),
+            "results"
+        )
+
+        DesktopSearchProviderType.ZHIPU -> Triple(
+            "https://open.bigmodel.cn/api/paas/v4/web_search",
+            jsonBody("search_query" to query, "search_engine" to "search_std", "count" to count),
+            "search_result"
+        )
+
+        DesktopSearchProviderType.EXA -> Triple(
+            "https://api.exa.ai/search",
+            jsonBody("query" to query, "numResults" to count, "contents" to buildJsonObject { put("text", true) }),
+            "results"
+        )
+
+        DesktopSearchProviderType.FIRECRAWL -> Triple(
+            "https://api.firecrawl.dev/v2/search",
+            jsonBody("query" to query, "limit" to count),
+            "data.web"
+        )
+
         DesktopSearchProviderType.JINA -> Triple("https://s.jina.ai/", jsonBody("q" to query), "data")
-        DesktopSearchProviderType.BOCHA -> Triple("https://api.bochaai.com/v1/web-search", jsonBody("query" to query, "count" to count, "summary" to true), "data.webPages.value")
-        DesktopSearchProviderType.PERPLEXITY -> Triple("https://api.perplexity.ai/search", jsonBody("query" to query, "max_results" to count), "results")
-        DesktopSearchProviderType.SERPER -> Triple("https://google.serper.dev/search", jsonBody("q" to query, "num" to count), "organic")
-        DesktopSearchProviderType.OLLAMA -> Triple("https://ollama.com/api/web_search", jsonBody("query" to query, "max_results" to count.coerceIn(5, 10)), "results")
-        DesktopSearchProviderType.METASO -> Triple("https://metaso.cn/api/v1/search", jsonBody("q" to query, "scope" to "webpage", "size" to count, "includeSummary" to false), "webpages")
-        DesktopSearchProviderType.LINKUP -> Triple("https://api.linkup.so/v1/search", jsonBody("q" to query, "depth" to "standard", "outputType" to "sourcedAnswer", "includeImages" to false), "sources")
-        DesktopSearchProviderType.RIKKAHUB -> Triple("https://api.rikka-ai.com/v1/search", jsonBody("q" to query, "depth" to "standard", "outputType" to "sourcedAnswer", "includeImages" to false), "sources")
+        DesktopSearchProviderType.BOCHA -> Triple(
+            "https://api.bochaai.com/v1/web-search",
+            jsonBody("query" to query, "count" to count, "summary" to true),
+            "data.webPages.value"
+        )
+
+        DesktopSearchProviderType.PERPLEXITY -> Triple(
+            "https://api.perplexity.ai/search",
+            jsonBody("query" to query, "max_results" to count),
+            "results"
+        )
+
+        DesktopSearchProviderType.SERPER -> Triple(
+            "https://google.serper.dev/search",
+            jsonBody("q" to query, "num" to count),
+            "organic"
+        )
+
+        DesktopSearchProviderType.OLLAMA -> Triple(
+            "https://ollama.com/api/web_search",
+            jsonBody("query" to query, "max_results" to count.coerceIn(5, 10)),
+            "results"
+        )
+
+        DesktopSearchProviderType.METASO -> Triple(
+            "https://metaso.cn/api/v1/search",
+            jsonBody("q" to query, "scope" to "webpage", "size" to count, "includeSummary" to false),
+            "webpages"
+        )
+
+        DesktopSearchProviderType.LINKUP -> Triple(
+            "https://api.linkup.so/v1/search",
+            jsonBody("q" to query, "depth" to "standard", "outputType" to "sourcedAnswer", "includeImages" to false),
+            "sources"
+        )
+
+        DesktopSearchProviderType.RIKKAHUB -> Triple(
+            "https://api.rikka-ai.com/v1/search",
+            jsonBody("q" to query, "depth" to "standard", "outputType" to "sourcedAnswer", "includeImages" to false),
+            "sources"
+        )
+
         else -> error("不支持的联网搜索服务")
     }
     val request = Request.Builder().url(endpoint)
@@ -94,7 +149,11 @@ private suspend fun searchApiProvider(
         .post(body.toString().toRequestBody("application/json".toMediaType()))
         .build()
     httpClient.newCall(request).execute().use { response ->
-        if (!response.isSuccessful) error("${settings.providerType.name} 搜索失败（${response.code}）：${response.body.string().take(300)}")
+        if (!response.isSuccessful) error(
+            "${settings.providerType.name} 搜索失败（${response.code}）：${
+                response.body.string().take(300)
+            }"
+        )
         val root = SearxngJson.parseToJsonElement(response.body.string()).jsonObject
         val items = root.arrayAt(resultPath).take(count).mapNotNull { element ->
             runCatching {

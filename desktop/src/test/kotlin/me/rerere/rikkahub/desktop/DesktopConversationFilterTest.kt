@@ -8,13 +8,16 @@ class DesktopConversationFilterTest {
     @Test
     fun keepsForkedConversationsNextToTheirParentInTheSidebar() {
         val parent = DesktopConversation(id = "parent", title = "Project", updatedAt = 10)
-        val branch = DesktopConversation(id = "branch", title = "Project", parentConversationId = parent.id, updatedAt = 30)
-        val nestedBranch = DesktopConversation(id = "nested", title = "Project", parentConversationId = branch.id, updatedAt = 20)
+        val branch =
+            DesktopConversation(id = "branch", title = "Project", parentConversationId = parent.id, updatedAt = 30)
+        val nestedBranch =
+            DesktopConversation(id = "nested", title = "Project", parentConversationId = branch.id, updatedAt = 20)
         val other = DesktopConversation(id = "other", title = "Other", updatedAt = 40)
 
         assertEquals(
             listOf("other" to 0, "parent" to 0, "branch" to 1, "nested" to 2),
-            listOf(other, branch, nestedBranch, parent).asConversationTree().map { it.conversation.id to it.branchDepth }
+            listOf(other, branch, nestedBranch, parent).asConversationTree()
+                .map { it.conversation.id to it.branchDepth }
         )
     }
 
@@ -135,7 +138,10 @@ class DesktopConversationFilterTest {
             selectedAssistantId = first.id,
             conversations = listOf(
                 DesktopConversation(assistantId = first.id, messages = listOf(favorite)),
-                DesktopConversation(assistantId = second.id, messages = listOf(ChatMessage("assistant", "other", isFavorite = true)))
+                DesktopConversation(
+                    assistantId = second.id,
+                    messages = listOf(ChatMessage("assistant", "other", isFavorite = true))
+                )
             )
         )
 
@@ -149,8 +155,14 @@ class DesktopConversationFilterTest {
         val data = DesktopData(
             assistants = listOf(work, personal),
             conversations = listOf(
-                DesktopConversation(assistantId = work.id, messages = listOf(ChatMessage("assistant", "work", isFavorite = true))),
-                DesktopConversation(assistantId = personal.id, messages = listOf(ChatMessage("assistant", "personal", isFavorite = true)))
+                DesktopConversation(
+                    assistantId = work.id,
+                    messages = listOf(ChatMessage("assistant", "work", isFavorite = true))
+                ),
+                DesktopConversation(
+                    assistantId = personal.id,
+                    messages = listOf(ChatMessage("assistant", "personal", isFavorite = true))
+                )
             )
         )
 

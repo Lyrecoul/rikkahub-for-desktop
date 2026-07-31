@@ -57,6 +57,7 @@ internal fun DesktopAgentApprovalRequest.rememberedGrant(): DesktopAgentApproval
             it
         )
     }
+
     DesktopAgentApprovalKind.IMAGE_PULL -> workspace?.let {
         DesktopAgentApprovalGrant(DesktopAgentApprovalScope.IMAGE_PULL, it)
     }
@@ -130,7 +131,9 @@ private fun Process.destroyAgentProcessTree() {
 
 private class AgentStreamCollector(stream: InputStream) {
     private val value = StringBuilder()
-    @Volatile var truncated = false
+
+    @Volatile
+    var truncated = false
         private set
     private val thread = Thread {
         runCatching {
@@ -166,35 +169,77 @@ internal class DesktopAgentRuntime(
         val params = Json.parseToJsonElement(call.arguments).jsonObject
         when (call.name) {
             DesktopAgentListFilesToolName -> listFiles(root, params.optionalString("path").orEmpty())
-            DesktopAgentSearchFilesToolName -> searchFiles(root, params.requiredString("query"), params.optionalString("path").orEmpty())
+            DesktopAgentSearchFilesToolName -> searchFiles(
+                root,
+                params.requiredString("query"),
+                params.optionalString("path").orEmpty()
+            )
+
             DesktopAgentReadFileToolName -> readFile(root, params.requiredString("path"))
             DesktopAgentWriteFileToolName -> {
-                requireApproval(approve(DesktopAgentApprovalRequest(DesktopAgentApprovalKind.WRITE, "写入文件", params.requiredString("path"))))
+                requireApproval(
+                    approve(
+                        DesktopAgentApprovalRequest(
+                            DesktopAgentApprovalKind.WRITE,
+                            "写入文件",
+                            params.requiredString("path")
+                        )
+                    )
+                )
                 writeFile(root, params.requiredString("path"), params.requiredString("text"))
             }
+
             DesktopAgentEditFileToolName -> {
-                requireApproval(approve(DesktopAgentApprovalRequest(DesktopAgentApprovalKind.WRITE, "编辑文件", params.requiredString("path"))))
-                editFile(root, params.requiredString("path"), params.requiredString("old_text"), params.requiredString("new_text"))
+                requireApproval(
+                    approve(
+                        DesktopAgentApprovalRequest(
+                            DesktopAgentApprovalKind.WRITE,
+                            "编辑文件",
+                            params.requiredString("path")
+                        )
+                    )
+                )
+                editFile(
+                    root,
+                    params.requiredString("path"),
+                    params.requiredString("old_text"),
+                    params.requiredString("new_text")
+                )
             }
+
             DesktopAgentShellToolName -> {
                 val command = params.requiredString("command")
                 val network = params.optionalBoolean("network") ?: false
-                requireApproval(approve(DesktopAgentApprovalRequest(
-                    DesktopAgentApprovalKind.SHELL,
-                    if (config.workspace.backend == DesktopAgentBackend.DOCKER && network) "执行联网命令" else "执行命令",
-                    command.take(2_000),
-                    config.workspace.backend,
-                    network,
-                    config.workspace
-                )))
+                requireApproval(
+                    approve(
+                        DesktopAgentApprovalRequest(
+                            DesktopAgentApprovalKind.SHELL,
+                            if (config.workspace.backend == DesktopAgentBackend.DOCKER && network) "执行联网命令" else "执行命令",
+                            command.take(2_000),
+                            config.workspace.backend,
+                            network,
+                            config.workspace
+                        )
+                    )
+                )
                 shell(config.workspace, root, command, params.optionalString("cwd").orEmpty(), network, approve)
             }
+
             DesktopUseSkillToolName -> {
                 val name = params.requiredString("name")
                 require(name in config.enabledSkillNames) { "Skill '$name' is not enabled for this assistant" }
-                requireApproval(approve(DesktopAgentApprovalRequest(DesktopAgentApprovalKind.SKILL, "加载 Skill", name)))
+                requireApproval(
+                    approve(
+                        DesktopAgentApprovalRequest(
+                            DesktopAgentApprovalKind.SKILL,
+                            "加载 Skill",
+                            name
+                        )
+                    )
+                )
                 readSkill(name, params.optionalString("path"))
             }
+
             else -> error("Unsupported agent tool: ${call.name}")
         }
     }
@@ -216,11 +261,12 @@ internal class DesktopAgentRuntime(
         Files.walk(start).use { paths ->
             paths.filter { Files.isRegularFile(it) }.limit(5_000).forEach { file ->
                 if (matches.size >= 100 || Files.size(file) > AgentMaxReadBytes) return@forEach
-                runCatching { Files.readAllLines(file, StandardCharsets.UTF_8) }.getOrNull()?.forEachIndexed { index, line ->
-                    if (matches.size < 100 && line.contains(query, ignoreCase = true)) {
-                        matches += "${root.relativize(file)}:${index + 1}:$line"
+                runCatching { Files.readAllLines(file, StandardCharsets.UTF_8) }.getOrNull()
+                    ?.forEachIndexed { index, line ->
+                        if (matches.size < 100 && line.contains(query, ignoreCase = true)) {
+                            matches += "${root.relativize(file)}:${index + 1}:$line"
+                        }
                     }
-                }
             }
         }
         return matches.joinToString("\n")
@@ -238,7 +284,13 @@ internal class DesktopAgentRuntime(
         val file = resolvePath(root, relative, mustExist = false)
         Files.createDirectories(file.parent)
         require(file.parent.toRealPath().startsWith(root)) { "Path escapes workspace root" }
-        Files.writeString(file, text, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
+        Files.writeString(
+            file,
+            text,
+            StandardCharsets.UTF_8,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.TRUNCATE_EXISTING
+        )
         return "Wrote ${root.relativize(file)}"
     }
 
@@ -291,15 +343,24 @@ internal class DesktopAgentRuntime(
         approve: suspend (DesktopAgentApprovalRequest) -> Boolean
     ): DesktopAgentCommandResult {
         require(',' !in root.toString()) { "Docker workspaces cannot contain commas in their path" }
-        val name = "rikkahub-agent-${UUID.nameUUIDFromBytes(root.toString().toByteArray()).toString().replace("-", "").take(24)}"
+        val name = "rikkahub-agent-${
+            UUID.nameUUIDFromBytes(root.toString().toByteArray()).toString().replace("-", "").take(24)
+        }"
         if (runCommand(listOf("docker", "image", "inspect", workspace.dockerImage), null, 10_000).exitCode != 0) {
-            requireApproval(approve(DesktopAgentApprovalRequest(
-                DesktopAgentApprovalKind.IMAGE_PULL,
-                "下载容器镜像",
-                workspace.dockerImage,
-                workspace = workspace
-            )))
-            requireDockerSuccess(runCommand(listOf("docker", "pull", workspace.dockerImage), null, 600_000), "pull Docker image")
+            requireApproval(
+                approve(
+                    DesktopAgentApprovalRequest(
+                        DesktopAgentApprovalKind.IMAGE_PULL,
+                        "下载容器镜像",
+                        workspace.dockerImage,
+                        workspace = workspace
+                    )
+                )
+            )
+            requireDockerSuccess(
+                runCommand(listOf("docker", "pull", workspace.dockerImage), null, 600_000),
+                "pull Docker image"
+            )
         }
         ensureDockerNetwork(DesktopAgentIsolatedNetworkName, internal = true)
         val existing = runCommand(listOf("docker", "container", "inspect", name), null, 10_000)
@@ -341,7 +402,10 @@ internal class DesktopAgentRuntime(
             runCommand(listOf("docker", "commit", name, snapshot), null, 600_000),
             "snapshot Docker workspace"
         )
-        requireDockerSuccess(runCommand(listOf("docker", "rm", "-f", name), null, 30_000), "prepare approved network session")
+        requireDockerSuccess(
+            runCommand(listOf("docker", "rm", "-f", name), null, 30_000),
+            "prepare approved network session"
+        )
         try {
             requireDockerSuccess(
                 runCommand(dockerCreateCommand(networkName, snapshot, "host", root), null, 30_000),
@@ -366,7 +430,11 @@ internal class DesktopAgentRuntime(
             if (runCommand(listOf("docker", "container", "inspect", name), null, 10_000).exitCode != 0) {
                 ensureDockerNetwork(DesktopAgentIsolatedNetworkName, internal = true)
                 requireDockerSuccess(
-                    runCommand(dockerCreateCommand(name, snapshot, DesktopAgentIsolatedNetworkName, root), null, 30_000),
+                    runCommand(
+                        dockerCreateCommand(name, snapshot, DesktopAgentIsolatedNetworkName, root),
+                        null,
+                        30_000
+                    ),
                     "restore isolated Docker workspace"
                 )
             }
@@ -452,7 +520,8 @@ internal class DesktopAgentRuntime(
 
     private fun requireWorkspaceRoot(workspace: DesktopAgentWorkspace): Path {
         require(workspace.rootPath.isNotBlank()) { "No workspace is configured" }
-        return Path.of(workspace.rootPath).toRealPath().also { require(Files.isDirectory(it)) { "Workspace root is not a directory" } }
+        return Path.of(workspace.rootPath).toRealPath()
+            .also { require(Files.isDirectory(it)) { "Workspace root is not a directory" } }
     }
 
     private fun resolvePath(root: Path, relative: String, mustExist: Boolean): Path {
@@ -461,7 +530,8 @@ internal class DesktopAgentRuntime(
         require(!input.isAbsolute) { "Only paths relative to the workspace are allowed" }
         val target = root.resolve(input).normalize()
         require(target.startsWith(root)) { "Path escapes workspace root" }
-        if (mustExist) return target.toRealPath().also { require(it.startsWith(root)) { "Path escapes workspace root" } }
+        if (mustExist) return target.toRealPath()
+            .also { require(it.startsWith(root)) { "Path escapes workspace root" } }
         var existing = target.parent ?: root
         while (!Files.exists(existing)) existing = existing.parent ?: root
         require(existing.toRealPath().startsWith(root)) { "Path escapes workspace root" }
@@ -477,45 +547,97 @@ internal fun defaultDesktopSkillsRoot(): Path {
 
 internal fun agentToolDefinitions(config: DesktopAgentConfig?): List<JsonObject> {
     if (config == null) return emptyList()
-    fun definition(name: String, description: String, required: List<String>, properties: JsonObject): JsonObject = buildJsonObject {
-        put("type", "function")
-        putJsonObject("function") {
-            put("name", name)
-            put("description", description)
-            putJsonObject("parameters") {
-                put("type", "object")
-                put("properties", properties)
-                put("required", buildJsonArray { required.forEach { add(JsonPrimitive(it)) } })
-                put("additionalProperties", false)
+    fun definition(name: String, description: String, required: List<String>, properties: JsonObject): JsonObject =
+        buildJsonObject {
+            put("type", "function")
+            putJsonObject("function") {
+                put("name", name)
+                put("description", description)
+                putJsonObject("parameters") {
+                    put("type", "object")
+                    put("properties", properties)
+                    put("required", buildJsonArray { required.forEach { add(JsonPrimitive(it)) } })
+                    put("additionalProperties", false)
+                }
             }
         }
-    }
+
     fun stringProperty(description: String) = buildJsonObject { put("type", "string"); put("description", description) }
     val path = stringProperty("Path relative to the selected workspace root")
     return buildList {
-        add(definition(DesktopAgentListFilesToolName, "List files in the selected workspace.", emptyList(), buildJsonObject { put("path", path) }))
-        add(definition(DesktopAgentSearchFilesToolName, "Search UTF-8 text files in the selected workspace.", listOf("query"), buildJsonObject { put("query", stringProperty("Text to search")); put("path", path) }))
-        add(definition(DesktopAgentReadFileToolName, "Read a UTF-8 text file inside the selected workspace.", listOf("path"), buildJsonObject { put("path", path) }))
-        add(definition(DesktopAgentWriteFileToolName, "Write a UTF-8 text file inside the selected workspace. Requires approval.", listOf("path", "text"), buildJsonObject { put("path", path); put("text", stringProperty("New file content")) }))
-        add(definition(DesktopAgentEditFileToolName, "Replace exactly one occurrence in a text file. Requires approval.", listOf("path", "old_text", "new_text"), buildJsonObject { put("path", path); put("old_text", stringProperty("Existing text")); put("new_text", stringProperty("Replacement text")) }))
-        add(definition(
-            DesktopAgentShellToolName,
-            "Run a shell command in the selected workspace. Requires approval. You MUST set network=true before the " +
-                "first attempt of any command that may access the Internet, including apt/apt-get, curl, wget, git " +
-                "clone/pull, npm/pnpm/yarn, pip/uv, cargo, go, Gradle, Maven, package updates, downloads, or network " +
-                "diagnostics. network=true requests explicit user approval. Use network=false only for commands that are " +
-                "certainly local. Do not retry a failed network command without network=true.",
-            listOf("command", "network"),
-            buildJsonObject {
-                put("command", stringProperty("Shell command"))
-                put("cwd", path)
-                putJsonObject("network") {
-                    put("type", "boolean")
-                    put("description", "Required. true for any Internet, package registry, download, update, git remote, or connectivity command; false only for certainly local commands.")
+        add(
+            definition(
+                DesktopAgentListFilesToolName,
+                "List files in the selected workspace.",
+                emptyList(),
+                buildJsonObject { put("path", path) })
+        )
+        add(
+            definition(
+                DesktopAgentSearchFilesToolName,
+                "Search UTF-8 text files in the selected workspace.",
+                listOf("query"),
+                buildJsonObject { put("query", stringProperty("Text to search")); put("path", path) })
+        )
+        add(
+            definition(
+                DesktopAgentReadFileToolName,
+                "Read a UTF-8 text file inside the selected workspace.",
+                listOf("path"),
+                buildJsonObject { put("path", path) })
+        )
+        add(
+            definition(
+                DesktopAgentWriteFileToolName,
+                "Write a UTF-8 text file inside the selected workspace. Requires approval.",
+                listOf("path", "text"),
+                buildJsonObject { put("path", path); put("text", stringProperty("New file content")) })
+        )
+        add(
+            definition(
+                DesktopAgentEditFileToolName,
+                "Replace exactly one occurrence in a text file. Requires approval.",
+                listOf("path", "old_text", "new_text"),
+                buildJsonObject {
+                    put("path", path); put("old_text", stringProperty("Existing text")); put(
+                    "new_text",
+                    stringProperty("Replacement text")
+                )
+                })
+        )
+        add(
+            definition(
+                DesktopAgentShellToolName,
+                "Run a shell command in the selected workspace. Requires approval. You MUST set network=true before the " +
+                    "first attempt of any command that may access the Internet, including apt/apt-get, curl, wget, git " +
+                    "clone/pull, npm/pnpm/yarn, pip/uv, cargo, go, Gradle, Maven, package updates, downloads, or network " +
+                    "diagnostics. network=true requests explicit user approval. Use network=false only for commands that are " +
+                    "certainly local. Do not retry a failed network command without network=true.",
+                listOf("command", "network"),
+                buildJsonObject {
+                    put("command", stringProperty("Shell command"))
+                    put("cwd", path)
+                    putJsonObject("network") {
+                        put("type", "boolean")
+                        put(
+                            "description",
+                            "Required. true for any Internet, package registry, download, update, git remote, or connectivity command; false only for certainly local commands."
+                        )
+                    }
                 }
-            }
-        ))
-        if (config.enabledSkillNames.isNotEmpty()) add(definition(DesktopUseSkillToolName, "Load instructions from an enabled skill. Requires approval.", listOf("name"), buildJsonObject { put("name", stringProperty("Enabled skill name")); put("path", stringProperty("Linked file within the skill")) }))
+            ))
+        if (config.enabledSkillNames.isNotEmpty()) add(
+            definition(
+                DesktopUseSkillToolName,
+                "Load instructions from an enabled skill. Requires approval.",
+                listOf("name"),
+                buildJsonObject {
+                    put("name", stringProperty("Enabled skill name")); put(
+                    "path",
+                    stringProperty("Linked file within the skill")
+                )
+                })
+        )
     }
 }
 
@@ -532,7 +654,10 @@ internal fun agentNetworkPolicyPrompt(config: DesktopAgentConfig?): String = con
     """.trimIndent()
 }.orEmpty()
 
-private fun JsonObject.requiredString(name: String): String = this[name]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
-    ?: error("$name is required")
+private fun JsonObject.requiredString(name: String): String =
+    this[name]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+        ?: error("$name is required")
+
 private fun JsonObject.optionalString(name: String): String? = this[name]?.jsonPrimitive?.contentOrNull
-private fun JsonObject.optionalBoolean(name: String): Boolean? = this[name]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull()
+private fun JsonObject.optionalBoolean(name: String): Boolean? =
+    this[name]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull()

@@ -103,7 +103,10 @@ class DesktopPromptInjectionTest {
             compressed.messages.map { it.content }
         )
         assertEquals(conversation.messages, compressed.branches.single().messages)
-        assertEquals("USER:\nold question\n\nASSISTANT:\nold answer", conversation.messages.dropLast(1).compressionTranscript())
+        assertEquals(
+            "USER:\nold question\n\nASSISTANT:\nold answer",
+            conversation.messages.dropLast(1).compressionTranscript()
+        )
     }
 
     @Test

@@ -3,9 +3,9 @@ package me.rerere.rikkahub.desktop
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlin.test.assertFails
 
 class DesktopStoreTest {
     private class MemorySecrets : DesktopSecretStore {
@@ -290,10 +290,12 @@ class DesktopStoreTest {
             apiKey = "nested-current-search-secret",
             apiKeys = mapOf(DesktopSearchProviderType.JINA to "nested-stored-search-secret")
         )
-        val provider = DesktopProviderProfile(config = DesktopConfig(
-            apiKey = "provider-secret",
-            webSearchSettings = nestedSearchSettings
-        ))
+        val provider = DesktopProviderProfile(
+            config = DesktopConfig(
+                apiKey = "provider-secret",
+                webSearchSettings = nestedSearchSettings
+            )
+        )
         val searchSettings = DesktopWebSearchSettings(
             providerType = DesktopSearchProviderType.TAVILY,
             apiKey = "current-search-secret",
@@ -305,11 +307,13 @@ class DesktopStoreTest {
         val store = DesktopStore(directory.resolve("desktop.json"), secrets)
         val backup = directory.resolve("backup.json")
 
-        store.exportData(backup, DesktopData(
-            providers = listOf(provider),
-            selectedProviderId = provider.id,
-            webSearchSettings = searchSettings
-        ))
+        store.exportData(
+            backup, DesktopData(
+                providers = listOf(provider),
+                selectedProviderId = provider.id,
+                webSearchSettings = searchSettings
+            )
+        )
 
         val raw = Files.readString(backup)
         listOf(
@@ -470,7 +474,8 @@ class DesktopStoreTest {
         val firstAssistant = DesktopAssistantProfile(id = "first")
         val secondAssistant = DesktopAssistantProfile(id = "second")
         val firstFolder = DesktopFolder(id = "first-folder", assistantId = firstAssistant.id, name = "First")
-        val conversation = DesktopConversation(id = "conversation", assistantId = firstAssistant.id, folderId = firstFolder.id)
+        val conversation =
+            DesktopConversation(id = "conversation", assistantId = firstAssistant.id, folderId = firstFolder.id)
         val data = DesktopData(
             assistants = listOf(firstAssistant, secondAssistant),
             selectedAssistantId = firstAssistant.id,

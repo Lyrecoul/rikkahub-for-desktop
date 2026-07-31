@@ -9,6 +9,7 @@ internal fun DesktopLanguage.resolved(): DesktopLanguage = when (this) {
         } else {
             DesktopLanguage.CHINESE_SIMPLIFIED
         }
+
         "ja" -> DesktopLanguage.JAPANESE
         "ko" -> DesktopLanguage.KOREAN
         "ru" -> DesktopLanguage.RUSSIAN
@@ -18,22 +19,23 @@ internal fun DesktopLanguage.resolved(): DesktopLanguage = when (this) {
         "pt" -> DesktopLanguage.PORTUGUESE_BRAZIL
         else -> DesktopLanguage.ENGLISH
     }
+
     else -> this
 }
 
 internal fun DesktopLanguage.displayName(language: DesktopLanguage): String = when (this) {
-        DesktopLanguage.SYSTEM -> desktopText(language, "language.system_default")
-        DesktopLanguage.ENGLISH -> "English"
-        DesktopLanguage.CHINESE_SIMPLIFIED -> "简体中文"
-        DesktopLanguage.CHINESE_TRADITIONAL -> "繁體中文"
-        DesktopLanguage.JAPANESE -> "日本語"
-        DesktopLanguage.KOREAN -> "한국어"
-        DesktopLanguage.RUSSIAN -> "Русский"
-        DesktopLanguage.SPANISH -> "Español"
-        DesktopLanguage.FRENCH -> "Français"
-        DesktopLanguage.GERMAN -> "Deutsch"
-        DesktopLanguage.PORTUGUESE_BRAZIL -> "Português (Brasil)"
-    }
+    DesktopLanguage.SYSTEM -> desktopText(language, "language.system_default")
+    DesktopLanguage.ENGLISH -> "English"
+    DesktopLanguage.CHINESE_SIMPLIFIED -> "简体中文"
+    DesktopLanguage.CHINESE_TRADITIONAL -> "繁體中文"
+    DesktopLanguage.JAPANESE -> "日本語"
+    DesktopLanguage.KOREAN -> "한국어"
+    DesktopLanguage.RUSSIAN -> "Русский"
+    DesktopLanguage.SPANISH -> "Español"
+    DesktopLanguage.FRENCH -> "Français"
+    DesktopLanguage.GERMAN -> "Deutsch"
+    DesktopLanguage.PORTUGUESE_BRAZIL -> "Português (Brasil)"
+}
 
 /** Returns the translation for [key], falling back to English and finally the key itself. */
 internal fun desktopText(language: DesktopLanguage, key: String): String {

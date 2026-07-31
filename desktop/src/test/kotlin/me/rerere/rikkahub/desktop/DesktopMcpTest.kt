@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.desktop
 
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -8,6 +11,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class DesktopMcpTest {
@@ -44,9 +49,66 @@ class DesktopMcpTest {
         val function = body["tools"]!!.jsonArray.single().jsonObject["function"]!!.jsonObject
         val parameters = function["parameters"]!!.jsonObject
 
-        assertEquals("mcp__GitHub__search", function["name"]!!.jsonPrimitive.content)
+        assertEquals(server.toolCallName(server.tools.single()), function["name"]!!.jsonPrimitive.content)
         assertEquals("object", parameters["type"]!!.jsonPrimitive.content)
         assertTrue(parameters["required"]!!.jsonArray.any { it.jsonPrimitive.content == "query" })
+    }
+
+    @Test
+    fun generatedToolNamesAreUniqueAndProviderSafe() {
+        val longTool = DesktopMcpTool("search.with-invalid-characters-and-a-name-that-is-far-too-long-for-openai")
+        val first = server.toolCallName(longTool)
+        val second = server.copy(id = "server-2").toolCallName(longTool)
+
+        assertNotEquals(first, second)
+        assertTrue(first.length <= 64)
+        assertTrue(first.matches(Regex("[A-Za-z0-9_]+")))
+    }
+
+    @Test
+    fun openAiParametersKeepSchemaDefinitionsAndDoNotForbidDynamicKeys() {
+        val definitions = buildJsonObject {
+            put("Query", buildJsonObject {
+                put("type", "object")
+                put("properties", buildJsonObject { put("text", buildJsonObject { put("type", "string") }) })
+            })
+        }
+        val parameters = DesktopMcpTool(
+            name = "search",
+            inputSchema = buildJsonObject {
+                put("query", buildJsonObject { put("\$ref", "#/\$defs/Query") })
+            },
+            definitions = definitions
+        ).openAiParameters()
+
+        assertEquals(definitions, parameters["\$defs"])
+        assertFalse("additionalProperties" in parameters)
+    }
+
+    @Test
+    fun toolCacheIsInvalidatedWhenConnectionSettingsChange() {
+        val synced = server.withSyncedTools(server.tools)
+
+        assertTrue(synced.hasCurrentTools())
+        assertFalse(synced.copy(url = "https://other.example/mcp").hasCurrentTools())
+        assertFalse(synced.copy(headers = listOf(DesktopCustomHeader("Authorization", "changed"))).hasCurrentTools())
+    }
+
+    @Test
+    fun toolResultsPreserveErrorsAndStructuredContentWithoutDumpingMedia() {
+        val output = CallToolResult(
+            content = listOf(
+                TextContent("failed"),
+                ImageContent(data = "sensitive-base64", mimeType = "image/png")
+            ),
+            isError = true,
+            structuredContent = buildJsonObject { put("code", "E_TEST") }
+        ).desktopOutput()
+
+        assertTrue(output.startsWith("MCP tool error:"))
+        assertTrue(output.contains("\"code\":\"E_TEST\""))
+        assertTrue(output.contains("image omitted"))
+        assertFalse(output.contains("sensitive-base64"))
     }
 
     @Test

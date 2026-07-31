@@ -129,7 +129,9 @@ class DesktopMessageBranchTest {
         val edited = DesktopConversation(messages = original).editMessageAt(0, "revised question")
 
         assertEquals(listOf("revised question"), edited.messages.map { it.content })
-        assertEquals(listOf("original question", "original answer", "follow-up"), edited.branches.single().messages.map { it.content })
+        assertEquals(
+            listOf("original question", "original answer", "follow-up"),
+            edited.branches.single().messages.map { it.content })
         assertEquals("original question", edited.messages.single().selectVariant(0).content)
     }
 
@@ -315,7 +317,9 @@ class DesktopMessageBranchTest {
         )
 
         assertEquals(listOf("question", ""), regenerated.messages.map { it.content })
-        assertEquals(listOf("question", "first answer", "follow-up"), regenerated.branches.single().messages.map { it.content })
+        assertEquals(
+            listOf("question", "first answer", "follow-up"),
+            regenerated.branches.single().messages.map { it.content })
         assertEquals("重新生成前历史", regenerated.branches.single().name)
     }
 
@@ -479,7 +483,14 @@ class DesktopMessageBranchTest {
             message.copy(reasoningDurationMillis = 500).completeReasoningDuration(now = 3_500).reasoningDurationMillis
         )
         assertEquals(null, ChatMessage("assistant", "").completeReasoningDuration(now = 3_500).reasoningDurationMillis)
-        assertEquals(null, ChatMessage("assistant", "", reasoning = "thinking").completeReasoningDuration(now = 3_500).reasoningDurationMillis)
+        assertEquals(
+            null,
+            ChatMessage(
+                "assistant",
+                "",
+                reasoning = "thinking"
+            ).completeReasoningDuration(now = 3_500).reasoningDurationMillis
+        )
     }
 
     @Test
@@ -495,7 +506,12 @@ class DesktopMessageBranchTest {
     fun aggregatesConversationStatistics() {
         val conversation = DesktopConversation(
             messages = listOf(
-                ChatMessage("user", "question", promptTokens = 12, attachments = listOf(DesktopAttachment("a.txt", "text/plain", "a"))),
+                ChatMessage(
+                    "user",
+                    "question",
+                    promptTokens = 12,
+                    attachments = listOf(DesktopAttachment("a.txt", "text/plain", "a"))
+                ),
                 ChatMessage("assistant", "answer", reasoning = "thinking", completionTokens = 8)
             )
         )

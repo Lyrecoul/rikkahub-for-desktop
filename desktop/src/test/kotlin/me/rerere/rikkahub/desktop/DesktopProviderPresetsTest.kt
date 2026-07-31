@@ -7,9 +7,11 @@ import kotlin.test.assertTrue
 class DesktopProviderPresetsTest {
     @Test
     fun includesAndroidCompatibleOpenAiPresets() {
-        assertTrue(DesktopProviderPresets.map(DesktopProviderPreset::name).containsAll(
-            listOf("RikkaHub", "OpenAI", "AiHubMix", "硅基流动", "DeepSeek", "OpenRouter", "月之暗面", "AckAI")
-        ))
+        assertTrue(
+            DesktopProviderPresets.map(DesktopProviderPreset::name).containsAll(
+                listOf("RikkaHub", "OpenAI", "AiHubMix", "硅基流动", "DeepSeek", "OpenRouter", "月之暗面", "AckAI")
+            )
+        )
     }
 
     @Test

@@ -1,7 +1,7 @@
 package me.rerere.rikkahub.desktop
 
-import androidx.compose.runtime.Composable
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -67,9 +67,16 @@ internal fun tokenizeCode(code: String, language: String): List<CodeToken> {
         val isYaml = normalizedLanguage == "yaml"
         val lineComment = when {
             remaining.startsWith("//") -> remaining.indexOf('\n').let { if (it < 0) remaining.length else it }
-            remaining.startsWith('#') && (normalizedLanguage == "python" || normalizedLanguage == "shell" || isYaml) -> remaining.indexOf('\n').let { if (it < 0) remaining.length else it }
-            remaining.startsWith("--") && normalizedLanguage == "sql" -> remaining.indexOf('\n').let { if (it < 0) remaining.length else it }
-            remaining.startsWith("<!--") && isMarkup -> remaining.indexOf("-->").let { if (it < 0) remaining.length else it + 3 }
+            remaining.startsWith('#') && (normalizedLanguage == "python" || normalizedLanguage == "shell" || isYaml) -> remaining.indexOf(
+                '\n'
+            ).let { if (it < 0) remaining.length else it }
+
+            remaining.startsWith("--") && normalizedLanguage == "sql" -> remaining.indexOf('\n')
+                .let { if (it < 0) remaining.length else it }
+
+            remaining.startsWith("<!--") && isMarkup -> remaining.indexOf("-->")
+                .let { if (it < 0) remaining.length else it + 3 }
+
             else -> 0
         }
         if (lineComment > 0) {

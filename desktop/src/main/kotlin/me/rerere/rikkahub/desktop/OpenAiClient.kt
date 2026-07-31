@@ -1,11 +1,11 @@
 package me.rerere.rikkahub.desktop
 
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -22,16 +22,15 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.Response
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import java.io.IOException
 import java.util.Locale
-import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 internal data class StreamDelta(
@@ -153,6 +152,7 @@ class OpenAiClient(
                                                 put("url", "data:${attachment.mimeType};base64,${attachment.data}")
                                             }
                                         })
+
                                         DesktopAttachmentKind.AUDIO -> add(buildJsonObject {
                                             put("type", "input_audio")
                                             putJsonObject("input_audio") {
@@ -160,6 +160,7 @@ class OpenAiClient(
                                                 put("format", if (attachment.mimeType == "audio/wav") "wav" else "mp3")
                                             }
                                         })
+
                                         DesktopAttachmentKind.FILE -> add(buildJsonObject {
                                             put("type", "text")
                                             put("text", "File: ${attachment.name}\n${attachment.data}")
@@ -294,6 +295,7 @@ class OpenAiClient(
         is JsonArray -> joinToString(separator = "") { part -> part.textContent() }
         is JsonObject -> listOf(this["text"], this["content"], this["output_text"])
             .joinToString(separator = "") { part -> part.textContent() }
+
         null -> ""
     }
 
@@ -358,10 +360,12 @@ class OpenAiClient(
 
     internal suspend fun getCachedBalance(config: DesktopConfig, forceRefresh: Boolean = false): String {
         val options = config.balanceOptions
-        val key = listOf(config.baseUrl, config.apiKey.hashCode(), options.apiPath, options.resultPath).joinToString("|")
+        val key =
+            listOf(config.baseUrl, config.apiKey.hashCode(), options.apiPath, options.resultPath).joinToString("|")
         val now = System.currentTimeMillis()
         synchronized(balanceCache) {
-            balanceCache[key]?.takeIf { !forceRefresh && now - it.fetchedAt < BalanceCacheTtlMillis }?.let { return it.value }
+            balanceCache[key]?.takeIf { !forceRefresh && now - it.fetchedAt < BalanceCacheTtlMillis }
+                ?.let { return it.value }
         }
         val value = getBalance(config)
         synchronized(balanceCache) {
@@ -382,7 +386,7 @@ class OpenAiClient(
         config: DesktopConfig,
         calls: List<DesktopToolCall>,
         memoryToolHandler: DesktopMemoryToolHandler? = null,
-        mcpClient: DesktopMcpClient = DesktopMcpClient(),
+        mcpClient: DesktopMcpClient? = null,
         askUserHandler: (suspend (DesktopToolCall) -> String)? = null,
         agentRuntime: DesktopAgentRuntime = DesktopAgentRuntime(),
         approvalHandler: (suspend (DesktopToolCall, DesktopAgentApprovalRequest) -> Boolean)? = null
@@ -402,6 +406,7 @@ class OpenAiClient(
 }
 
 private data class DesktopBalanceCacheEntry(val value: String, val fetchedAt: Long)
+
 private const val BalanceCacheTtlMillis = 2 * 60 * 1000L
 
 internal const val DesktopWebSearchToolName = "web_search"

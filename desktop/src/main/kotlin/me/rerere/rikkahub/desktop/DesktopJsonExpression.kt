@@ -29,8 +29,11 @@ private data class DesktopPath(val parts: List<DesktopPathPart>) : DesktopJsonEx
         var element: JsonElement = root
         parts.forEach { part ->
             element = when (part) {
-                is DesktopPathPart.Field -> (element as? JsonObject)?.get(part.name) ?: return DesktopJsonValue.String("")
-                is DesktopPathPart.Index -> (element as? JsonArray)?.getOrNull(part.index) ?: return DesktopJsonValue.String("")
+                is DesktopPathPart.Field -> (element as? JsonObject)?.get(part.name)
+                    ?: return DesktopJsonValue.String("")
+
+                is DesktopPathPart.Index -> (element as? JsonArray)?.getOrNull(part.index)
+                    ?: return DesktopJsonValue.String("")
             }
         }
         return element.toValue()
@@ -78,7 +81,9 @@ private sealed interface DesktopJsonValue {
     }
 
     data class Number(val value: Double) : DesktopJsonValue {
-        override fun asString(): kotlin.String = if (value.isFinite() && value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
+        override fun asString(): kotlin.String =
+            if (value.isFinite() && value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
+
         override fun asNumber() = value
     }
 }
@@ -158,6 +163,7 @@ private class DesktopJsonExpressionParser(private val source: String) {
                     require(start != position && consume("]")) { "余额表达式数组下标无效" }
                     parts += DesktopPathPart.Index(source.substring(start, position - 1).toInt())
                 }
+
                 else -> return DesktopPath(parts)
             }
         }
@@ -188,12 +194,14 @@ private class DesktopJsonExpressionParser(private val source: String) {
         while (position < source.length && peek() != '"') {
             val character = source[position++]
             if (character == '\\' && position < source.length) {
-                value.append(when (val escaped = source[position++]) {
-                    'n' -> '\n'
-                    'r' -> '\r'
-                    't' -> '\t'
-                    else -> escaped
-                })
+                value.append(
+                    when (val escaped = source[position++]) {
+                        'n' -> '\n'
+                        'r' -> '\r'
+                        't' -> '\t'
+                        else -> escaped
+                    }
+                )
             } else value.append(character)
         }
         require(consume("\"")) { "余额表达式字符串未闭合" }

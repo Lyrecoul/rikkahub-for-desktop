@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.desktop
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -37,7 +36,7 @@ internal suspend fun executeDesktopToolCalls(
     config: DesktopConfig,
     calls: List<DesktopToolCall>,
     memoryToolHandler: DesktopMemoryToolHandler? = null,
-    mcpClient: DesktopMcpClient = DesktopMcpClient(),
+    mcpClient: DesktopMcpClient? = null,
     askUserHandler: (suspend (DesktopToolCall) -> String)? = null,
     agentRuntime: DesktopAgentRuntime = DesktopAgentRuntime(),
     approvalHandler: (suspend (DesktopToolCall, DesktopAgentApprovalRequest) -> Boolean)? = null
@@ -52,20 +51,24 @@ internal suspend fun executeDesktopToolCalls(
             require(query.isNotBlank()) { "web_search requires a non-empty query" }
             searchWeb(httpClient, config.webSearchSettings, query).content
         }.getOrElse { "Web search failed: ${it.message ?: "unknown error"}" }
+
         DesktopCurrentTimeToolName -> if (DesktopLocalTool.CURRENT_TIME in config.localTools) {
             ZonedDateTime.now().format(DateTimeFormatter.ISO_ZONED_DATE_TIME)
         } else {
             "current_time is not enabled for this assistant"
         }
+
         DesktopAskUserToolName -> if (DesktopLocalTool.ASK_USER in config.localTools && askUserHandler != null) {
             askUserHandler(call)
         } else {
             "ask_user is not enabled for this assistant"
         }
+
         DesktopMemoryToolName -> runCatching {
             check(config.memoryEnabled && memoryToolHandler != null) { "memory_tool is not enabled for this assistant" }
             executeMemoryToolCall(call.arguments, memoryToolHandler)
         }.getOrElse { "Memory update failed: ${it.message ?: "unknown error"}" }
+
         DesktopAgentListFilesToolName,
         DesktopAgentSearchFilesToolName,
         DesktopAgentReadFileToolName,
@@ -83,12 +86,14 @@ internal suspend fun executeDesktopToolCalls(
                 "Agent tool failed: ${error.message ?: "unknown error"}"
             }
         }
+
         else -> runCatching {
             val target = config.mcpServers.asSequence()
                 .flatMap { server -> server.tools.asSequence().map { tool -> server to tool } }
                 .firstOrNull { (server, tool) -> tool.enabled && server.toolCallName(tool) == call.name }
                 ?: error("Unsupported desktop tool: ${call.name}")
-            mcpClient.callTool(target.first, target.second.name, call.arguments)
+            requireNotNull(mcpClient) { "MCP client is unavailable" }
+                .callTool(target.first, target.second.name, call.arguments)
         }.getOrElse { "MCP tool failed: ${it.message ?: "unknown error"}" }
     }
     ChatMessage(role = "tool", content = output, toolCallId = call.id)
@@ -143,11 +148,13 @@ private fun executeMemoryToolCall(arguments: String, handler: DesktopMemoryToolH
             DesktopMemory.serializer(),
             handler.edit(params.requiredId(), params.requiredContent())
         )
+
         "delete" -> {
             val id = params.requiredId()
             handler.delete(id)
             buildJsonObject { put("success", true); put("id", id) }.toString()
         }
+
         else -> error("unknown action: $action, must be one of [create, edit, delete]")
     }
 }

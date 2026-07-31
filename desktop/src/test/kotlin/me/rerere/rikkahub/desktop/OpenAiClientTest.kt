@@ -1,11 +1,11 @@
 package me.rerere.rikkahub.desktop
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.int
-import kotlinx.serialization.json.boolean
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -377,8 +377,10 @@ class OpenAiClientTest {
         val messages = body.getValue("messages").jsonArray
 
         assertTrue("content" !in messages[0].jsonObject)
-        assertEquals("call_1", messages[0].jsonObject.getValue("tool_calls").jsonArray[0].jsonObject
-            .getValue("id").jsonPrimitive.content)
+        assertEquals(
+            "call_1", messages[0].jsonObject.getValue("tool_calls").jsonArray[0].jsonObject
+                .getValue("id").jsonPrimitive.content
+        )
         assertEquals("call_1", messages[1].jsonObject.getValue("tool_call_id").jsonPrimitive.content)
     }
 
@@ -407,6 +409,9 @@ class OpenAiClientTest {
         assertEquals("10.25", evaluateDesktopJsonExpression("data.total_credits - data.total_usage", response))
         assertEquals("20.5", evaluateDesktopJsonExpression("(data.total_credits - data.total_usage) * 2", response))
         assertEquals("8", evaluateDesktopJsonExpression("balance_infos[0].total_balance", response))
-        assertEquals("USD 10.25", evaluateDesktopJsonExpression("currency ++ \" \" ++ (data.total_credits - data.total_usage)", response))
+        assertEquals(
+            "USD 10.25",
+            evaluateDesktopJsonExpression("currency ++ \" \" ++ (data.total_credits - data.total_usage)", response)
+        )
     }
 }

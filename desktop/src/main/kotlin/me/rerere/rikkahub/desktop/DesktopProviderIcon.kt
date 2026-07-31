@@ -37,7 +37,11 @@ private fun providerIconPath(name: String): String? {
 
 @Composable
 internal fun DesktopProviderIcon(name: String, modifier: Modifier = Modifier) {
-    Surface(modifier = modifier.size(24.dp), shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
+    Surface(
+        modifier = modifier.size(24.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.secondaryContainer
+    ) {
         val path = providerIconPath(name)
         if (path != null) {
             Image(painterResource("icons/$path"), name, Modifier.padding(4.dp))

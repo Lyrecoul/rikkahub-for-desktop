@@ -1,12 +1,12 @@
 package me.rerere.rikkahub.desktop
 
+import org.apache.pdfbox.Loader
+import org.apache.pdfbox.text.PDFTextStripper
 import java.io.File
 import java.io.InputStream
 import java.util.zip.ZipFile
 import javax.xml.stream.XMLInputFactory
 import javax.xml.stream.XMLStreamConstants
-import org.apache.pdfbox.Loader
-import org.apache.pdfbox.text.PDFTextStripper
 
 private const val MaxDocumentTextCharacters = 200_000
 private const val MaxDocumentXmlBytes = 5_000_000
@@ -47,7 +47,8 @@ private fun extractPptxText(file: File): String = ZipFile(file).use { zip ->
         .filter { it.name.matches(Regex("ppt/slides/slide\\d+\\.xml")) }
         .sortedBy { it.name.substringAfter("slide").substringBefore('.').toIntOrNull() ?: Int.MAX_VALUE }
         .mapIndexed { index, entry ->
-            val text = zip.getInputStream(entry).use { extractXmlText(it.readDocumentXml(), paragraphTags = setOf("p")) }
+            val text =
+                zip.getInputStream(entry).use { extractXmlText(it.readDocumentXml(), paragraphTags = setOf("p")) }
             "## 幻灯片 ${index + 1}\n\n$text"
         }
         .joinToString("\n\n")
@@ -59,7 +60,14 @@ private fun extractEpubText(file: File): String = ZipFile(file).use { zip ->
         .filter { entry -> entry.name.endsWith(".xhtml", true) || entry.name.endsWith(".html", true) }
         .filterNot { it.name.contains("META-INF", true) }
         .sortedBy { it.name }
-        .map { entry -> zip.getInputStream(entry).use { extractXmlText(it.readDocumentXml(), paragraphTags = setOf("p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6")) } }
+        .map { entry ->
+            zip.getInputStream(entry).use {
+                extractXmlText(
+                    it.readDocumentXml(),
+                    paragraphTags = setOf("p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6")
+                )
+            }
+        }
         .filter { it.isNotBlank() }
         .joinToString("\n\n")
         .ifBlank { error("EPUB 中没有可读取的文本") }

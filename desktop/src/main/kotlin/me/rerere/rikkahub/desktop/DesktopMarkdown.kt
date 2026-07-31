@@ -1,11 +1,7 @@
 package me.rerere.rikkahub.desktop
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.HorizontalScrollbar
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -15,12 +11,14 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.HorizontalScrollbar
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,8 +27,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -40,8 +38,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -49,29 +47,31 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.node.ModifierNodeElement
-import androidx.compose.ui.graphics.toComposeImageBitmap
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.relocation.BringIntoViewModifierNode
@@ -86,8 +86,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogWindow
 import androidx.compose.ui.window.rememberDialogState
-import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Check
+import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Download
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Maximize2
@@ -96,12 +96,10 @@ import com.composables.icons.lucide.RotateCcw
 import com.composables.icons.lucide.ZoomIn
 import com.composables.icons.lucide.ZoomOut
 import dev.darkokoa.pangu.spacingText
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.scilab.forge.jlatexmath.TeXConstants
-import org.scilab.forge.jlatexmath.TeXFormula
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.MarkdownTokenTypes
 import org.intellij.markdown.ast.ASTNode
@@ -110,8 +108,10 @@ import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 import org.intellij.markdown.parser.MarkdownParser
-import java.awt.image.BufferedImage
+import org.scilab.forge.jlatexmath.TeXConstants
+import org.scilab.forge.jlatexmath.TeXFormula
 import java.awt.datatransfer.StringSelection
+import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import javax.imageio.ImageIO
 
@@ -269,9 +269,11 @@ internal object DesktopMarkdownParser {
                 GFMElementTypes.STRIKETHROUGH -> {
                     current.children.forEach { visit(it, style.copy(strikethrough = true)) }
                 }
+
                 MarkdownElementTypes.CODE_SPAN -> {
                     append(current.getTextInNode(content).trim('`').trim(), style.copy(code = true))
                 }
+
                 MarkdownElementTypes.INLINE_LINK -> {
                     val destination = current.findFirst(MarkdownElementTypes.LINK_DESTINATION)
                         ?.getTextInNode(content)?.trim()?.trim('<', '>').orEmpty()
@@ -280,15 +282,18 @@ internal object DesktopMarkdownParser {
                         ?: destination
                     append(label, style.copy(link = destination.takeIf { it.isNotBlank() }))
                 }
+
                 MarkdownElementTypes.IMAGE -> {
                     val alt = current.findFirst(MarkdownElementTypes.LINK_TEXT)
                         ?.getTextInNode(content)?.trim()?.removeSurrounding("[", "]").orEmpty()
                     append(if (alt.isBlank()) "[Image]" else "[Image: $alt]", style.copy(italic = true))
                 }
+
                 GFMTokenTypes.GFM_AUTOLINK -> {
                     val link = current.getTextInNode(content).trim().trim('<', '>')
                     append(link, style.copy(link = link))
                 }
+
                 else -> {
                     if (current is LeafASTNode) {
                         if (current.type != MarkdownTokenTypes.EMPH &&
@@ -382,6 +387,7 @@ private fun MarkdownBlockView(block: MarkdownBlock, options: MarkdownRenderOptio
             fontSize = 15.sp * options.fontScale,
             enableChineseTypography = options.enableChineseTypography
         )
+
         is MarkdownBlock.Heading -> {
             val fontSize = when (block.level) {
                 1 -> 25.sp
@@ -397,11 +403,13 @@ private fun MarkdownBlockView(block: MarkdownBlock, options: MarkdownRenderOptio
                 enableChineseTypography = options.enableChineseTypography
             )
         }
+
         is MarkdownBlock.Code -> if (block.language.isMermaidLanguage() && options.enableMermaidRendering) {
             MermaidDiagram(block, options)
         } else {
             CodeBlock(block, options)
         }
+
         is MarkdownBlock.Quote -> {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 Box(
@@ -413,6 +421,7 @@ private fun MarkdownBlockView(block: MarkdownBlock, options: MarkdownRenderOptio
                 }
             }
         }
+
         is MarkdownBlock.ListBlock -> {
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 block.items.forEachIndexed { index, item ->
@@ -430,6 +439,7 @@ private fun MarkdownBlockView(block: MarkdownBlock, options: MarkdownRenderOptio
                 }
             }
         }
+
         is MarkdownBlock.Table -> MarkdownTable(block, options)
         is MarkdownBlock.Math -> LatexFormula(block.latex, options.fontScale)
         MarkdownBlock.Rule -> HorizontalDivider(
@@ -459,7 +469,11 @@ private fun LatexFormula(latex: String, fontScale: Float) {
                 formulaColor.alpha
             )
             icon.setForeground(awtFormulaColor)
-            val image = BufferedImage(icon.iconWidth.coerceAtLeast(1), icon.iconHeight.coerceAtLeast(1), BufferedImage.TYPE_INT_ARGB)
+            val image = BufferedImage(
+                icon.iconWidth.coerceAtLeast(1),
+                icon.iconHeight.coerceAtLeast(1),
+                BufferedImage.TYPE_INT_ARGB
+            )
             val graphics = image.createGraphics()
             try {
                 graphics.color = awtFormulaColor
@@ -492,7 +506,11 @@ private fun MarkdownText(
         spans.withChineseTypography(enableChineseTypography)
     }
     if (displaySpans.any { it.math }) {
-        FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(3.dp), verticalArrangement = Arrangement.Center) {
+        FlowRow(
+            modifier,
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
             displaySpans.forEach { span ->
                 if (span.math) LatexFormula(span.text, fontSize.value / 15f)
                 else MarkdownText(
@@ -755,10 +773,16 @@ private fun MermaidDiagram(block: MarkdownBlock.Code, options: MarkdownRenderOpt
                                 scale = 1f
                                 translation = Offset.Zero
                             }
-                            MermaidViewportButton(Lucide.Download, desktopText(options.language, "mermaid.save_image")) {
+                            MermaidViewportButton(
+                                Lucide.Download,
+                                desktopText(options.language, "mermaid.save_image")
+                            ) {
                                 options.onSaveMermaidImage?.invoke(renderedResult)
                             }
-                            MermaidViewportButton(Lucide.Maximize2, desktopText(options.language, "mermaid.fullscreen")) {
+                            MermaidViewportButton(
+                                Lucide.Maximize2,
+                                desktopText(options.language, "mermaid.fullscreen")
+                            ) {
                                 showFullscreen = true
                             }
                         }
@@ -772,16 +796,16 @@ private fun MermaidDiagram(block: MarkdownBlock.Code, options: MarkdownRenderOpt
                     }
                 }
                 if (showDiagram) {
-                BoxWithConstraints(
-                    Modifier.fillMaxWidth().heightIn(min = 420.dp, max = 680.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    MermaidViewport(
-                        bitmap, maxWidth, maxHeight, scale, translation,
-                        onScaleChange = { scale = it },
-                        onTranslationChange = { translation = it }
-                    )
-                }
+                    BoxWithConstraints(
+                        Modifier.fillMaxWidth().heightIn(min = 420.dp, max = 680.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        MermaidViewport(
+                            bitmap, maxWidth, maxHeight, scale, translation,
+                            onScaleChange = { scale = it },
+                            onTranslationChange = { translation = it }
+                        )
+                    }
                 } else {
                     CodeBlock(block, options, framed = false, showHeader = false)
                 }
@@ -944,7 +968,10 @@ private fun MermaidFullscreenWindow(
                     onTranslationChange = { translation = it }
                 )
                 Row(Modifier.align(Alignment.TopEnd).padding(10.dp)) {
-                    MermaidViewportButton(Lucide.Minimize2, desktopText(language, "mermaid.exit_fullscreen")) { onDismiss() }
+                    MermaidViewportButton(
+                        Lucide.Minimize2,
+                        desktopText(language, "mermaid.exit_fullscreen")
+                    ) { onDismiss() }
                 }
             }
         }

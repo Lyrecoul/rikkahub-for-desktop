@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.desktop
 
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.nio.file.Files
 import java.nio.file.Path
@@ -77,10 +76,12 @@ internal class DesktopStore(
 
         atomicWrite(
             dataFile,
-            json.encodeToString(sanitized.copy(
-                conversations = emptyList(),
-                conversationIds = sanitized.conversations.map(DesktopConversation::id)
-            ))
+            json.encodeToString(
+                sanitized.copy(
+                    conversations = emptyList(),
+                    conversationIds = sanitized.conversations.map(DesktopConversation::id)
+                )
+            )
         )
         val currentFiles = sanitized.conversations.map { conversationFile(it.id).fileName.toString() }.toSet()
         Files.list(conversationsDirectory).use { files ->
@@ -157,15 +158,21 @@ internal class DesktopStore(
 
     private fun restrictPermissions(path: Path, directory: Boolean) {
         runCatching {
-            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(if (directory) "rwx------" else "rw-------"))
+            Files.setPosixFilePermissions(
+                path,
+                PosixFilePermissions.fromString(if (directory) "rwx------" else "rw-------")
+            )
         }
     }
 
     private fun hydrateSecrets(data: DesktopData): DesktopData {
         val providers = data.providers.map { provider ->
-            provider.copy(config = provider.config.copy(
-                apiKey = provider.config.apiKey.ifBlank { secretStore.read(providerSecretId(provider.id)).orEmpty() }
-            ))
+            provider.copy(
+                config = provider.config.copy(
+                    apiKey = provider.config.apiKey.ifBlank {
+                        secretStore.read(providerSecretId(provider.id)).orEmpty()
+                    }
+                ))
         }
         val storedKeys = DesktopSearchProviderType.entries.associateWith { provider ->
             secretStore.read(searchSecretId(provider)).orEmpty()

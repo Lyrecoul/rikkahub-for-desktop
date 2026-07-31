@@ -5,8 +5,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -27,11 +27,17 @@ class DesktopAgentTest {
         val runtime = DesktopAgentRuntime(skillsRoot = root.resolve("skills"))
         val config = DesktopAgentConfig(DesktopAgentWorkspace(root.toString(), DesktopAgentBackend.LOCAL))
 
-        val content = runtime.execute(config, DesktopToolCall("read", DesktopAgentReadFileToolName, "{\"path\":\"notes.txt\"}")) { true }
+        val content = runtime.execute(
+            config,
+            DesktopToolCall("read", DesktopAgentReadFileToolName, "{\"path\":\"notes.txt\"}")
+        ) { true }
 
         assertEquals("hello", content)
         try {
-            runtime.execute(config, DesktopToolCall("escape", DesktopAgentReadFileToolName, "{\"path\":\"../secret\"}")) { true }
+            runtime.execute(
+                config,
+                DesktopToolCall("escape", DesktopAgentReadFileToolName, "{\"path\":\"../secret\"}")
+            ) { true }
             error("Expected path escape to fail")
         } catch (_: IllegalArgumentException) {
             // Expected.
@@ -85,8 +91,20 @@ class DesktopAgentTest {
         val approvals = mutableListOf<DesktopAgentApprovalKind>()
         val approve: suspend (DesktopAgentApprovalRequest) -> Boolean = { approvals += it.kind; true }
 
-        runtime.execute(config, DesktopToolCall("write", DesktopAgentWriteFileToolName, "{\"path\":\"src/a.txt\",\"text\":\"old\"}"), approve)
-        runtime.execute(config, DesktopToolCall("edit", DesktopAgentEditFileToolName, "{\"path\":\"src/a.txt\",\"old_text\":\"old\",\"new_text\":\"new\"}"), approve)
+        runtime.execute(
+            config,
+            DesktopToolCall("write", DesktopAgentWriteFileToolName, "{\"path\":\"src/a.txt\",\"text\":\"old\"}"),
+            approve
+        )
+        runtime.execute(
+            config,
+            DesktopToolCall(
+                "edit",
+                DesktopAgentEditFileToolName,
+                "{\"path\":\"src/a.txt\",\"old_text\":\"old\",\"new_text\":\"new\"}"
+            ),
+            approve
+        )
 
         assertEquals("new", Files.readString(root.resolve("src/a.txt")))
         assertEquals(listOf(DesktopAgentApprovalKind.WRITE, DesktopAgentApprovalKind.WRITE), approvals)
@@ -101,7 +119,11 @@ class DesktopAgentTest {
         try {
             runtime.execute(
                 config,
-                DesktopToolCall("shell", DesktopAgentShellToolName, "{\"command\":\"curl example.com\",\"network\":true}")
+                DesktopToolCall(
+                    "shell",
+                    DesktopAgentShellToolName,
+                    "{\"command\":\"curl example.com\",\"network\":true}"
+                )
             ) { request ->
                 requests += request
                 false
@@ -173,7 +195,8 @@ class DesktopAgentTest {
         val definitions = agentToolDefinitions(
             DesktopAgentConfig(DesktopAgentWorkspace("/workspace"), enabledSkillNames = setOf("repo-guide"))
         )
-        val names = definitions.map { it.jsonObject.getValue("function").jsonObject.getValue("name").jsonPrimitive.content }
+        val names =
+            definitions.map { it.jsonObject.getValue("function").jsonObject.getValue("name").jsonPrimitive.content }
 
         assertTrue(DesktopAgentShellToolName in names)
         assertTrue(DesktopUseSkillToolName in names)

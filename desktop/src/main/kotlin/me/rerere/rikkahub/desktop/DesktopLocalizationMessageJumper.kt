@@ -6,8 +6,11 @@ internal val DesktopMessageJumperTranslations = mapOf(
         "jumper.user" to "你", "jumper.assistant" to "助手", "jumper.empty_message" to "沒有訊息內容"
     ),
     DesktopLanguage.JAPANESE to mapOf(
-        "jumper.search_messages" to "メッセージを検索", "jumper.no_matching_messages" to "一致するメッセージはありません",
-        "jumper.user" to "あなた", "jumper.assistant" to "アシスタント", "jumper.empty_message" to "メッセージ本文なし"
+        "jumper.search_messages" to "メッセージを検索",
+        "jumper.no_matching_messages" to "一致するメッセージはありません",
+        "jumper.user" to "あなた",
+        "jumper.assistant" to "アシスタント",
+        "jumper.empty_message" to "メッセージ本文なし"
     ),
     DesktopLanguage.KOREAN to mapOf(
         "jumper.search_messages" to "메시지 검색", "jumper.no_matching_messages" to "일치하는 메시지가 없습니다",
@@ -22,15 +25,24 @@ internal val DesktopMessageJumperTranslations = mapOf(
         "jumper.user" to "Tú", "jumper.assistant" to "Asistente", "jumper.empty_message" to "Sin texto de mensaje"
     ),
     DesktopLanguage.FRENCH to mapOf(
-        "jumper.search_messages" to "Rechercher des messages", "jumper.no_matching_messages" to "Aucun message correspondant",
-        "jumper.user" to "Vous", "jumper.assistant" to "Assistant", "jumper.empty_message" to "Aucun texte de message"
+        "jumper.search_messages" to "Rechercher des messages",
+        "jumper.no_matching_messages" to "Aucun message correspondant",
+        "jumper.user" to "Vous",
+        "jumper.assistant" to "Assistant",
+        "jumper.empty_message" to "Aucun texte de message"
     ),
     DesktopLanguage.GERMAN to mapOf(
-        "jumper.search_messages" to "Nachrichten suchen", "jumper.no_matching_messages" to "Keine passenden Nachrichten",
-        "jumper.user" to "Du", "jumper.assistant" to "Assistent", "jumper.empty_message" to "Kein Nachrichtentext"
+        "jumper.search_messages" to "Nachrichten suchen",
+        "jumper.no_matching_messages" to "Keine passenden Nachrichten",
+        "jumper.user" to "Du",
+        "jumper.assistant" to "Assistent",
+        "jumper.empty_message" to "Kein Nachrichtentext"
     ),
     DesktopLanguage.PORTUGUESE_BRAZIL to mapOf(
-        "jumper.search_messages" to "Pesquisar mensagens", "jumper.no_matching_messages" to "Nenhuma mensagem correspondente",
-        "jumper.user" to "Você", "jumper.assistant" to "Assistente", "jumper.empty_message" to "Sem texto da mensagem"
+        "jumper.search_messages" to "Pesquisar mensagens",
+        "jumper.no_matching_messages" to "Nenhuma mensagem correspondente",
+        "jumper.user" to "Você",
+        "jumper.assistant" to "Assistente",
+        "jumper.empty_message" to "Sem texto da mensagem"
     )
 )

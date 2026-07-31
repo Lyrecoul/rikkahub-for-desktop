@@ -32,6 +32,7 @@ internal data class MermaidRenderResult(
 
 internal object DesktopMermaidRenderer {
     private const val RenderTimeoutSeconds = 45L
+
     private data class CacheKey(
         val source: String,
         val dark: Boolean,
@@ -42,14 +43,21 @@ internal object DesktopMermaidRenderer {
     private val cache = mutableMapOf<CacheKey, MermaidRenderResult?>()
     private val svgCache = mutableMapOf<CacheKey, ByteArray?>()
 
-    fun render(source: String, dark: Boolean, useSystemBrowser: Boolean, cliPath: String): MermaidRenderResult? = synchronized(cache) {
-        val key = CacheKey(source, dark, useSystemBrowser, cliPath)
-        if (key in cache) cache[key] else renderUncached(source, dark, useSystemBrowser, cliPath).also { cache[key] = it }
-    }
+    fun render(source: String, dark: Boolean, useSystemBrowser: Boolean, cliPath: String): MermaidRenderResult? =
+        synchronized(cache) {
+            val key = CacheKey(source, dark, useSystemBrowser, cliPath)
+            if (key in cache) cache[key] else renderUncached(
+                source,
+                dark,
+                useSystemBrowser,
+                cliPath
+            ).also { cache[key] = it }
+        }
 
-    fun cachedResult(source: String, dark: Boolean, useSystemBrowser: Boolean, cliPath: String): MermaidRenderResult? = synchronized(cache) {
-        cache[CacheKey(source, dark, useSystemBrowser, cliPath)]
-    }
+    fun cachedResult(source: String, dark: Boolean, useSystemBrowser: Boolean, cliPath: String): MermaidRenderResult? =
+        synchronized(cache) {
+            cache[CacheKey(source, dark, useSystemBrowser, cliPath)]
+        }
 
     fun renderSvg(result: MermaidRenderResult): ByteArray? = synchronized(svgCache) {
         val key = CacheKey(result.source, result.dark, result.useSystemBrowser, result.cliPath)

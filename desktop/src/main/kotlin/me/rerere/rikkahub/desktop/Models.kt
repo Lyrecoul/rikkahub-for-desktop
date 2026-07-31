@@ -1,7 +1,7 @@
 package me.rerere.rikkahub.desktop
 
-import kotlinx.serialization.Serializable
 import dev.darkokoa.pangu.spacingText
+import kotlinx.serialization.Serializable
 import java.net.URI
 import java.util.Locale
 import java.util.UUID
@@ -96,10 +96,11 @@ data class DesktopWebSearchSettings(
     val apiKeys: Map<DesktopSearchProviderType, String> = emptyMap(),
     val resultCount: Int = 5
 ) {
-    val isConfigured: Boolean get() = when (providerType) {
-        DesktopSearchProviderType.SEARXNG -> searxngUrl.isNotBlank()
-        else -> apiKey.isNotBlank()
-    }
+    val isConfigured: Boolean
+        get() = when (providerType) {
+            DesktopSearchProviderType.SEARXNG -> searxngUrl.isNotBlank()
+            else -> apiKey.isNotBlank()
+        }
 }
 
 internal fun DesktopWebSearchSettings.selectProvider(
@@ -755,15 +756,16 @@ internal fun normalizeGeneratedTitle(value: String, enableChineseTypography: Boo
     .let { if (enableChineseTypography) it.spacingText() else it }
     .take(48)
 
-internal fun parseChatSuggestions(value: String, enableChineseTypography: Boolean = false): List<String> = value.lineSequence()
-    .map { it.trim().replaceFirst(Regex("^(?:[-*]|\\d+[.)])\\s*"), "") }
-    .map { it.trim('"', '\'', '`') }
-    .map { if (enableChineseTypography) it.spacingText() else it }
-    .filter { it.isNotBlank() }
-    .distinct()
-    .take(4)
-    .map { it.take(160) }
-    .toList()
+internal fun parseChatSuggestions(value: String, enableChineseTypography: Boolean = false): List<String> =
+    value.lineSequence()
+        .map { it.trim().replaceFirst(Regex("^(?:[-*]|\\d+[.)])\\s*"), "") }
+        .map { it.trim('"', '\'', '`') }
+        .map { if (enableChineseTypography) it.spacingText() else it }
+        .filter { it.isNotBlank() }
+        .distinct()
+        .take(4)
+        .map { it.take(160) }
+        .toList()
 
 internal fun isSafeExternalUrl(value: String): Boolean = runCatching {
     URI(value).scheme?.lowercase() in setOf("http", "https")
@@ -1056,12 +1058,19 @@ internal fun DesktopAssistantProfile.injectPromptMessages(messages: List<ChatMes
     val context = messages.takeLast(promptInjections.maxOfOrNull { it.scanDepth.coerceAtLeast(1) } ?: 1)
         .joinToString("\n") { it.content }
     val triggered = promptInjections.filter { injection ->
-        injection.enabled && injection.content.isNotBlank() && (injection.constantActive || injection.isTriggeredBy(context))
+        injection.enabled && injection.content.isNotBlank() && (injection.constantActive || injection.isTriggeredBy(
+            context
+        ))
     }.sortedByDescending { it.priority }
     val prefix = triggered.filter { it.position == DesktopInjectionPosition.BEFORE_SYSTEM_PROMPT }.map { it.content }
     val suffix = triggered.filter { it.position == DesktopInjectionPosition.AFTER_SYSTEM_PROMPT }.map { it.content }
     val injected = messages.toMutableList()
-    triggered.filter { it.position !in setOf(DesktopInjectionPosition.BEFORE_SYSTEM_PROMPT, DesktopInjectionPosition.AFTER_SYSTEM_PROMPT) }
+    triggered.filter {
+        it.position !in setOf(
+            DesktopInjectionPosition.BEFORE_SYSTEM_PROMPT,
+            DesktopInjectionPosition.AFTER_SYSTEM_PROMPT
+        )
+    }
         // Inserts at a shared index prepend, so process lower-priority entries first.
         .asReversed()
         .forEach { injection ->
@@ -1071,7 +1080,12 @@ internal fun DesktopAssistantProfile.injectPromptMessages(messages: List<ChatMes
                 DesktopInjectionPosition.BOTTOM_OF_CHAT -> injected.indexOfLast { it.role == "user" }.let {
                     if (it < 0) injected.size else it + 1
                 }
-                DesktopInjectionPosition.AT_DEPTH -> (injected.size - injection.injectDepth.coerceAtLeast(0)).coerceIn(0, injected.size)
+
+                DesktopInjectionPosition.AT_DEPTH -> (injected.size - injection.injectDepth.coerceAtLeast(0)).coerceIn(
+                    0,
+                    injected.size
+                )
+
                 else -> injected.size
             }
             injected.add(index, message)
@@ -1084,7 +1098,9 @@ private fun DesktopPromptInjection.isTriggeredBy(context: String): Boolean {
     return keywords.any { keyword ->
         if (useRegex) {
             runCatching {
-                Regex(keyword, if (caseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)).containsMatchIn(context)
+                Regex(keyword, if (caseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)).containsMatchIn(
+                    context
+                )
             }.getOrDefault(false)
         } else {
             context.contains(keyword, ignoreCase = !caseSensitive)
@@ -1233,6 +1249,7 @@ fun DesktopData.deleteConversation(conversationId: String): DesktopData {
         .ifEmpty { listOf(activeAssistant().newConversation()) }
     return copy(
         conversations = remaining,
-        selectedConversationId = selectedConversationId.takeIf { id -> remaining.any { it.id == id } } ?: remaining.first().id
+        selectedConversationId = selectedConversationId.takeIf { id -> remaining.any { it.id == id } }
+            ?: remaining.first().id
     )
 }

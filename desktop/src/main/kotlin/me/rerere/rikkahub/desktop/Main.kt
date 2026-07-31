@@ -1,17 +1,15 @@
 package me.rerere.rikkahub.desktop
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
@@ -19,6 +17,9 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -27,9 +28,6 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -54,8 +52,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -71,8 +71,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -82,8 +82,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -92,72 +92,72 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.isShiftPressed
-import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
-import com.composables.icons.lucide.Bot
 import com.composables.icons.lucide.ArrowDown
 import com.composables.icons.lucide.ArrowDownToLine
 import com.composables.icons.lucide.ArrowUp
 import com.composables.icons.lucide.ArrowUpToLine
+import com.composables.icons.lucide.Bot
+import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronLeft
 import com.composables.icons.lucide.ChevronRight
-import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Database
 import com.composables.icons.lucide.Download
-import com.composables.icons.lucide.Globe
-import com.composables.icons.lucide.GitFork
-import com.composables.icons.lucide.Languages
-import com.composables.icons.lucide.Lightbulb
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Menu
-import com.composables.icons.lucide.Maximize2
-import com.composables.icons.lucide.Minimize2
 import com.composables.icons.lucide.Ellipsis
 import com.composables.icons.lucide.ExternalLink
 import com.composables.icons.lucide.Folder
-import com.composables.icons.lucide.Pencil
-import com.composables.icons.lucide.Paperclip
+import com.composables.icons.lucide.GitFork
+import com.composables.icons.lucide.Globe
+import com.composables.icons.lucide.Languages
+import com.composables.icons.lucide.Lightbulb
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Maximize2
+import com.composables.icons.lucide.Menu
+import com.composables.icons.lucide.Minimize2
 import com.composables.icons.lucide.PanelLeftClose
 import com.composables.icons.lucide.PanelLeftOpen
+import com.composables.icons.lucide.Paperclip
+import com.composables.icons.lucide.Pencil
 import com.composables.icons.lucide.Pin
 import com.composables.icons.lucide.PinOff
 import com.composables.icons.lucide.Plus
@@ -173,11 +173,11 @@ import com.composables.icons.lucide.Upload
 import com.composables.icons.lucide.UserRound
 import com.composables.icons.lucide.Wrench
 import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.blur.HazeColorEffect
+import dev.chrisbanes.haze.blur.blurEffect
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
-import dev.chrisbanes.haze.blur.blurEffect
-import dev.chrisbanes.haze.blur.HazeColorEffect
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -193,20 +193,19 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
+import java.awt.Desktop
+import java.awt.FileDialog
+import java.awt.Frame
+import java.awt.datatransfer.StringSelection
+import java.io.File
+import java.net.URI
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
-import java.util.UUID
 import java.util.Base64
-import java.io.File
-import java.awt.Desktop
-import java.awt.FileDialog
-import java.awt.Frame
-import java.awt.datatransfer.StringSelection
-import java.net.URI
+import java.util.UUID
 import kotlin.math.exp
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -410,11 +409,16 @@ private fun RikkaHubDesktop(
     val latestData by rememberUpdatedState(data)
     val scope = rememberCoroutineScope()
 
-    DisposableEffect(store) {
+    DisposableEffect(store, mcpClient) {
         onDispose {
             saveJob?.cancel()
             runCatching { store.save(latestData) }
+            mcpClient.close()
         }
+    }
+
+    LaunchedEffect(data.mcpServers) {
+        mcpClient.reconcileServers(data.mcpServers)
     }
 
     fun update(next: DesktopData) {
@@ -424,8 +428,12 @@ private fun RikkaHubDesktop(
             delay(750)
             withContext(Dispatchers.IO) { runCatching { store.save(next) } }
                 .onFailure { error ->
-                    generationErrors[next.selectedConversationId] = desktopText(next.preferences.language, "runtime.save_failed")
-                        .replace("%s", error.message ?: desktopText(next.preferences.language, "runtime.unknown_error"))
+                    generationErrors[next.selectedConversationId] =
+                        desktopText(next.preferences.language, "runtime.save_failed")
+                            .replace(
+                                "%s",
+                                error.message ?: desktopText(next.preferences.language, "runtime.unknown_error")
+                            )
                 }
         }
     }
@@ -446,23 +454,27 @@ private fun RikkaHubDesktop(
                 current.copy(preferences = current.preferences.copy(language = language))
             } ?: current
         }
-        val deletedProviderIds = data.providers.map(DesktopProviderProfile::id) - draft.providers.map(DesktopProviderProfile::id).toSet()
+        val deletedProviderIds =
+            data.providers.map(DesktopProviderProfile::id) - draft.providers.map(DesktopProviderProfile::id).toSet()
         deletedProviderIds.forEach(store::deleteProviderSecret)
-        val deletedAssistantIds = data.assistants.map(DesktopAssistantProfile::id) - draft.assistants.map(DesktopAssistantProfile::id).toSet()
+        val deletedAssistantIds =
+            data.assistants.map(DesktopAssistantProfile::id) - draft.assistants.map(DesktopAssistantProfile::id).toSet()
         val dataWithDeletedAssistants = deletedAssistantIds.fold(data) { current, assistantId ->
             current.deleteAssistantProfile(assistantId)
         }
-        update(dataWithDeletedAssistants.copy(
-            config = draft.config,
-            preferences = draft.preferences,
-            globalMemories = draft.globalMemories,
-            providers = draft.providers,
-            selectedProviderId = draft.selectedProviderId,
-            assistants = draft.assistants,
-            selectedAssistantId = draft.selectedAssistantId,
-            webSearchSettings = draft.webSearchSettings,
-            mcpServers = draft.mcpServers
-        ))
+        update(
+            dataWithDeletedAssistants.copy(
+                config = draft.config,
+                preferences = draft.preferences,
+                globalMemories = draft.globalMemories,
+                providers = draft.providers,
+                selectedProviderId = draft.selectedProviderId,
+                assistants = draft.assistants,
+                selectedAssistantId = draft.selectedAssistantId,
+                webSearchSettings = draft.webSearchSettings,
+                mcpServers = draft.mcpServers
+            )
+        )
     }
 
     fun requestSettingsExit(afterExit: () -> Unit = {}, language: DesktopLanguage? = null) {
@@ -664,7 +676,8 @@ private fun RikkaHubDesktop(
             } catch (_: CancellationException) {
                 // Keep the existing title when the request is cancelled.
             } catch (error: Throwable) {
-                generationErrors[conversationId] = error.message ?: desktopText(data.preferences.language, "runtime.title_failed")
+                generationErrors[conversationId] =
+                    error.message ?: desktopText(data.preferences.language, "runtime.title_failed")
             } finally {
                 generationJobs.remove(conversationId)
             }
@@ -704,7 +717,8 @@ private fun RikkaHubDesktop(
             } catch (_: CancellationException) {
                 // Cancellation leaves existing suggestions unchanged.
             } catch (error: Throwable) {
-                generationErrors[conversationId] = error.message ?: desktopText(data.preferences.language, "runtime.suggestions_failed")
+                generationErrors[conversationId] =
+                    error.message ?: desktopText(data.preferences.language, "runtime.suggestions_failed")
             } finally {
                 suggestionJobs.remove(conversationId)
             }
@@ -728,10 +742,11 @@ private fun RikkaHubDesktop(
         }
         val missingMcpServerIds = selectedMcpServerIds - data.mcpServers.map { it.id }.toSet()
         if (missingMcpServerIds.isNotEmpty()) {
-            generationErrors[conversationId] = desktopText(data.preferences.language, "runtime.mcp_configuration_invalid")
+            generationErrors[conversationId] =
+                desktopText(data.preferences.language, "runtime.mcp_configuration_invalid")
             return
         }
-        val serversNeedingSync = selectedMcpServers.filter { it.tools.isEmpty() }
+        val serversNeedingSync = selectedMcpServers.filterNot(mcpClient::toolsAreCurrent)
         if (serversNeedingSync.isNotEmpty()) {
             generationErrors.remove(conversationId)
             val syncJob = scope.launch {
@@ -740,12 +755,15 @@ private fun RikkaHubDesktop(
                     val toolsByServerId = serversNeedingSync.map { server ->
                         server.id to mcpClient.syncTools(server).also { tools ->
                             check(tools.isNotEmpty()) {
-                                desktopText(data.preferences.language, "runtime.mcp_no_tools").replace("%s", server.name)
+                                desktopText(data.preferences.language, "runtime.mcp_no_tools").replace(
+                                    "%s",
+                                    server.name
+                                )
                             }
                         }
                     }.toMap()
                     update(data.copy(mcpServers = data.mcpServers.map { server ->
-                        toolsByServerId[server.id]?.let { tools -> server.copy(tools = tools) } ?: server
+                        toolsByServerId[server.id]?.let(server::withSyncedTools) ?: server
                     }))
                     generationJobs.remove(conversationId)
                     handedOffToGeneration = true
@@ -781,7 +799,8 @@ private fun RikkaHubDesktop(
                 )
             )
         }.getOrElse { error ->
-            generationErrors[conversationId] = error.message ?: desktopText(data.preferences.language, "runtime.invalid_message_template")
+            generationErrors[conversationId] =
+                error.message ?: desktopText(data.preferences.language, "runtime.invalid_message_template")
             return
         }
         generationErrors.remove(conversationId)
@@ -871,7 +890,9 @@ private fun RikkaHubDesktop(
                         agentRuntime = agentRuntime,
                         approvalHandler = { call, request ->
                             withContext(Dispatchers.Main) {
-                                if (rememberedAgentApprovals[conversationId].orEmpty().approves(request)) return@withContext true
+                                if (rememberedAgentApprovals[conversationId].orEmpty()
+                                        .approves(request)
+                                ) return@withContext true
                                 val answer = CompletableDeferred<DesktopAgentApprovalDecision>()
                                 pendingAgentApproval = PendingDesktopAgentApproval(call, request, answer)
                                 try {
@@ -919,8 +940,9 @@ private fun RikkaHubDesktop(
                     val messages = conversation.messages.toMutableList()
                     val last = messages.lastOrNull()
                     if (last?.role == "assistant") {
-                        messages[messages.lastIndex] = generationAssistant.transformGeneratedMessage(last.completeReasoningDuration())
-                            .completeAlternative()
+                        messages[messages.lastIndex] =
+                            generationAssistant.transformGeneratedMessage(last.completeReasoningDuration())
+                                .completeAlternative()
                     }
                     conversation.copy(messages = messages, updatedAt = System.currentTimeMillis())
                 }
@@ -939,14 +961,16 @@ private fun RikkaHubDesktop(
                     } else if (last?.role == "assistant") {
                         conversation.copy(
                             messages = conversation.messages.dropLast(1) +
-                                generationAssistant.transformGeneratedMessage(last.completeReasoningDuration()).completeAlternative()
+                                generationAssistant.transformGeneratedMessage(last.completeReasoningDuration())
+                                    .completeAlternative()
                         )
                     } else {
                         conversation
                     }
                 }
             } catch (error: Throwable) {
-                generationErrors[conversationId] = error.message ?: desktopText(data.preferences.language, "runtime.request_failed")
+                generationErrors[conversationId] =
+                    error.message ?: desktopText(data.preferences.language, "runtime.request_failed")
                 updateConversation(conversationId) { conversation ->
                     val last = conversation.messages.lastOrNull()
                     if (last?.role == "assistant" && last.content.isEmpty() && last.reasoning.isEmpty()) {
@@ -960,7 +984,8 @@ private fun RikkaHubDesktop(
                     } else if (last?.role == "assistant") {
                         conversation.copy(
                             messages = conversation.messages.dropLast(1) +
-                                generationAssistant.transformGeneratedMessage(last.completeReasoningDuration()).completeAlternative()
+                                generationAssistant.transformGeneratedMessage(last.completeReasoningDuration())
+                                    .completeAlternative()
                         )
                     } else {
                         conversation
@@ -1029,7 +1054,8 @@ private fun RikkaHubDesktop(
             } catch (_: CancellationException) {
                 // Cancellation leaves the original conversation untouched.
             } catch (error: Throwable) {
-                generationErrors[conversationId] = error.message ?: desktopText(data.preferences.language, "runtime.compression_failed")
+                generationErrors[conversationId] =
+                    error.message ?: desktopText(data.preferences.language, "runtime.compression_failed")
             } finally {
                 generationJobs.remove(conversationId)
             }
@@ -1074,7 +1100,8 @@ private fun RikkaHubDesktop(
             } catch (_: CancellationException) {
                 // Cancellation leaves the original message untouched.
             } catch (error: Throwable) {
-                generationErrors[target.conversationId] = error.message ?: desktopText(data.preferences.language, "runtime.translation_failed")
+                generationErrors[target.conversationId] =
+                    error.message ?: desktopText(data.preferences.language, "runtime.translation_failed")
             } finally {
                 generationJobs.remove(target.conversationId)
                 translatedMessageId?.let { messageId ->
@@ -1107,655 +1134,749 @@ private fun RikkaHubDesktop(
         typography = desktopTypography(data.preferences.fontFamily)
     ) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        BoxWithConstraints(
-            Modifier.fillMaxSize().onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.isCtrlPressed) {
-                    when (event.key) {
-                        Key.N -> {
-                            requestSettingsExit(::newConversation)
-                            true
+            BoxWithConstraints(
+                Modifier.fillMaxSize().onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.isCtrlPressed) {
+                        when (event.key) {
+                            Key.N -> {
+                                requestSettingsExit(::newConversation)
+                                true
+                            }
+
+                            Key.B -> {
+                                showSidebar = !showSidebar
+                                true
+                            }
+
+                            else -> false
                         }
-                        Key.B -> {
-                            showSidebar = !showSidebar
-                            true
-                        }
-                        else -> false
+                    } else {
+                        false
                     }
-                } else {
-                    false
                 }
-            }
-        ) {
-        val compact = maxWidth < 850.dp
-        val maxSidebarWidth = minOf(480.dp, maxWidth - 420.dp)
-        val sidebarWidth = if (compact) maxWidth else sidebarPreferredWidth.coerceIn(240.dp, maxSidebarWidth)
-        val density = LocalDensity.current
-        Row(Modifier.fillMaxSize()) {
-            AnimatedVisibility(
-                visible = showSidebar,
-                enter = expandHorizontally(
-                    expandFrom = Alignment.Start,
-                    animationSpec = tween(240, easing = FastOutSlowInEasing)
-                ) + fadeIn(animationSpec = tween(160)),
-                exit = shrinkHorizontally(
-                    shrinkTowards = Alignment.Start,
-                    animationSpec = tween(240, easing = FastOutSlowInEasing)
-                ) + fadeOut(animationSpec = tween(140))
             ) {
-                Row {
-                    ConversationSidebar(
-                        data = data,
-                        settingsSelected = showSettings,
-                        generatingConversationIds = generationJobs.keys,
-                        onSelect = {
-                            requestSettingsExit(afterExit = {
-                                update(data.copy(selectedConversationId = it))
-                                jumpToMessageId = null
-                                if (compact) showSidebar = false
-                            })
-                        },
-                        onSelectFavorite = { conversationId, messageId ->
-                            requestSettingsExit(afterExit = {
-                                update(data.copy(selectedConversationId = conversationId))
-                                jumpToMessageId = messageId
-                                jumpToMessageRequest++
-                                if (compact) showSidebar = false
-                            })
-                        },
-                        onNew = {
-                            requestSettingsExit(afterExit = {
-                                newConversation()
-                                if (compact) showSidebar = false
-                            })
-                        },
-                        onDelete = { id ->
-                            generationJobs.remove(id)?.cancel()
-                            suggestionJobs.remove(id)?.cancel()
-                            generationErrors.remove(id)
-                            update(data.deleteConversation(id))
-                        },
-                        onPin = { id ->
-                            updateConversation(id) { it.copy(isPinned = !it.isPinned, updatedAt = System.currentTimeMillis()) }
-                        },
-                        onMoveToFolder = { conversationId, folderId ->
-                            update(data.moveConversationToFolder(conversationId, folderId))
-                        },
-                        onCreateFolder = { assistantId ->
-                            folderCreateTarget = FolderCreateTarget(assistantId = assistantId)
-                        },
-                        onConversationSortChange = { sort ->
-                            update(data.copy(preferences = data.preferences.copy(conversationSort = sort)))
-                        },
-                        onSettings = {
-                            openSettings(DesktopSettingsSection.GENERAL)
-                            if (compact) showSidebar = false
-                        },
-                        onCollapse = { showSidebar = false },
-                        modifier = Modifier.width(sidebarWidth)
-                    )
-                    if (!compact) {
-                        Box(
-                            Modifier.fillMaxHeight().width(8.dp)
-                                .onPointerEvent(PointerEventType.Enter) { sidebarResizeHovered = true }
-                                .onPointerEvent(PointerEventType.Exit) { sidebarResizeHovered = false }
-                                .pointerInput(maxSidebarWidth) {
-                                    detectDragGestures(
-                                        onDragStart = { sidebarResizeHovered = true },
-                                        onDragEnd = { sidebarResizeHovered = false },
-                                        onDragCancel = { sidebarResizeHovered = false }
-                                    ) { _, dragAmount ->
-                                        sidebarPreferredWidth = (sidebarPreferredWidth + with(density) { dragAmount.x.toDp() })
-                                            .coerceIn(240.dp, maxSidebarWidth)
+                val compact = maxWidth < 850.dp
+                val maxSidebarWidth = minOf(480.dp, maxWidth - 420.dp)
+                val sidebarWidth = if (compact) maxWidth else sidebarPreferredWidth.coerceIn(240.dp, maxSidebarWidth)
+                val density = LocalDensity.current
+                Row(Modifier.fillMaxSize()) {
+                    AnimatedVisibility(
+                        visible = showSidebar,
+                        enter = expandHorizontally(
+                            expandFrom = Alignment.Start,
+                            animationSpec = tween(240, easing = FastOutSlowInEasing)
+                        ) + fadeIn(animationSpec = tween(160)),
+                        exit = shrinkHorizontally(
+                            shrinkTowards = Alignment.Start,
+                            animationSpec = tween(240, easing = FastOutSlowInEasing)
+                        ) + fadeOut(animationSpec = tween(140))
+                    ) {
+                        Row {
+                            ConversationSidebar(
+                                data = data,
+                                settingsSelected = showSettings,
+                                generatingConversationIds = generationJobs.keys,
+                                onSelect = {
+                                    requestSettingsExit(afterExit = {
+                                        update(data.copy(selectedConversationId = it))
+                                        jumpToMessageId = null
+                                        if (compact) showSidebar = false
+                                    })
+                                },
+                                onSelectFavorite = { conversationId, messageId ->
+                                    requestSettingsExit(afterExit = {
+                                        update(data.copy(selectedConversationId = conversationId))
+                                        jumpToMessageId = messageId
+                                        jumpToMessageRequest++
+                                        if (compact) showSidebar = false
+                                    })
+                                },
+                                onNew = {
+                                    requestSettingsExit(afterExit = {
+                                        newConversation()
+                                        if (compact) showSidebar = false
+                                    })
+                                },
+                                onDelete = { id ->
+                                    generationJobs.remove(id)?.cancel()
+                                    suggestionJobs.remove(id)?.cancel()
+                                    generationErrors.remove(id)
+                                    update(data.deleteConversation(id))
+                                },
+                                onPin = { id ->
+                                    updateConversation(id) {
+                                        it.copy(
+                                            isPinned = !it.isPinned,
+                                            updatedAt = System.currentTimeMillis()
+                                        )
                                     }
+                                },
+                                onMoveToFolder = { conversationId, folderId ->
+                                    update(data.moveConversationToFolder(conversationId, folderId))
+                                },
+                                onCreateFolder = { assistantId ->
+                                    folderCreateTarget = FolderCreateTarget(assistantId = assistantId)
+                                },
+                                onConversationSortChange = { sort ->
+                                    update(data.copy(preferences = data.preferences.copy(conversationSort = sort)))
+                                },
+                                onSettings = {
+                                    openSettings(DesktopSettingsSection.GENERAL)
+                                    if (compact) showSidebar = false
+                                },
+                                onCollapse = { showSidebar = false },
+                                modifier = Modifier.width(sidebarWidth)
+                            )
+                            if (!compact) {
+                                Box(
+                                    Modifier.fillMaxHeight().width(8.dp)
+                                        .onPointerEvent(PointerEventType.Enter) { sidebarResizeHovered = true }
+                                        .onPointerEvent(PointerEventType.Exit) { sidebarResizeHovered = false }
+                                        .pointerInput(maxSidebarWidth) {
+                                            detectDragGestures(
+                                                onDragStart = { sidebarResizeHovered = true },
+                                                onDragEnd = { sidebarResizeHovered = false },
+                                                onDragCancel = { sidebarResizeHovered = false }
+                                            ) { _, dragAmount ->
+                                                sidebarPreferredWidth =
+                                                    (sidebarPreferredWidth + with(density) { dragAmount.x.toDp() })
+                                                        .coerceIn(240.dp, maxSidebarWidth)
+                                            }
+                                        }
+                                ) {
+                                    Box(
+                                        Modifier.align(Alignment.Center).fillMaxHeight()
+                                            .width(if (sidebarResizeHovered) 2.dp else 1.dp)
+                                            .background(
+                                                MaterialTheme.colorScheme.outlineVariant.copy(
+                                                    alpha = if (sidebarResizeHovered) 0.9f else 0.45f
+                                                )
+                                            )
+                                    )
                                 }
-                        ) {
-                            Box(
-                                Modifier.align(Alignment.Center).fillMaxHeight()
-                                    .width(if (sidebarResizeHovered) 2.dp else 1.dp)
-                                    .background(
-                                        MaterialTheme.colorScheme.outlineVariant.copy(
-                                            alpha = if (sidebarResizeHovered) 0.9f else 0.45f
+                            }
+                        }
+                    }
+                    if (!compact || !showSidebar) {
+                        if (showSettings) {
+                            val settingsData = settingsDraft ?: data
+                            val modifiedProviderIds = settingsData.providers.filter { provider ->
+                                data.providers.firstOrNull { it.id == provider.id } != provider
+                            }.mapTo(mutableSetOf(), DesktopProviderProfile::id)
+                            val modifiedAssistantIds = settingsData.assistants.filter { assistant ->
+                                data.assistants.firstOrNull { it.id == assistant.id } != assistant
+                            }.mapTo(mutableSetOf(), DesktopAssistantProfile::id)
+                            val modifiedSections = settingsData.modifiedSettingsSectionsFrom(data)
+                            DesktopSettingsPane(
+                                providers = settingsData.providers.ifEmpty { listOf(settingsData.activeProvider()) },
+                                selectedProviderId = settingsData.activeProvider().id,
+                                assistants = settingsData.assistants.ifEmpty { listOf(settingsData.activeAssistant()) },
+                                selectedAssistantId = settingsData.activeAssistant().id,
+                                preferences = settingsData.preferences,
+                                globalMemories = settingsData.globalMemories,
+                                webSearchSettings = settingsData.webSearchSettings,
+                                client = client,
+                                mcpServers = settingsData.mcpServers,
+                                mcpClient = mcpClient,
+                                initialSection = settingsSection,
+                                showMenu = compact,
+                                showSidebarToggle = !compact && !showSidebar,
+                                onMenu = { showSidebar = true },
+                                onBack = { language -> requestSettingsExit(language = language) },
+                                modifiedProviderIds = modifiedProviderIds,
+                                modifiedAssistantIds = modifiedAssistantIds,
+                                modifiedSections = modifiedSections,
+                                hasUnsavedChanges = settingsData.settingsContentDiffersFrom(data),
+                                onSaveAll = {
+                                    saveSettingsDraft()
+                                    settingsDraft = null
+                                },
+                                onProviderSelect = { providerId ->
+                                    updateSettingsDraft {
+                                        it.selectProviderConfig(
+                                            providerId
+                                        )
+                                    }
+                                },
+                                onProviderSave = { profile -> updateSettingsDraft { it.saveProviderProfile(profile) } },
+                                onProviderAdd = {
+                                    val profile = DesktopProviderProfile(
+                                        name = desktopText(settingsData.preferences.language, "defaults.new_provider"),
+                                        config = DesktopConfig(
+                                            model = "",
+                                            systemPrompt = settingsData.config.systemPrompt
                                         )
                                     )
+                                    updateSettingsDraft {
+                                        it.copy(
+                                            config = profile.config,
+                                            providers = it.providers.ifEmpty { listOf(it.activeProvider()) } + profile,
+                                            selectedProviderId = profile.id
+                                        )
+                                    }
+                                },
+                                onProviderDelete = { providerId ->
+                                    updateSettingsDraft {
+                                        it.deleteProviderProfile(
+                                            providerId
+                                        )
+                                    }
+                                },
+                                onAssistantSelect = { assistantId ->
+                                    updateSettingsDraft {
+                                        if (it.assistants.any { assistant -> assistant.id == assistantId }) {
+                                            it.copy(selectedAssistantId = assistantId)
+                                        } else {
+                                            it
+                                        }
+                                    }
+                                },
+                                onAssistantSave = { profile -> updateSettingsDraft { it.saveAssistantProfile(profile) } },
+                                onAssistantAdd = {
+                                    val assistant = DesktopAssistantProfile(
+                                        name = desktopText(
+                                            settingsData.preferences.language,
+                                            "defaults.new_assistant"
+                                        )
+                                    )
+                                    updateSettingsDraft {
+                                        it.copy(
+                                            assistants = it.assistants + assistant,
+                                            selectedAssistantId = assistant.id
+                                        )
+                                    }
+                                },
+                                onAssistantCopy = { assistantId ->
+                                    val source = (settingsDraft ?: data).assistants.firstOrNull { it.id == assistantId }
+                                        ?: return@DesktopSettingsPane
+                                    val copy =
+                                        source.copy(id = UUID.randomUUID().toString(), name = "${source.name} copy")
+                                    updateSettingsDraft {
+                                        it.copy(
+                                            assistants = it.assistants + copy,
+                                            selectedAssistantId = copy.id
+                                        )
+                                    }
+                                },
+                                onAssistantDelete = { assistantId ->
+                                    updateSettingsDraft {
+                                        it.deleteAssistantProfile(
+                                            assistantId
+                                        )
+                                    }
+                                },
+                                onExportData = {
+                                    runCatching { exportBackup() }.getOrElse {
+                                        desktopText(data.preferences.language, "runtime.export_failed").replace(
+                                            "%s",
+                                            it.message.orEmpty()
+                                        )
+                                    }
+                                },
+                                onImportData = {
+                                    runCatching { importBackup() }.getOrElse {
+                                        desktopText(data.preferences.language, "runtime.import_failed").replace(
+                                            "%s",
+                                            it.message.orEmpty()
+                                        )
+                                    }
+                                },
+                                onResetData = ::resetDesktopData,
+                                onWebSearchSettingsChange = { value -> updateSettingsDraft { it.copy(webSearchSettings = value) } },
+                                onMcpServersChange = { servers -> updateSettingsDraft { it.copy(mcpServers = servers) } },
+                                onPreferencesChange = { value -> updateSettingsDraft { it.copy(preferences = value) } },
+                                onGlobalMemoriesChange = { memories ->
+                                    updateSettingsDraft { it.copy(globalMemories = memories.filter { memory -> memory.content.isNotBlank() }) }
+                                }
+                            )
+                        } else {
+                            ChatPane(
+                                conversation = selected,
+                                prompt = prompt,
+                                isGenerating = generationJobs.containsKey(selected.id),
+                                errorMessage = generationErrors[selected.id],
+                                model = effectiveConfig.model,
+                                assistant = selectedAssistant,
+                                assistants = data.assistants.ifEmpty { listOf(data.activeAssistant()) },
+                                preferences = data.preferences,
+                                providers = data.providers.ifEmpty { listOf(data.activeProvider()) },
+                                // The chat toolbar is also the folder management entry point, so it must
+                                // expose every saved folder rather than only the current assistant's scope.
+                                folders = data.folders,
+                                mcpServers = data.mcpServers,
+                                mcpClient = mcpClient,
+                                selectedProviderId = selectedAssistant.providerId.ifBlank { data.activeProvider().id },
+                                webSearchEnabled = selected.webSearchEnabled ?: selectedAssistant.enableWebSearch,
+                                jumpToMessageId = jumpToMessageId,
+                                jumpToMessageRequest = jumpToMessageRequest,
+                                conversationScrollPositions = conversationScrollPositions,
+                                onAskUserAnswer = ::submitAskUserAnswer,
+                                onSaveMermaidImage = { mermaidImageExportTarget = it },
+                                showMenu = compact || !showSidebar,
+                                sidebarCollapsed = !compact && !showSidebar,
+                                onMenu = { showSidebar = true },
+                                onNew = ::newConversation,
+                                onSettings = {
+                                    openSettings(DesktopSettingsSection.PROVIDERS)
+                                },
+                                onAssistantSettings = {
+                                    openSettings(DesktopSettingsSection.ASSISTANTS)
+                                },
+                                onProviderModelSelect = { providerId, selectedModel ->
+                                    selectAssistantModel(selectedAssistant.id, providerId, selectedModel)
+                                },
+                                onReasoningEffortChange = { effort ->
+                                    updateAssistantReasoningEffort(
+                                        selectedAssistant.id,
+                                        effort
+                                    )
+                                },
+                                client = client,
+                                onAssistantSelect = { assistantId ->
+                                    selectConversationAssistant(selected.id, assistantId)
+                                },
+                                onMcpServersChange = { servers -> update(data.copy(mcpServers = servers)) },
+                                onAssistantMcpServerIdsChange = { serverIds ->
+                                    saveAssistant(selectedAssistant.copy(mcpServerIds = serverIds))
+                                },
+                                onMcpSettings = {
+                                    openSettings(DesktopSettingsSection.PROVIDERS)
+                                },
+                                onToggleWebSearch = {
+                                    updateConversation(selected.id) { conversation ->
+                                        val current = conversation.webSearchEnabled ?: selectedAssistant.enableWebSearch
+                                        conversation.copy(
+                                            webSearchEnabled = !current,
+                                            updatedAt = System.currentTimeMillis()
+                                        )
+                                    }
+                                },
+                                onPromptChange = { value ->
+                                    prompt = value
+                                    updateConversation(selected.id) { conversation ->
+                                        conversation.copy(draft = value, updatedAt = System.currentTimeMillis())
+                                    }
+                                },
+                                pendingAttachments = pendingAttachments,
+                                onAddAttachments = { attachmentPickerOpen = true },
+                                onRemoveAttachment = { attachment ->
+                                    pendingAttachments = pendingAttachments.filterNot { it == attachment }
+                                    updateConversation(selected.id) { conversation ->
+                                        conversation.copy(
+                                            draftAttachments = pendingAttachments,
+                                            updatedAt = System.currentTimeMillis()
+                                        )
+                                    }
+                                },
+                                onDismissError = { generationErrors.remove(selected.id) },
+                                onCancel = { generationJobs[selected.id]?.cancel() },
+                                onRename = { renameTarget = ConversationRenameTarget(selected.id, selected.title) },
+                                onExportConversation = { requestConversationExport(selected) },
+                                onMoveToFolder = { folderId ->
+                                    update(data.moveConversationToFolder(selected.id, folderId))
+                                },
+                                onCreateFolder = {
+                                    folderCreateTarget = FolderCreateTarget(selected.id, selectedAssistant.id)
+                                },
+                                onRenameFolder = { folder -> folderRenameTarget = folder },
+                                onDeleteFolder = { folder -> update(data.deleteFolder(folder.id)) },
+                                onCompress = { compressionTarget = CompressionTarget(selected.id) },
+                                onGenerateTitle = { startTitleGeneration(selected.id) },
+                                onShowStats = { showConversationStats = true },
+                                onGenerateSuggestions = { startSuggestionGeneration(selected.id) },
+                                onTogglePromptInjections = {
+                                    updateConversation(selected.id) { conversation ->
+                                        conversation.copy(
+                                            promptInjectionsEnabled = !conversation.usesPromptInjections(
+                                                selectedAssistant
+                                            ),
+                                            updatedAt = System.currentTimeMillis()
+                                        )
+                                    }
+                                },
+                                onTranslateMessage = { index ->
+                                    selected.messages.getOrNull(index)?.let { message ->
+                                        translationTarget = TranslationTarget(selected.id, index, message.content)
+                                    }
+                                },
+                                onRestoreBranch = { branchId ->
+                                    if (!generationJobs.containsKey(selected.id)) {
+                                        updateConversation(selected.id) { it.restoreBranch(branchId) }
+                                    }
+                                },
+                                onDeleteBranch = { branchId ->
+                                    if (!generationJobs.containsKey(selected.id)) {
+                                        updateConversation(selected.id) { it.deleteBranch(branchId) }
+                                    }
+                                },
+                                onEditSystemPrompt = {
+                                    conversationPromptTarget =
+                                        ConversationPromptTarget(selected.id, selected.systemPrompt)
+                                },
+                                onSaveMessageEdit = { index, content ->
+                                    val message = selected.messages.getOrNull(index) ?: return@ChatPane
+                                    if (content.isBlank()) return@ChatPane
+                                    updateConversation(selected.id) { conversation ->
+                                        conversation.editMessageAt(
+                                            index,
+                                            content
+                                        )
+                                    }
+                                    if (message.role == "user") {
+                                        val requestMessages =
+                                            selected.messages.take(index) + message.addVariant(content)
+                                        startGeneration(selected.id, requestMessages)
+                                    }
+                                },
+                                onDeleteMessage = { index ->
+                                    if (!generationJobs.containsKey(selected.id)) {
+                                        updateConversation(selected.id) { conversation ->
+                                            conversation.deleteMessageAt(
+                                                index
+                                            )
+                                        }
+                                    }
+                                },
+                                onToggleMessageFavorite = { index ->
+                                    if (!generationJobs.containsKey(selected.id)) {
+                                        updateConversation(selected.id) { conversation ->
+                                            conversation.copy(
+                                                messages = conversation.messages.mapIndexed { messageIndex, message ->
+                                                    if (messageIndex == index) message.copy(isFavorite = !message.isFavorite) else message
+                                                },
+                                                updatedAt = System.currentTimeMillis()
+                                            )
+                                        }
+                                    }
+                                },
+                                onForkAtMessage = { index ->
+                                    if (!generationJobs.containsKey(selected.id)) {
+                                        val fork = selected.forkAtMessage(index)
+                                        update(
+                                            data.copy(
+                                                conversations = listOf(fork) + data.conversations,
+                                                selectedConversationId = fork.id
+                                            )
+                                        )
+                                    }
+                                },
+                                onRegenerateMessage = { index ->
+                                    if (!generationJobs.containsKey(selected.id)) {
+                                        val target = selected.messages[index]
+                                        val requestMessages = if (target.role == "assistant") {
+                                            selected.messages.take(index)
+                                        } else {
+                                            selected.messages.take(index + 1)
+                                        }
+                                        startGeneration(
+                                            selected.id,
+                                            requestMessages,
+                                            alternativeTarget = target.takeIf { it.role == "assistant" }
+                                        )
+                                    }
+                                },
+                                onSelectMessageVariant = { messageIndex, variantIndex ->
+                                    if (!generationJobs.containsKey(selected.id)) {
+                                        updateConversation(selected.id) { conversation ->
+                                            conversation.selectMessageVariantAt(messageIndex, variantIndex)
+                                        }
+                                    }
+                                },
+                                onSend = {
+                                    val text = prompt.trim()
+                                    if ((text.isNotEmpty() || pendingAttachments.isNotEmpty()) &&
+                                        !generationJobs.containsKey(selected.id)
+                                    ) {
+                                        val attachments = pendingAttachments
+                                        val userMessage = ChatMessage(
+                                            role = "user",
+                                            content = text,
+                                            attachments = attachments
+                                        )
+                                        val requestMessages = selected.messages + userMessage
+                                        startGeneration(selected.id, requestMessages)
+                                    }
+                                },
+                                onAddWithoutResponse = {
+                                    val text = prompt.trim()
+                                    if ((text.isNotEmpty() || pendingAttachments.isNotEmpty()) &&
+                                        !generationJobs.containsKey(selected.id)
+                                    ) {
+                                        val attachments = pendingAttachments
+                                        val userMessage = ChatMessage(
+                                            role = "user",
+                                            content = text,
+                                            attachments = attachments
+                                        )
+                                        val titleText = text.ifBlank { attachments.firstOrNull()?.name.orEmpty() }
+                                        updateConversation(selected.id) { conversation ->
+                                            conversation.copy(
+                                                title = if (conversation.title == "新对话") {
+                                                    titleText.take(48)
+                                                } else conversation.title,
+                                                messages = conversation.messages + userMessage,
+                                                draft = "",
+                                                draftAttachments = emptyList(),
+                                                suggestions = emptyList(),
+                                                updatedAt = System.currentTimeMillis()
+                                            )
+                                        }
+                                    }
+                                }
                             )
                         }
                     }
                 }
             }
-            if (!compact || !showSidebar) {
-                if (showSettings) {
-                    val settingsData = settingsDraft ?: data
-                    val modifiedProviderIds = settingsData.providers.filter { provider ->
-                        data.providers.firstOrNull { it.id == provider.id } != provider
-                    }.mapTo(mutableSetOf(), DesktopProviderProfile::id)
-                    val modifiedAssistantIds = settingsData.assistants.filter { assistant ->
-                        data.assistants.firstOrNull { it.id == assistant.id } != assistant
-                    }.mapTo(mutableSetOf(), DesktopAssistantProfile::id)
-                    val modifiedSections = settingsData.modifiedSettingsSectionsFrom(data)
-                    DesktopSettingsPane(
-                        providers = settingsData.providers.ifEmpty { listOf(settingsData.activeProvider()) },
-                        selectedProviderId = settingsData.activeProvider().id,
-                        assistants = settingsData.assistants.ifEmpty { listOf(settingsData.activeAssistant()) },
-                        selectedAssistantId = settingsData.activeAssistant().id,
-                        preferences = settingsData.preferences,
-                        globalMemories = settingsData.globalMemories,
-                        webSearchSettings = settingsData.webSearchSettings,
-                        client = client,
-                        mcpServers = settingsData.mcpServers,
-                        mcpClient = mcpClient,
-                        initialSection = settingsSection,
-                        showMenu = compact,
-                        showSidebarToggle = !compact && !showSidebar,
-                        onMenu = { showSidebar = true },
-                        onBack = { language -> requestSettingsExit(language = language) },
-                        modifiedProviderIds = modifiedProviderIds,
-                        modifiedAssistantIds = modifiedAssistantIds,
-                        modifiedSections = modifiedSections,
-                        hasUnsavedChanges = settingsData.settingsContentDiffersFrom(data),
-                        onSaveAll = {
-                            saveSettingsDraft()
-                            settingsDraft = null
-                        },
-                        onProviderSelect = { providerId -> updateSettingsDraft { it.selectProviderConfig(providerId) } },
-                        onProviderSave = { profile -> updateSettingsDraft { it.saveProviderProfile(profile) } },
-                        onProviderAdd = {
-                            val profile = DesktopProviderProfile(
-                                name = desktopText(settingsData.preferences.language, "defaults.new_provider"),
-                                config = DesktopConfig(model = "", systemPrompt = settingsData.config.systemPrompt)
-                            )
-                            updateSettingsDraft {
-                                it.copy(
-                                    config = profile.config,
-                                    providers = it.providers.ifEmpty { listOf(it.activeProvider()) } + profile,
-                                    selectedProviderId = profile.id
-                                )
-                            }
-                        },
-                        onProviderDelete = { providerId -> updateSettingsDraft { it.deleteProviderProfile(providerId) } },
-                        onAssistantSelect = { assistantId ->
-                            updateSettingsDraft {
-                                if (it.assistants.any { assistant -> assistant.id == assistantId }) {
-                                    it.copy(selectedAssistantId = assistantId)
-                                } else {
-                                    it
-                                }
-                            }
-                        },
-                        onAssistantSave = { profile -> updateSettingsDraft { it.saveAssistantProfile(profile) } },
-                        onAssistantAdd = {
-                            val assistant = DesktopAssistantProfile(name = desktopText(settingsData.preferences.language, "defaults.new_assistant"))
-                            updateSettingsDraft { it.copy(assistants = it.assistants + assistant, selectedAssistantId = assistant.id) }
-                        },
-                        onAssistantCopy = { assistantId ->
-                            val source = (settingsDraft ?: data).assistants.firstOrNull { it.id == assistantId } ?: return@DesktopSettingsPane
-                            val copy = source.copy(id = UUID.randomUUID().toString(), name = "${source.name} copy")
-                            updateSettingsDraft { it.copy(assistants = it.assistants + copy, selectedAssistantId = copy.id) }
-                        },
-                        onAssistantDelete = { assistantId -> updateSettingsDraft { it.deleteAssistantProfile(assistantId) } },
-                        onExportData = {
-                            runCatching { exportBackup() }.getOrElse {
-                                desktopText(data.preferences.language, "runtime.export_failed").replace("%s", it.message.orEmpty())
-                            }
-                        },
-                        onImportData = {
-                            runCatching { importBackup() }.getOrElse {
-                                desktopText(data.preferences.language, "runtime.import_failed").replace("%s", it.message.orEmpty())
-                            }
-                        },
-                        onResetData = ::resetDesktopData,
-                        onWebSearchSettingsChange = { value -> updateSettingsDraft { it.copy(webSearchSettings = value) } },
-                        onMcpServersChange = { servers -> updateSettingsDraft { it.copy(mcpServers = servers) } },
-                        onPreferencesChange = { value -> updateSettingsDraft { it.copy(preferences = value) } },
-                        onGlobalMemoriesChange = { memories ->
-                            updateSettingsDraft { it.copy(globalMemories = memories.filter { memory -> memory.content.isNotBlank() }) }
-                        }
-                    )
-                } else {
-                    ChatPane(
-                        conversation = selected,
-                        prompt = prompt,
-                        isGenerating = generationJobs.containsKey(selected.id),
-                        errorMessage = generationErrors[selected.id],
-                        model = effectiveConfig.model,
-                        assistant = selectedAssistant,
-                        assistants = data.assistants.ifEmpty { listOf(data.activeAssistant()) },
-                        preferences = data.preferences,
-                        providers = data.providers.ifEmpty { listOf(data.activeProvider()) },
-                        // The chat toolbar is also the folder management entry point, so it must
-                        // expose every saved folder rather than only the current assistant's scope.
-                        folders = data.folders,
-                        mcpServers = data.mcpServers,
-                        mcpClient = mcpClient,
-                        selectedProviderId = selectedAssistant.providerId.ifBlank { data.activeProvider().id },
-                        webSearchEnabled = selected.webSearchEnabled ?: selectedAssistant.enableWebSearch,
-                        jumpToMessageId = jumpToMessageId,
-                        jumpToMessageRequest = jumpToMessageRequest,
-                        conversationScrollPositions = conversationScrollPositions,
-                        onAskUserAnswer = ::submitAskUserAnswer,
-                        onSaveMermaidImage = { mermaidImageExportTarget = it },
-                        showMenu = compact || !showSidebar,
-                        sidebarCollapsed = !compact && !showSidebar,
-                        onMenu = { showSidebar = true },
-                        onNew = ::newConversation,
-                        onSettings = {
-                            openSettings(DesktopSettingsSection.PROVIDERS)
-                        },
-                        onAssistantSettings = {
-                            openSettings(DesktopSettingsSection.ASSISTANTS)
-                        },
-                        onProviderModelSelect = { providerId, selectedModel ->
-                            selectAssistantModel(selectedAssistant.id, providerId, selectedModel)
-                        },
-                        onReasoningEffortChange = { effort -> updateAssistantReasoningEffort(selectedAssistant.id, effort) },
-                        client = client,
-                        onAssistantSelect = { assistantId ->
-                            selectConversationAssistant(selected.id, assistantId)
-                        },
-                        onMcpServersChange = { servers -> update(data.copy(mcpServers = servers)) },
-                        onAssistantMcpServerIdsChange = { serverIds ->
-                            saveAssistant(selectedAssistant.copy(mcpServerIds = serverIds))
-                        },
-                        onMcpSettings = {
-                            openSettings(DesktopSettingsSection.PROVIDERS)
-                        },
-                        onToggleWebSearch = {
-                            updateConversation(selected.id) { conversation ->
-                                val current = conversation.webSearchEnabled ?: selectedAssistant.enableWebSearch
-                                conversation.copy(webSearchEnabled = !current, updatedAt = System.currentTimeMillis())
-                            }
-                        },
-                        onPromptChange = { value ->
-                            prompt = value
-                            updateConversation(selected.id) { conversation ->
-                                conversation.copy(draft = value, updatedAt = System.currentTimeMillis())
-                            }
-                        },
-                        pendingAttachments = pendingAttachments,
-                        onAddAttachments = { attachmentPickerOpen = true },
-                        onRemoveAttachment = { attachment ->
-                            pendingAttachments = pendingAttachments.filterNot { it == attachment }
-                            updateConversation(selected.id) { conversation ->
-                                conversation.copy(draftAttachments = pendingAttachments, updatedAt = System.currentTimeMillis())
-                            }
-                        },
-                        onDismissError = { generationErrors.remove(selected.id) },
-                        onCancel = { generationJobs[selected.id]?.cancel() },
-                        onRename = { renameTarget = ConversationRenameTarget(selected.id, selected.title) },
-                        onExportConversation = { requestConversationExport(selected) },
-                        onMoveToFolder = { folderId ->
-                            update(data.moveConversationToFolder(selected.id, folderId))
-                        },
-                        onCreateFolder = {
-                            folderCreateTarget = FolderCreateTarget(selected.id, selectedAssistant.id)
-                        },
-                        onRenameFolder = { folder -> folderRenameTarget = folder },
-                        onDeleteFolder = { folder -> update(data.deleteFolder(folder.id)) },
-                        onCompress = { compressionTarget = CompressionTarget(selected.id) },
-                        onGenerateTitle = { startTitleGeneration(selected.id) },
-                        onShowStats = { showConversationStats = true },
-                        onGenerateSuggestions = { startSuggestionGeneration(selected.id) },
-                        onTogglePromptInjections = {
-                            updateConversation(selected.id) { conversation ->
-                                conversation.copy(
-                                    promptInjectionsEnabled = !conversation.usesPromptInjections(selectedAssistant),
-                                    updatedAt = System.currentTimeMillis()
-                                )
-                            }
-                        },
-                        onTranslateMessage = { index ->
-                            selected.messages.getOrNull(index)?.let { message ->
-                                translationTarget = TranslationTarget(selected.id, index, message.content)
-                            }
-                        },
-                        onRestoreBranch = { branchId ->
-                            if (!generationJobs.containsKey(selected.id)) {
-                                updateConversation(selected.id) { it.restoreBranch(branchId) }
-                            }
-                        },
-                        onDeleteBranch = { branchId ->
-                            if (!generationJobs.containsKey(selected.id)) {
-                                updateConversation(selected.id) { it.deleteBranch(branchId) }
-                            }
-                        },
-                        onEditSystemPrompt = {
-                            conversationPromptTarget = ConversationPromptTarget(selected.id, selected.systemPrompt)
-                        },
-                        onSaveMessageEdit = { index, content ->
-                            val message = selected.messages.getOrNull(index) ?: return@ChatPane
-                            if (content.isBlank()) return@ChatPane
-                            updateConversation(selected.id) { conversation -> conversation.editMessageAt(index, content) }
-                            if (message.role == "user") {
-                                val requestMessages = selected.messages.take(index) + message.addVariant(content)
-                                startGeneration(selected.id, requestMessages)
-                            }
-                        },
-                        onDeleteMessage = { index ->
-                            if (!generationJobs.containsKey(selected.id)) {
-                                updateConversation(selected.id) { conversation -> conversation.deleteMessageAt(index) }
-                            }
-                        },
-                        onToggleMessageFavorite = { index ->
-                            if (!generationJobs.containsKey(selected.id)) {
-                                updateConversation(selected.id) { conversation ->
-                                    conversation.copy(
-                                        messages = conversation.messages.mapIndexed { messageIndex, message ->
-                                            if (messageIndex == index) message.copy(isFavorite = !message.isFavorite) else message
-                                        },
-                                        updatedAt = System.currentTimeMillis()
-                                    )
-                                }
-                            }
-                        },
-                        onForkAtMessage = { index ->
-                            if (!generationJobs.containsKey(selected.id)) {
-                                val fork = selected.forkAtMessage(index)
-                                update(
-                                    data.copy(
-                                        conversations = listOf(fork) + data.conversations,
-                                        selectedConversationId = fork.id
-                                    )
-                                )
-                            }
-                        },
-                        onRegenerateMessage = { index ->
-                            if (!generationJobs.containsKey(selected.id)) {
-                                val target = selected.messages[index]
-                                val requestMessages = if (target.role == "assistant") {
-                                    selected.messages.take(index)
-                                } else {
-                                    selected.messages.take(index + 1)
-                                }
-                                startGeneration(
-                                    selected.id,
-                                    requestMessages,
-                                    alternativeTarget = target.takeIf { it.role == "assistant" }
-                                )
-                            }
-                        },
-                        onSelectMessageVariant = { messageIndex, variantIndex ->
-                            if (!generationJobs.containsKey(selected.id)) {
-                                updateConversation(selected.id) { conversation ->
-                                    conversation.selectMessageVariantAt(messageIndex, variantIndex)
-                                }
-                            }
-                        },
-                        onSend = {
-                            val text = prompt.trim()
-                            if ((text.isNotEmpty() || pendingAttachments.isNotEmpty()) &&
-                                !generationJobs.containsKey(selected.id)
-                            ) {
-                                val attachments = pendingAttachments
-                                val userMessage = ChatMessage(
-                                    role = "user",
-                                    content = text,
-                                    attachments = attachments
-                                )
-                                val requestMessages = selected.messages + userMessage
-                                startGeneration(selected.id, requestMessages)
-                            }
-                        },
-                        onAddWithoutResponse = {
-                            val text = prompt.trim()
-                            if ((text.isNotEmpty() || pendingAttachments.isNotEmpty()) &&
-                                !generationJobs.containsKey(selected.id)
-                            ) {
-                                val attachments = pendingAttachments
-                                val userMessage = ChatMessage(
-                                    role = "user",
-                                    content = text,
-                                    attachments = attachments
-                                )
-                                val titleText = text.ifBlank { attachments.firstOrNull()?.name.orEmpty() }
-                                updateConversation(selected.id) { conversation ->
-                                    conversation.copy(
-                                        title = if (conversation.title == "新对话") {
-                                            titleText.take(48)
-                                        } else conversation.title,
-                                        messages = conversation.messages + userMessage,
-                                        draft = "",
-                                        draftAttachments = emptyList(),
-                                        suggestions = emptyList(),
-                                        updatedAt = System.currentTimeMillis()
-                                    )
-                                }
-                            }
-                        }
-                    )
-                }
-            }
-        }
-    }
         }
 
-    if (settingsExitConfirmationOpen) {
-        AlertDialog(
-            onDismissRequest = {
-                settingsExitConfirmationOpen = false
-                pendingSettingsExit = null
-                pendingSettingsExitLanguage = null
-            },
-            title = { Text(desktopText(data.preferences.language, "settings.unsaved_changes_title")) },
-            text = { Text(desktopText(data.preferences.language, "settings.unsaved_changes_description")) },
-            confirmButton = {
-                Button(onClick = {
-                    saveSettingsDraft()
-                    settingsDraft = null
-                    pendingSettingsExitLanguage = null
-                    showSettings = false
+        if (settingsExitConfirmationOpen) {
+            AlertDialog(
+                onDismissRequest = {
                     settingsExitConfirmationOpen = false
-                    pendingSettingsExit?.invoke()
                     pendingSettingsExit = null
-                }) { Text(desktopText(data.preferences.language, "common.save")) }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = {
-                        settingsExitConfirmationOpen = false
-                        pendingSettingsExit = null
-                        pendingSettingsExitLanguage = null
-                    }) { Text(desktopText(data.preferences.language, "common.cancel")) }
-                    TextButton(onClick = {
+                    pendingSettingsExitLanguage = null
+                },
+                title = { Text(desktopText(data.preferences.language, "settings.unsaved_changes_title")) },
+                text = { Text(desktopText(data.preferences.language, "settings.unsaved_changes_description")) },
+                confirmButton = {
+                    Button(onClick = {
+                        saveSettingsDraft()
                         settingsDraft = null
                         pendingSettingsExitLanguage = null
                         showSettings = false
                         settingsExitConfirmationOpen = false
                         pendingSettingsExit?.invoke()
                         pendingSettingsExit = null
-                    }) { Text(desktopText(data.preferences.language, "settings.discard_changes")) }
-                }
-            }
-        )
-    }
-
-    renameTarget?.let { target ->
-        TextEditDialog(
-            title = desktopText(data.preferences.language, "dialog.rename_conversation"),
-            language = data.preferences.language,
-            initialValue = target.title,
-            singleLine = true,
-            onDismiss = { renameTarget = null },
-            onSave = { title ->
-                if (title.isNotBlank()) {
-                    updateConversation(target.conversationId) {
-                        it.copy(title = title.trim(), updatedAt = System.currentTimeMillis())
+                    }) { Text(desktopText(data.preferences.language, "common.save")) }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = {
+                            settingsExitConfirmationOpen = false
+                            pendingSettingsExit = null
+                            pendingSettingsExitLanguage = null
+                        }) { Text(desktopText(data.preferences.language, "common.cancel")) }
+                        TextButton(onClick = {
+                            settingsDraft = null
+                            pendingSettingsExitLanguage = null
+                            showSettings = false
+                            settingsExitConfirmationOpen = false
+                            pendingSettingsExit?.invoke()
+                            pendingSettingsExit = null
+                        }) { Text(desktopText(data.preferences.language, "settings.discard_changes")) }
                     }
-                    renameTarget = null
-                }
-            }
-        )
-    }
-
-    conversationPromptTarget?.let { target ->
-        TextEditDialog(
-            title = desktopText(data.preferences.language, "dialog.conversation_system_prompt"),
-            language = data.preferences.language,
-            initialValue = target.systemPrompt,
-            allowBlank = true,
-            onDismiss = { conversationPromptTarget = null },
-            onSave = { systemPrompt ->
-                updateConversation(target.conversationId) {
-                    it.copy(systemPrompt = systemPrompt.trim(), updatedAt = System.currentTimeMillis())
-                }
-                conversationPromptTarget = null
-            }
-        )
-    }
-    folderCreateTarget?.let { target ->
-        TextEditDialog(
-            title = desktopText(data.preferences.language, "chat.new_folder"),
-            language = data.preferences.language,
-            initialValue = "",
-            singleLine = true,
-            onDismiss = { folderCreateTarget = null },
-            onSave = { name ->
-                if (name.isNotBlank()) {
-                    val folder = DesktopFolder(assistantId = target.assistantId, name = name.trim())
-                    update(data.createFolder(folder, target.conversationId))
-                    folderCreateTarget = null
-                }
-            }
-        )
-    }
-    folderRenameTarget?.let { folder ->
-        TextEditDialog(
-            title = desktopText(data.preferences.language, "sidebar.rename_folder"),
-            language = data.preferences.language,
-            initialValue = folder.name,
-            singleLine = true,
-            onDismiss = { folderRenameTarget = null },
-            onSave = { name ->
-                if (name.isNotBlank()) update(data.renameFolder(folder.id, name))
-                folderRenameTarget = null
-            }
-        )
-    }
-    compressionTarget?.let { target ->
-        val conversation = data.conversations.firstOrNull { it.id == target.conversationId }
-        if (conversation == null) {
-            compressionTarget = null
-        } else {
-            CompressionDialog(
-                messageCount = conversation.messages.size,
-                language = data.preferences.language,
-                onDismiss = { compressionTarget = null },
-                onConfirm = { targetTokens, keepRecentMessages, additionalPrompt ->
-                    compressionTarget = null
-                    startCompression(target.conversationId, targetTokens, keepRecentMessages, additionalPrompt)
                 }
             )
         }
-    }
-    if (showConversationStats) {
-        ConversationStatsDialog(
-            conversation = selected,
-            language = data.preferences.language,
-            onDismiss = { showConversationStats = false }
-        )
-    }
-    translationTarget?.let { target ->
-        TranslationDialog(
-            language = data.preferences.language,
-            onDismiss = { translationTarget = null },
-            onConfirm = { language ->
-                translationTarget = null
-                startTranslation(target, language)
-            }
-        )
-    }
-    if (attachmentPickerOpen) {
-        DesktopAttachmentPickerDialog(
-            language = data.preferences.language,
-            onDismiss = { attachmentPickerOpen = false },
-            onSelect = { files ->
-                attachmentPickerOpen = false
-                runCatching { files.map(::loadDesktopAttachment) }.fold(
-                    onSuccess = { attachments ->
-                        pendingAttachments = (pendingAttachments + attachments).distinctBy { it.name to it.data }
-                        updateConversation(selected.id) { conversation ->
-                            conversation.copy(draftAttachments = pendingAttachments, updatedAt = System.currentTimeMillis())
+
+        renameTarget?.let { target ->
+            TextEditDialog(
+                title = desktopText(data.preferences.language, "dialog.rename_conversation"),
+                language = data.preferences.language,
+                initialValue = target.title,
+                singleLine = true,
+                onDismiss = { renameTarget = null },
+                onSave = { title ->
+                    if (title.isNotBlank()) {
+                        updateConversation(target.conversationId) {
+                            it.copy(title = title.trim(), updatedAt = System.currentTimeMillis())
                         }
-                    },
-                    onFailure = { error ->
-                        generationErrors[selected.id] = error.message
-                            ?: desktopText(data.preferences.language, "runtime.add_attachment_failed")
+                        renameTarget = null
+                    }
+                }
+            )
+        }
+
+        conversationPromptTarget?.let { target ->
+            TextEditDialog(
+                title = desktopText(data.preferences.language, "dialog.conversation_system_prompt"),
+                language = data.preferences.language,
+                initialValue = target.systemPrompt,
+                allowBlank = true,
+                onDismiss = { conversationPromptTarget = null },
+                onSave = { systemPrompt ->
+                    updateConversation(target.conversationId) {
+                        it.copy(systemPrompt = systemPrompt.trim(), updatedAt = System.currentTimeMillis())
+                    }
+                    conversationPromptTarget = null
+                }
+            )
+        }
+        folderCreateTarget?.let { target ->
+            TextEditDialog(
+                title = desktopText(data.preferences.language, "chat.new_folder"),
+                language = data.preferences.language,
+                initialValue = "",
+                singleLine = true,
+                onDismiss = { folderCreateTarget = null },
+                onSave = { name ->
+                    if (name.isNotBlank()) {
+                        val folder = DesktopFolder(assistantId = target.assistantId, name = name.trim())
+                        update(data.createFolder(folder, target.conversationId))
+                        folderCreateTarget = null
+                    }
+                }
+            )
+        }
+        folderRenameTarget?.let { folder ->
+            TextEditDialog(
+                title = desktopText(data.preferences.language, "sidebar.rename_folder"),
+                language = data.preferences.language,
+                initialValue = folder.name,
+                singleLine = true,
+                onDismiss = { folderRenameTarget = null },
+                onSave = { name ->
+                    if (name.isNotBlank()) update(data.renameFolder(folder.id, name))
+                    folderRenameTarget = null
+                }
+            )
+        }
+        compressionTarget?.let { target ->
+            val conversation = data.conversations.firstOrNull { it.id == target.conversationId }
+            if (conversation == null) {
+                compressionTarget = null
+            } else {
+                CompressionDialog(
+                    messageCount = conversation.messages.size,
+                    language = data.preferences.language,
+                    onDismiss = { compressionTarget = null },
+                    onConfirm = { targetTokens, keepRecentMessages, additionalPrompt ->
+                        compressionTarget = null
+                        startCompression(target.conversationId, targetTokens, keepRecentMessages, additionalPrompt)
                     }
                 )
             }
-        )
-    }
-    markdownExportTarget?.let { conversation ->
-        DesktopSaveFileDialog(
-            title = desktopText(data.preferences.language, "file.export_conversation_markdown"),
-            language = data.preferences.language,
-            suggestedName = "${conversation.title.ifBlank { "conversation" }.take(64)}.md",
-            requiredExtension = "md",
-            onDismiss = { markdownExportTarget = null },
-            onSave = { destination ->
-                markdownExportTarget = null
-                runCatching {
-                    destination.writeText(
-                        exportConversationMarkdown(conversation, data.configForConversation(conversation).systemPrompt)
-                    )
-                }.onFailure { error ->
-                    generationErrors[conversation.id] = desktopText(data.preferences.language, "runtime.export_failed")
-                        .replace("%s", error.message ?: desktopText(data.preferences.language, "runtime.unknown_error"))
+        }
+        if (showConversationStats) {
+            ConversationStatsDialog(
+                conversation = selected,
+                language = data.preferences.language,
+                onDismiss = { showConversationStats = false }
+            )
+        }
+        translationTarget?.let { target ->
+            TranslationDialog(
+                language = data.preferences.language,
+                onDismiss = { translationTarget = null },
+                onConfirm = { language ->
+                    translationTarget = null
+                    startTranslation(target, language)
                 }
-            }
-        )
-    }
-    if (backupExportRequested) {
-        DesktopSaveFileDialog(
-            title = desktopText(data.preferences.language, "file.export_backup"),
-            language = data.preferences.language,
-            suggestedName = "rikkahub-desktop-backup.json",
-            requiredExtension = "json",
-            onDismiss = { backupExportRequested = false },
-            onSave = { destination ->
-                backupExportRequested = false
-                runCatching { store.exportData(destination.toPath(), data) }.onFailure { error ->
-                    generationErrors[data.selectedConversationId] = desktopText(data.preferences.language, "runtime.export_failed")
-                        .replace("%s", error.message ?: desktopText(data.preferences.language, "runtime.unknown_error"))
-                }
-            }
-        )
-    }
-    mermaidImageExportTarget?.let { renderedDiagram ->
-        DesktopSaveFileDialog(
-            title = desktopText(data.preferences.language, "mermaid.save_image"),
-            language = data.preferences.language,
-            suggestedName = "mermaid-diagram.png",
-            requiredExtension = "png",
-            allowedExtensions = listOf("png", "svg"),
-            onDismiss = { mermaidImageExportTarget = null },
-            onSave = { destination ->
-                mermaidImageExportTarget = null
-                scope.launch {
-                    runCatching {
-                        val bytes = withContext(Dispatchers.IO) {
-                            if (destination.extension.equals("svg", ignoreCase = true)) {
-                                DesktopMermaidRenderer.renderSvg(renderedDiagram)
-                                    ?: error("Mermaid SVG rendering failed")
-                            } else {
-                                renderedDiagram.pngBytes
+            )
+        }
+        if (attachmentPickerOpen) {
+            DesktopAttachmentPickerDialog(
+                language = data.preferences.language,
+                onDismiss = { attachmentPickerOpen = false },
+                onSelect = { files ->
+                    attachmentPickerOpen = false
+                    runCatching { files.map(::loadDesktopAttachment) }.fold(
+                        onSuccess = { attachments ->
+                            pendingAttachments = (pendingAttachments + attachments).distinctBy { it.name to it.data }
+                            updateConversation(selected.id) { conversation ->
+                                conversation.copy(
+                                    draftAttachments = pendingAttachments,
+                                    updatedAt = System.currentTimeMillis()
+                                )
                             }
+                        },
+                        onFailure = { error ->
+                            generationErrors[selected.id] = error.message
+                                ?: desktopText(data.preferences.language, "runtime.add_attachment_failed")
                         }
-                        destination.writeBytes(bytes)
+                    )
+                }
+            )
+        }
+        markdownExportTarget?.let { conversation ->
+            DesktopSaveFileDialog(
+                title = desktopText(data.preferences.language, "file.export_conversation_markdown"),
+                language = data.preferences.language,
+                suggestedName = "${conversation.title.ifBlank { "conversation" }.take(64)}.md",
+                requiredExtension = "md",
+                onDismiss = { markdownExportTarget = null },
+                onSave = { destination ->
+                    markdownExportTarget = null
+                    runCatching {
+                        destination.writeText(
+                            exportConversationMarkdown(
+                                conversation,
+                                data.configForConversation(conversation).systemPrompt
+                            )
+                        )
                     }.onFailure { error ->
-                        generationErrors[data.selectedConversationId] = desktopText(data.preferences.language, "runtime.save_failed")
-                            .replace("%s", error.message ?: desktopText(data.preferences.language, "runtime.unknown_error"))
+                        generationErrors[conversation.id] =
+                            desktopText(data.preferences.language, "runtime.export_failed")
+                                .replace(
+                                    "%s",
+                                    error.message ?: desktopText(data.preferences.language, "runtime.unknown_error")
+                                )
                     }
                 }
-            }
-        )
-    }
-    pendingAgentApproval?.let { pending ->
-        DesktopAgentApprovalDialog(
-            request = pending.request,
-            language = data.preferences.language,
-            onApprove = { autoApprove -> pending.answer.complete(DesktopAgentApprovalDecision(true, autoApprove)) },
-            onDeny = { pending.answer.complete(DesktopAgentApprovalDecision(false, false)) }
-        )
-    }
+            )
+        }
+        if (backupExportRequested) {
+            DesktopSaveFileDialog(
+                title = desktopText(data.preferences.language, "file.export_backup"),
+                language = data.preferences.language,
+                suggestedName = "rikkahub-desktop-backup.json",
+                requiredExtension = "json",
+                onDismiss = { backupExportRequested = false },
+                onSave = { destination ->
+                    backupExportRequested = false
+                    runCatching { store.exportData(destination.toPath(), data) }.onFailure { error ->
+                        generationErrors[data.selectedConversationId] =
+                            desktopText(data.preferences.language, "runtime.export_failed")
+                                .replace(
+                                    "%s",
+                                    error.message ?: desktopText(data.preferences.language, "runtime.unknown_error")
+                                )
+                    }
+                }
+            )
+        }
+        mermaidImageExportTarget?.let { renderedDiagram ->
+            DesktopSaveFileDialog(
+                title = desktopText(data.preferences.language, "mermaid.save_image"),
+                language = data.preferences.language,
+                suggestedName = "mermaid-diagram.png",
+                requiredExtension = "png",
+                allowedExtensions = listOf("png", "svg"),
+                onDismiss = { mermaidImageExportTarget = null },
+                onSave = { destination ->
+                    mermaidImageExportTarget = null
+                    scope.launch {
+                        runCatching {
+                            val bytes = withContext(Dispatchers.IO) {
+                                if (destination.extension.equals("svg", ignoreCase = true)) {
+                                    DesktopMermaidRenderer.renderSvg(renderedDiagram)
+                                        ?: error("Mermaid SVG rendering failed")
+                                } else {
+                                    renderedDiagram.pngBytes
+                                }
+                            }
+                            destination.writeBytes(bytes)
+                        }.onFailure { error ->
+                            generationErrors[data.selectedConversationId] =
+                                desktopText(data.preferences.language, "runtime.save_failed")
+                                    .replace(
+                                        "%s",
+                                        error.message ?: desktopText(data.preferences.language, "runtime.unknown_error")
+                                    )
+                        }
+                    }
+                }
+            )
+        }
+        pendingAgentApproval?.let { pending ->
+            DesktopAgentApprovalDialog(
+                request = pending.request,
+                language = data.preferences.language,
+                onApprove = { autoApprove -> pending.answer.complete(DesktopAgentApprovalDecision(true, autoApprove)) },
+                onDeny = { pending.answer.complete(DesktopAgentApprovalDecision(false, false)) }
+            )
+        }
     }
 }
 
@@ -1790,9 +1911,11 @@ private fun DesktopAgentApprovalDialog(
                             } else {
                                 desktopText(language, "agent.docker_warning")
                             }
+
                             DesktopAgentBackend.LOCAL -> desktopText(language, "agent.local_shell_warning")
                             null -> desktopText(language, "agent.confirm_impact")
                         }
+
                         DesktopAgentApprovalKind.IMAGE_PULL -> desktopText(language, "agent.image_pull_warning")
                         DesktopAgentApprovalKind.SKILL -> desktopText(language, "agent.skill_warning")
                         DesktopAgentApprovalKind.WRITE -> desktopText(language, "agent.write_warning")
@@ -1807,9 +1930,21 @@ private fun DesktopAgentApprovalDialog(
                         label = {
                             Text(
                                 when (request.rememberedGrant()?.scope) {
-                                    DesktopAgentApprovalScope.DOCKER_SHELL -> desktopText(language, "agent.remember_docker_shell")
-                                    DesktopAgentApprovalScope.DOCKER_NETWORK -> desktopText(language, "agent.remember_docker_network")
-                                    DesktopAgentApprovalScope.IMAGE_PULL -> desktopText(language, "agent.remember_image_pull")
+                                    DesktopAgentApprovalScope.DOCKER_SHELL -> desktopText(
+                                        language,
+                                        "agent.remember_docker_shell"
+                                    )
+
+                                    DesktopAgentApprovalScope.DOCKER_NETWORK -> desktopText(
+                                        language,
+                                        "agent.remember_docker_network"
+                                    )
+
+                                    DesktopAgentApprovalScope.IMAGE_PULL -> desktopText(
+                                        language,
+                                        "agent.remember_image_pull"
+                                    )
+
                                     else -> desktopText(language, "agent.remember_operation")
                                 }
                             )
@@ -1856,7 +1991,14 @@ private fun CompressionDialog(
                 OutlinedTextField(
                     value = keepRecentMessages,
                     onValueChange = { value -> if (value.all(Char::isDigit)) keepRecentMessages = value },
-                    label = { Text(desktopText(language, "dialog.keep_recent_messages").replace("%d", messageCount.toString())) },
+                    label = {
+                        Text(
+                            desktopText(language, "dialog.keep_recent_messages").replace(
+                                "%d",
+                                messageCount.toString()
+                            )
+                        )
+                    },
                     isError = keep != null && (keep < 0 || keep >= messageCount),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -1881,21 +2023,34 @@ private fun CompressionDialog(
 }
 
 @Composable
-private fun ConversationStatsDialog(conversation: DesktopConversation, language: DesktopLanguage, onDismiss: () -> Unit) {
+private fun ConversationStatsDialog(
+    conversation: DesktopConversation,
+    language: DesktopLanguage,
+    onDismiss: () -> Unit
+) {
     val stats = conversation.stats()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(desktopText(language, "chat.statistics")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                ConversationStatRow(desktopText(language, "stats.messages"), "${stats.messageCount} (${stats.userMessageCount} / ${stats.assistantMessageCount})")
+                ConversationStatRow(
+                    desktopText(language, "stats.messages"),
+                    "${stats.messageCount} (${stats.userMessageCount} / ${stats.assistantMessageCount})"
+                )
                 ConversationStatRow(desktopText(language, "stats.attachments"), stats.attachmentCount.toString())
                 ConversationStatRow(desktopText(language, "stats.characters"), stats.characterCount.toString())
                 ConversationStatRow(desktopText(language, "message.input_tokens"), stats.promptTokens.toString())
                 ConversationStatRow(desktopText(language, "message.output_tokens"), stats.completionTokens.toString())
                 ConversationStatRow(desktopText(language, "message.cached_tokens"), stats.cachedTokens.toString())
-                ConversationStatRow(desktopText(language, "stats.created_at"), MessageTimeFormatter.format(Instant.ofEpochMilli(conversation.createdAt)))
-                ConversationStatRow(desktopText(language, "stats.updated_at"), MessageTimeFormatter.format(Instant.ofEpochMilli(conversation.updatedAt)))
+                ConversationStatRow(
+                    desktopText(language, "stats.created_at"),
+                    MessageTimeFormatter.format(Instant.ofEpochMilli(conversation.createdAt))
+                )
+                ConversationStatRow(
+                    desktopText(language, "stats.updated_at"),
+                    MessageTimeFormatter.format(Instant.ofEpochMilli(conversation.updatedAt))
+                )
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(desktopText(language, "chat.close")) } }
@@ -1962,7 +2117,13 @@ private fun DesktopAttachmentPickerDialog(
                         },
                         enabled = directory.parentFile != null
                     ) { Icon(Lucide.ChevronLeft, desktopText(language, "file.parent_directory")) }
-                    Text(directory.path, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+                    Text(
+                        directory.path,
+                        Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontSize = 12.sp
+                    )
                 }
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
                     items(entries, key = { it.absolutePath }) { entry ->
@@ -1981,10 +2142,24 @@ private fun DesktopAttachmentPickerDialog(
                             }.padding(horizontal = 8.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(if (entry.isDirectory) Lucide.ChevronRight else Lucide.Paperclip, null, Modifier.size(17.dp))
-                            Text(entry.name, Modifier.padding(start = 9.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Icon(
+                                if (entry.isDirectory) Lucide.ChevronRight else Lucide.Paperclip,
+                                null,
+                                Modifier.size(17.dp)
+                            )
+                            Text(
+                                entry.name,
+                                Modifier.padding(start = 9.dp).weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             if (!entry.isDirectory && entry.path in selectedPaths) {
-                                Icon(Lucide.Sparkles, desktopText(language, "file.selected"), Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                                Icon(
+                                    Lucide.Sparkles,
+                                    desktopText(language, "file.selected"),
+                                    Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
                             }
                         }
                     }
@@ -2012,7 +2187,8 @@ private fun DesktopSaveFileDialog(
 ) {
     var directory by remember { mutableStateOf(File(System.getProperty("user.home"))) }
     var fileName by remember(suggestedName) { mutableStateOf(suggestedName) }
-    val extensions = allowedExtensions.map { it.lowercase() }.distinct().ifEmpty { listOf(requiredExtension.lowercase()) }
+    val extensions =
+        allowedExtensions.map { it.lowercase() }.distinct().ifEmpty { listOf(requiredExtension.lowercase()) }
     var selectedExtension by remember(suggestedName, extensions) { mutableStateOf(extensions.first()) }
     val entries = remember(directory) {
         directory.listFiles().orEmpty()
@@ -2049,8 +2225,17 @@ private fun DesktopSaveFileDialog(
                             }.padding(horizontal = 8.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(if (entry.isDirectory) Lucide.ChevronRight else Lucide.Paperclip, null, Modifier.size(17.dp))
-                            Text(entry.name, Modifier.padding(start = 9.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Icon(
+                                if (entry.isDirectory) Lucide.ChevronRight else Lucide.Paperclip,
+                                null,
+                                Modifier.size(17.dp)
+                            )
+                            Text(
+                                entry.name,
+                                Modifier.padding(start = 9.dp).weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }
@@ -2146,12 +2331,21 @@ private fun ConversationSidebar(
                     Image(appIcon, "RikkaHub", Modifier.size(38.dp))
                 } else {
                     Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                        Icon(Lucide.Sparkles, null, Modifier.padding(9.dp).size(19.dp), tint = MaterialTheme.colorScheme.primary)
+                        Icon(
+                            Lucide.Sparkles,
+                            null,
+                            Modifier.padding(9.dp).size(19.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
                 Column(Modifier.padding(start = 10.dp).weight(1f)) {
                     Text("RikkaHub", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                    Text(desktopText(language, "sidebar.welcome"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    Text(
+                        desktopText(language, "sidebar.welcome"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
                 }
                 IconButton(onClick = onCollapse) {
                     Icon(
@@ -2164,7 +2358,10 @@ private fun ConversationSidebar(
             Spacer(Modifier.height(16.dp))
             DrawerAction(Lucide.Plus, desktopText(language, "sidebar.new_chat"), onNew)
             DrawerAction(Lucide.Search, desktopText(language, "sidebar.search_chats")) { searching = !searching }
-            DrawerAction(Lucide.Star, desktopText(language, if (showFavorites) "sidebar.back_to_chats" else "sidebar.favorite_messages")) {
+            DrawerAction(
+                Lucide.Star,
+                desktopText(language, if (showFavorites) "sidebar.back_to_chats" else "sidebar.favorite_messages")
+            ) {
                 showFavorites = !showFavorites
             }
             if (searching) {
@@ -2229,11 +2426,18 @@ private fun ConversationSidebar(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Lucide.Sparkles, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(tagFilter ?: desktopText(language, "sidebar.all_tags"), Modifier.padding(start = 9.dp).weight(1f), fontSize = 13.sp, maxLines = 1)
+                    Text(
+                        tagFilter ?: desktopText(language, "sidebar.all_tags"),
+                        Modifier.padding(start = 9.dp).weight(1f),
+                        fontSize = 13.sp,
+                        maxLines = 1
+                    )
                     Icon(Lucide.ChevronDown, null, Modifier.size(15.dp))
                 }
                 DropdownMenu(tagFilterOpen, onDismissRequest = { tagFilterOpen = false }) {
-                    DropdownMenuItem(text = { Text(desktopText(language, "sidebar.all_tags")) }, onClick = { tagFilter = null; tagFilterOpen = false })
+                    DropdownMenuItem(
+                        text = { Text(desktopText(language, "sidebar.all_tags")) },
+                        onClick = { tagFilter = null; tagFilterOpen = false })
                     tags.forEach { tag ->
                         DropdownMenuItem(text = { Text(tag) }, onClick = { tagFilter = tag; tagFilterOpen = false })
                     }
@@ -2300,8 +2504,9 @@ private fun ConversationSidebar(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     if (showFavorites) {
-                        items(favorites, key = { (conversation, message) -> "${conversation.id}:${message.id}" }) {
-                                (conversation, message) ->
+                        items(
+                            favorites,
+                            key = { (conversation, message) -> "${conversation.id}:${message.id}" }) { (conversation, message) ->
                             Column(
                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                                     .clickable { onSelectFavorite(conversation.id, message.id) }
@@ -2309,7 +2514,8 @@ private fun ConversationSidebar(
                             ) {
                                 Text(conversation.title, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                                 Text(
-                                    message.content.ifBlank { message.reasoning }.ifBlank { desktopText(language, "sidebar.tool_call") },
+                                    message.content.ifBlank { message.reasoning }
+                                        .ifBlank { desktopText(language, "sidebar.tool_call") },
                                     Modifier.padding(top = 3.dp),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 12.sp,
@@ -2332,18 +2538,18 @@ private fun ConversationSidebar(
                                 }
                             }
                             item(key = conversation.id) {
-                            ConversationRow(
-                                conversation = conversation,
-                                branchDepth = item.branchDepth,
-                                language = language,
-                                selected = !settingsSelected && conversation.id == data.selectedConversationId,
-                                generating = conversation.id in generatingConversationIds,
-                                onClick = { onSelect(conversation.id) },
-                                onPin = { onPin(conversation.id) },
-                                onDelete = { onDelete(conversation.id) },
-                                folders = data.folders,
-                                onMoveToFolder = { folderId -> onMoveToFolder(conversation.id, folderId) }
-                            )
+                                ConversationRow(
+                                    conversation = conversation,
+                                    branchDepth = item.branchDepth,
+                                    language = language,
+                                    selected = !settingsSelected && conversation.id == data.selectedConversationId,
+                                    generating = conversation.id in generatingConversationIds,
+                                    onClick = { onSelect(conversation.id) },
+                                    onPin = { onPin(conversation.id) },
+                                    onDelete = { onDelete(conversation.id) },
+                                    folders = data.folders,
+                                    onMoveToFolder = { folderId -> onMoveToFolder(conversation.id, folderId) }
+                                )
                             }
                         }
                     }
@@ -2599,11 +2805,16 @@ private fun ConversationRow(
         if (generating) {
             CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
         } else if (conversation.isPinned) {
-            Icon(Lucide.Pin, desktopText(language, "conversation.pinned"), Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary)
+            Icon(
+                Lucide.Pin,
+                desktopText(language, "conversation.pinned"),
+                Modifier.size(13.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
         }
         Box {
             IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(34.dp)) {
-            Icon(Lucide.Ellipsis, desktopText(language, "chat.options"), Modifier.size(17.dp))
+                Icon(Lucide.Ellipsis, desktopText(language, "chat.options"), Modifier.size(17.dp))
             }
             DropdownMenu(menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
@@ -2616,7 +2827,14 @@ private fun ConversationRow(
                 )
                 folders.forEach { folder ->
                     DropdownMenuItem(
-                        text = { Text(desktopText(language, "conversation.move_to_folder").replace("%s", folder.name)) },
+                        text = {
+                            Text(
+                                desktopText(language, "conversation.move_to_folder").replace(
+                                    "%s",
+                                    folder.name
+                                )
+                            )
+                        },
                         leadingIcon = { Icon(Lucide.Folder, null, Modifier.size(18.dp)) },
                         onClick = {
                             menuOpen = false
@@ -2626,7 +2844,14 @@ private fun ConversationRow(
                 }
                 HorizontalDivider()
                 DropdownMenuItem(
-                    text = { Text(desktopText(language, if (conversation.isPinned) "conversation.unpin" else "conversation.pin")) },
+                    text = {
+                        Text(
+                            desktopText(
+                                language,
+                                if (conversation.isPinned) "conversation.unpin" else "conversation.pin"
+                            )
+                        )
+                    },
                     leadingIcon = {
                         Icon(if (conversation.isPinned) Lucide.PinOff else Lucide.Pin, null, Modifier.size(18.dp))
                     },
@@ -2788,417 +3013,442 @@ private fun ChatPane(
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (showMenu) {
-                IconButton(onClick = onMenu) {
-                    Icon(
-                        if (sidebarCollapsed) Lucide.PanelLeftOpen else Lucide.Menu,
-                        desktopText(
-                            language,
-                            if (sidebarCollapsed) "common.expand" else "chat.open_conversations"
-                        ).trim()
-                    )
-                }
-            }
-            Surface(
-                onClick = onRename,
-                color = Color.Transparent,
-                modifier = Modifier.padding(start = if (showMenu) 2.dp else 8.dp).weight(1f)
+            Row(
+                Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text(conversation.title, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        "${assistant.name} · $model",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
-                }
-            }
-            Box {
-                IconButton(onClick = { conversationMenuOpen = true }) {
-                    Icon(Lucide.Ellipsis, desktopText(language, "chat.options"))
-                }
-                DropdownMenu(conversationMenuOpen, onDismissRequest = { conversationMenuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text(desktopText(language, "chat.rename")) },
-                        leadingIcon = { Icon(Lucide.Pencil, null, Modifier.size(18.dp)) },
-                        onClick = {
-                            conversationMenuOpen = false
-                            onRename()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(desktopText(language, "chat.export_markdown")) },
-                        leadingIcon = { Icon(Lucide.Download, null, Modifier.size(18.dp)) },
-                        onClick = {
-                            conversationMenuOpen = false
-                            onExportConversation()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(desktopText(language, "chat.generate_title")) },
-                        leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
-                        enabled = !isGenerating && conversation.messages.isNotEmpty(),
-                        onClick = {
-                            conversationMenuOpen = false
-                            onGenerateTitle()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(desktopText(language, "chat.statistics")) },
-                        enabled = conversation.messages.isNotEmpty(),
-                        onClick = {
-                            conversationMenuOpen = false
-                            onShowStats()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(desktopText(language, "chat.generate_suggestions")) },
-                        leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
-                        enabled = !isGenerating && conversation.messages.isNotEmpty(),
-                        onClick = {
-                            conversationMenuOpen = false
-                            onGenerateSuggestions()
-                        }
-                    )
-                    HorizontalDivider()
-                    DropdownMenuItem(
-                        text = { Text(desktopText(language, "chat.compress_history")) },
-                        leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
-                        enabled = !isGenerating && conversation.messages.size > 1,
-                        onClick = {
-                            conversationMenuOpen = false
-                            onCompress()
-                        }
-                    )
-                    if (assistant.allowConversationSystemPrompt) {
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (conversation.systemPrompt.isBlank()) {
-                                        desktopText(language, "chat.set_system_prompt")
-                                    } else {
-                                        desktopText(language, "chat.edit_system_prompt")
-                                    }
-                                )
-                            },
-                            leadingIcon = { Icon(Lucide.Settings, null, Modifier.size(18.dp)) },
-                            onClick = {
-                                conversationMenuOpen = false
-                                onEditSystemPrompt()
-                            }
+                if (showMenu) {
+                    IconButton(onClick = onMenu) {
+                        Icon(
+                            if (sidebarCollapsed) Lucide.PanelLeftOpen else Lucide.Menu,
+                            desktopText(
+                                language,
+                                if (sidebarCollapsed) "common.expand" else "chat.open_conversations"
+                            ).trim()
                         )
                     }
-                    if (assistant.allowConversationPromptInjection) {
+                }
+                Surface(
+                    onClick = onRename,
+                    color = Color.Transparent,
+                    modifier = Modifier.padding(start = if (showMenu) 2.dp else 8.dp).weight(1f)
+                ) {
+                    Column {
+                        Text(
+                            conversation.title,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            "${assistant.name} · $model",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                }
+                Box {
+                    IconButton(onClick = { conversationMenuOpen = true }) {
+                        Icon(Lucide.Ellipsis, desktopText(language, "chat.options"))
+                    }
+                    DropdownMenu(conversationMenuOpen, onDismissRequest = { conversationMenuOpen = false }) {
                         DropdownMenuItem(
-                            text = {
-                                Text(
-                                    desktopText(
-                                        language,
-                                        if (conversation.usesPromptInjections(assistant)) {
-                                            "chat.disable_lorebooks"
-                                        } else {
-                                            "chat.enable_lorebooks"
-                                        }
-                                    )
-                                )
-                            },
+                            text = { Text(desktopText(language, "chat.rename")) },
+                            leadingIcon = { Icon(Lucide.Pencil, null, Modifier.size(18.dp)) },
+                            onClick = {
+                                conversationMenuOpen = false
+                                onRename()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(desktopText(language, "chat.export_markdown")) },
+                            leadingIcon = { Icon(Lucide.Download, null, Modifier.size(18.dp)) },
+                            onClick = {
+                                conversationMenuOpen = false
+                                onExportConversation()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(desktopText(language, "chat.generate_title")) },
                             leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
-                            enabled = !isGenerating,
+                            enabled = !isGenerating && conversation.messages.isNotEmpty(),
                             onClick = {
                                 conversationMenuOpen = false
-                                onTogglePromptInjections()
+                                onGenerateTitle()
                             }
                         )
-                    }
-                    if (conversation.branches.isNotEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text(desktopText(language, "chat.statistics")) },
+                            enabled = conversation.messages.isNotEmpty(),
+                            onClick = {
+                                conversationMenuOpen = false
+                                onShowStats()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(desktopText(language, "chat.generate_suggestions")) },
+                            leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
+                            enabled = !isGenerating && conversation.messages.isNotEmpty(),
+                            onClick = {
+                                conversationMenuOpen = false
+                                onGenerateSuggestions()
+                            }
+                        )
                         HorizontalDivider()
-                        conversation.branches.forEachIndexed { index, branch ->
+                        DropdownMenuItem(
+                            text = { Text(desktopText(language, "chat.compress_history")) },
+                            leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
+                            enabled = !isGenerating && conversation.messages.size > 1,
+                            onClick = {
+                                conversationMenuOpen = false
+                                onCompress()
+                            }
+                        )
+                        if (assistant.allowConversationSystemPrompt) {
                             DropdownMenuItem(
                                 text = {
-                                    Column {
-                                        Text(
-                                            desktopText(language, "chat.restore_snapshot")
-                                                .replace("%d", (index + 1).toString())
-                                                .replace("%s", branch.name)
-                                        )
-                                        Text(
-                                            desktopText(language, "chat.snapshot_messages")
-                                                .replace("%d", branch.messages.size.toString()),
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+                                    Text(
+                                        if (conversation.systemPrompt.isBlank()) {
+                                            desktopText(language, "chat.set_system_prompt")
+                                        } else {
+                                            desktopText(language, "chat.edit_system_prompt")
+                                        }
+                                    )
                                 },
-                                leadingIcon = { Icon(Lucide.RotateCcw, null, Modifier.size(18.dp)) },
-                                trailingIcon = {
-                                    IconButton(onClick = { onDeleteBranch(branch.id) }, modifier = Modifier.size(28.dp)) {
-                                        Icon(Lucide.Trash2, desktopText(language, "chat.delete_snapshot"), Modifier.size(15.dp))
-                                    }
-                                },
+                                leadingIcon = { Icon(Lucide.Settings, null, Modifier.size(18.dp)) },
                                 onClick = {
                                     conversationMenuOpen = false
-                                    onRestoreBranch(branch.id)
+                                    onEditSystemPrompt()
                                 }
                             )
                         }
-                    }
-                }
-            }
-            Box {
-                IconButton(onClick = { folderMenuOpen = true }) {
-                    Icon(Lucide.Folder, desktopText(language, "chat.move_to_folder"))
-                }
-                FolderManagementMenu(
-                    expanded = folderMenuOpen,
-                    folders = folders,
-                    language = language,
-                    onDismiss = { folderMenuOpen = false },
-                    onMoveToFolder = { folderId ->
-                        folderMenuOpen = false
-                        onMoveToFolder(folderId)
-                    },
-                    onCreateFolder = {
-                        folderMenuOpen = false
-                        onCreateFolder()
-                    },
-                    onRenameFolder = { folder ->
-                        folderMenuOpen = false
-                        onRenameFolder(folder)
-                    },
-                    onDeleteFolder = { folder ->
-                        folderMenuOpen = false
-                        onDeleteFolder(folder)
-                    }
-                )
-            }
-            IconButton(onClick = onNew) { Icon(Lucide.Plus, desktopText(language, "sidebar.new_chat")) }
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
-
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-            Box(
-                Modifier.fillMaxSize()
-                    .hazeSource(hazeState)
-                    .background(MaterialTheme.colorScheme.background),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                if (conversation.messages.isEmpty()) {
-                    EmptyConversation(model, assistant.quickMessages, preferences.language, onPromptChange)
-                } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize().onPointerEvent(
-                            PointerEventType.Scroll,
-                            PointerEventPass.Initial
-                        ) { event ->
-                            if (!preferences.enableSmoothScroll) return@onPointerEvent
-                            if (event.changes.any { it.isConsumed }) return@onPointerEvent
-
-                            val scrollDelta = event.changes.firstOrNull()?.scrollDelta?.y ?: return@onPointerEvent
-                            if (scrollDelta != 0f) {
-                                event.changes.forEach { it.consume() }
-                                val direction = if (scrollDelta > 0f) 1 else -1
-                                val currentTimeMillis = System.currentTimeMillis()
-                                if (smoothScrollDirection != direction) {
-                                    smoothScrollDirection = direction
-                                    smoothScrollQueue.clear()
-                                }
-                                val elapsedMillis = currentTimeMillis - lastSmoothScrollTimeMillis
-                                val acceleration = if (elapsedMillis in 1 until SmoothScrollAccelerationDeltaMillis) {
-                                    min(
-                                        (1f + SmoothScrollAccelerationDeltaMillis.toFloat() / elapsedMillis) / 2f,
-                                        SmoothScrollAccelerationMax
-                                    )
-                                } else {
-                                    1f
-                                }
-                                lastSmoothScrollTimeMillis = currentTimeMillis
-                                smoothScrollQueue += SmoothScrollImpulse(
-                                    distance = scrollDelta * smoothScrollStepSize * acceleration,
-                                    startTimeNanos = System.nanoTime()
-                                )
-                                if (smoothScrollInProgress) return@onPointerEvent
-
-                                smoothScrollInProgress = true
-                                scope.launch {
-                                    try {
-                                        while (smoothScrollQueue.isNotEmpty()) {
-                                            val currentTimeNanos = System.nanoTime()
-                                            var scrollDistance = 0f
-                                            val impulses = smoothScrollQueue.iterator()
-                                            while (impulses.hasNext()) {
-                                                val impulse = impulses.next()
-                                                val elapsed = (currentTimeNanos - impulse.startTimeNanos) / 1_000_000f
-                                                val completed = elapsed >= SmoothScrollAnimationTimeMillis
-                                                val progress = if (completed) 1f else {
-                                                    smoothScrollPulse(elapsed / SmoothScrollAnimationTimeMillis)
-                                                }
-                                                val distance = (impulse.distance * progress - impulse.appliedDistance).toInt().toFloat()
-                                                scrollDistance += distance
-                                                impulse.appliedDistance += distance
-                                                if (completed) impulses.remove()
+                        if (assistant.allowConversationPromptInjection) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        desktopText(
+                                            language,
+                                            if (conversation.usesPromptInjections(assistant)) {
+                                                "chat.disable_lorebooks"
+                                            } else {
+                                                "chat.enable_lorebooks"
                                             }
-                                            if (scrollDistance != 0f) listState.scrollBy(scrollDistance)
-                                            if (smoothScrollQueue.isNotEmpty()) delay(SmoothScrollFrameDelayMillis)
-                                        }
-                                    } finally {
-                                        smoothScrollInProgress = false
-                                    }
-                                }
-                            }
-                        },
-                        contentPadding = PaddingValues(top = 22.dp, bottom = messageBottomPadding),
-                        verticalArrangement = Arrangement.spacedBy(24.dp)
-                    ) {
-                        itemsIndexed(displayItems, key = { _, item -> item.key }) { _, item ->
-                            val renderedItem = when (item) {
-                                is DesktopChatDisplayItem.Message -> RenderedChatItem(
-                                    item.messageIndex,
-                                    item.messageIndex,
-                                    item.message,
-                                    emptyList(),
-                                    false,
-                                    item.message.id == highlightedMessageId,
-                                )
-                                is DesktopChatDisplayItem.AssistantTurn -> RenderedChatItem(
-                                    item.messageIndex,
-                                    item.startMessageIndex,
-                                    item.message,
-                                    item.steps,
-                                    item.timelineAfterContent,
-                                    highlightedMessageId in item.messageIds,
-                                )
-                            }
-                            Box(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentAlignment = Alignment.TopCenter
-                            ) {
-                                Box(Modifier.widthIn(max = 920.dp).padding(horizontal = 28.dp)) {
-                                    SoftMessageReveal(renderedItem.message.id) {
-                                        MessageBlock(
-                                            message = renderedItem.message,
-                                            model = model,
-                                            providerName = providerName,
-                                            assistant = assistant,
-                                            preferences = preferences,
-                                            executionSteps = renderedItem.executionSteps,
-                                            timelineAfterContent = renderedItem.timelineAfterContent,
-                                            generating = isGenerating && renderedItem.messageIndex == conversation.messages.lastIndex,
-                                            actionsEnabled = !isGenerating,
-                                            editing = editingMessageIndex == renderedItem.messageIndex,
-                                            onEdit = { editingMessageIndex = renderedItem.messageIndex },
-                                            onCancelEdit = { editingMessageIndex = null },
-                                            onSaveEdit = { content ->
-                                                onSaveMessageEdit(renderedItem.messageIndex, content)
-                                                editingMessageIndex = null
-                                            },
-                                            onDelete = { onDeleteMessage(renderedItem.startMessageIndex) },
-                                            onToggleFavorite = { onToggleMessageFavorite(renderedItem.messageIndex) },
-                                            onFork = { onForkAtMessage(renderedItem.messageIndex) },
-                                            onTranslate = { onTranslateMessage(renderedItem.messageIndex) },
-                                            highlighted = renderedItem.highlighted,
-                                            onRegenerate = { onRegenerateMessage(renderedItem.startMessageIndex) },
-                                            onSelectVariant = { variantIndex ->
-                                                onSelectMessageVariant(renderedItem.messageIndex, variantIndex)
-                                            },
-                                            onAskUserAnswer = { toolCall, answer ->
-                                                onAskUserAnswer(conversation.id, toolCall, answer)
-                                            },
-                                            onSaveMermaidImage = onSaveMermaidImage
                                         )
-                                    }
+                                    )
+                                },
+                                leadingIcon = { Icon(Lucide.Sparkles, null, Modifier.size(18.dp)) },
+                                enabled = !isGenerating,
+                                onClick = {
+                                    conversationMenuOpen = false
+                                    onTogglePromptInjections()
                                 }
-                            }
-                        }
-                        item {
-                            Spacer(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .height(18.dp)
                             )
                         }
+                        if (conversation.branches.isNotEmpty()) {
+                            HorizontalDivider()
+                            conversation.branches.forEachIndexed { index, branch ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(
+                                                desktopText(language, "chat.restore_snapshot")
+                                                    .replace("%d", (index + 1).toString())
+                                                    .replace("%s", branch.name)
+                                            )
+                                            Text(
+                                                desktopText(language, "chat.snapshot_messages")
+                                                    .replace("%d", branch.messages.size.toString()),
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    },
+                                    leadingIcon = { Icon(Lucide.RotateCcw, null, Modifier.size(18.dp)) },
+                                    trailingIcon = {
+                                        IconButton(
+                                            onClick = { onDeleteBranch(branch.id) },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                Lucide.Trash2,
+                                                desktopText(language, "chat.delete_snapshot"),
+                                                Modifier.size(15.dp)
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        conversationMenuOpen = false
+                                        onRestoreBranch(branch.id)
+                                    }
+                                )
+                            }
+                        }
                     }
-                    ChatContentEdgeFade()
                 }
-            }
-            if (conversation.messages.isNotEmpty() && preferences.showMessageJumper) {
-                Box(
-                    Modifier.align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .width(16.dp)
-                        .onPointerEvent(PointerEventType.Enter) {
-                            pointerOverMessageJumperEdge = true
-                            showMessageJumper = true
-                        }
-                        .onPointerEvent(PointerEventType.Exit) { pointerOverMessageJumperEdge = false }
-                )
-                DesktopMessageJumper(
-                    visible = showMessageJumper && !listState.isScrollInProgress,
-                    onLeft = preferences.messageJumperOnLeft,
-                    state = listState,
-                    items = navigationItems,
-                    language = preferences.language,
-                    onPointerOverChange = { pointerOverMessageJumper = it },
-                    onMessageSelected = { messageId ->
-                        highlightedMessageId = messageId
-                        scope.launch {
-                            delay(1_800)
-                            if (highlightedMessageId == messageId) highlightedMessageId = null
-                        }
+                Box {
+                    IconButton(onClick = { folderMenuOpen = true }) {
+                        Icon(Lucide.Folder, desktopText(language, "chat.move_to_folder"))
                     }
-                )
+                    FolderManagementMenu(
+                        expanded = folderMenuOpen,
+                        folders = folders,
+                        language = language,
+                        onDismiss = { folderMenuOpen = false },
+                        onMoveToFolder = { folderId ->
+                            folderMenuOpen = false
+                            onMoveToFolder(folderId)
+                        },
+                        onCreateFolder = {
+                            folderMenuOpen = false
+                            onCreateFolder()
+                        },
+                        onRenameFolder = { folder ->
+                            folderMenuOpen = false
+                            onRenameFolder(folder)
+                        },
+                        onDeleteFolder = { folder ->
+                            folderMenuOpen = false
+                            onDeleteFolder(folder)
+                        }
+                    )
+                }
+                IconButton(onClick = onNew) { Icon(Lucide.Plus, desktopText(language, "sidebar.new_chat")) }
             }
-            Composer(
-                modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { composerHeightPx = it.height },
-                prompt = prompt,
-                pendingAttachments = pendingAttachments,
-                model = model,
-                isGenerating = isGenerating,
-                onPromptChange = onPromptChange,
-                onAddAttachments = onAddAttachments,
-                onRemoveAttachment = onRemoveAttachment,
-                onSend = onSend,
-                onAddWithoutResponse = onAddWithoutResponse,
-                onCancel = onCancel,
-                onSettings = onSettings,
-                onAssistantSettings = onAssistantSettings,
-                sendOnEnter = preferences.sendOnEnter,
-                providers = providers,
-                selectedProviderId = selectedProviderId,
-                webSearchEnabled = webSearchEnabled,
-                onProviderModelSelect = onProviderModelSelect,
-                onReasoningEffortChange = onReasoningEffortChange,
-                client = client,
-                assistant = assistant,
-                assistants = assistants,
-                language = preferences.language,
-                onAssistantSelect = onAssistantSelect,
-                mcpServers = mcpServers,
-                mcpClient = mcpClient,
-                onMcpServersChange = onMcpServersChange,
-                onAssistantMcpServerIdsChange = onAssistantMcpServerIdsChange,
-                onMcpSettings = onMcpSettings,
-                onToggleWebSearch = onToggleWebSearch,
-                onQuickMessageSelect = onPromptChange,
-                suggestions = conversation.suggestions,
-                onSuggestionSelect = onPromptChange,
-                hazeState = hazeState
-            )
-        }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
 
-        errorMessage?.let {
-            Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(horizontal = 20.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(it, Modifier.weight(1f), color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 13.sp)
-                    TextButton(onClick = onDismissError) { Text(desktopText(language, "chat.close")) }
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                Box(
+                    Modifier.fillMaxSize()
+                        .hazeSource(hazeState)
+                        .background(MaterialTheme.colorScheme.background),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    if (conversation.messages.isEmpty()) {
+                        EmptyConversation(model, assistant.quickMessages, preferences.language, onPromptChange)
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize().onPointerEvent(
+                                PointerEventType.Scroll,
+                                PointerEventPass.Initial
+                            ) { event ->
+                                if (!preferences.enableSmoothScroll) return@onPointerEvent
+                                if (event.changes.any { it.isConsumed }) return@onPointerEvent
+
+                                val scrollDelta = event.changes.firstOrNull()?.scrollDelta?.y ?: return@onPointerEvent
+                                if (scrollDelta != 0f) {
+                                    event.changes.forEach { it.consume() }
+                                    val direction = if (scrollDelta > 0f) 1 else -1
+                                    val currentTimeMillis = System.currentTimeMillis()
+                                    if (smoothScrollDirection != direction) {
+                                        smoothScrollDirection = direction
+                                        smoothScrollQueue.clear()
+                                    }
+                                    val elapsedMillis = currentTimeMillis - lastSmoothScrollTimeMillis
+                                    val acceleration =
+                                        if (elapsedMillis in 1 until SmoothScrollAccelerationDeltaMillis) {
+                                            min(
+                                                (1f + SmoothScrollAccelerationDeltaMillis.toFloat() / elapsedMillis) / 2f,
+                                                SmoothScrollAccelerationMax
+                                            )
+                                        } else {
+                                            1f
+                                        }
+                                    lastSmoothScrollTimeMillis = currentTimeMillis
+                                    smoothScrollQueue += SmoothScrollImpulse(
+                                        distance = scrollDelta * smoothScrollStepSize * acceleration,
+                                        startTimeNanos = System.nanoTime()
+                                    )
+                                    if (smoothScrollInProgress) return@onPointerEvent
+
+                                    smoothScrollInProgress = true
+                                    scope.launch {
+                                        try {
+                                            while (smoothScrollQueue.isNotEmpty()) {
+                                                val currentTimeNanos = System.nanoTime()
+                                                var scrollDistance = 0f
+                                                val impulses = smoothScrollQueue.iterator()
+                                                while (impulses.hasNext()) {
+                                                    val impulse = impulses.next()
+                                                    val elapsed =
+                                                        (currentTimeNanos - impulse.startTimeNanos) / 1_000_000f
+                                                    val completed = elapsed >= SmoothScrollAnimationTimeMillis
+                                                    val progress = if (completed) 1f else {
+                                                        smoothScrollPulse(elapsed / SmoothScrollAnimationTimeMillis)
+                                                    }
+                                                    val distance =
+                                                        (impulse.distance * progress - impulse.appliedDistance).toInt()
+                                                            .toFloat()
+                                                    scrollDistance += distance
+                                                    impulse.appliedDistance += distance
+                                                    if (completed) impulses.remove()
+                                                }
+                                                if (scrollDistance != 0f) listState.scrollBy(scrollDistance)
+                                                if (smoothScrollQueue.isNotEmpty()) delay(SmoothScrollFrameDelayMillis)
+                                            }
+                                        } finally {
+                                            smoothScrollInProgress = false
+                                        }
+                                    }
+                                }
+                            },
+                            contentPadding = PaddingValues(top = 22.dp, bottom = messageBottomPadding),
+                            verticalArrangement = Arrangement.spacedBy(24.dp)
+                        ) {
+                            itemsIndexed(displayItems, key = { _, item -> item.key }) { _, item ->
+                                val renderedItem = when (item) {
+                                    is DesktopChatDisplayItem.Message -> RenderedChatItem(
+                                        item.messageIndex,
+                                        item.messageIndex,
+                                        item.message,
+                                        emptyList(),
+                                        false,
+                                        item.message.id == highlightedMessageId,
+                                    )
+
+                                    is DesktopChatDisplayItem.AssistantTurn -> RenderedChatItem(
+                                        item.messageIndex,
+                                        item.startMessageIndex,
+                                        item.message,
+                                        item.steps,
+                                        item.timelineAfterContent,
+                                        highlightedMessageId in item.messageIds,
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentAlignment = Alignment.TopCenter
+                                ) {
+                                    Box(Modifier.widthIn(max = 920.dp).padding(horizontal = 28.dp)) {
+                                        SoftMessageReveal(renderedItem.message.id) {
+                                            MessageBlock(
+                                                message = renderedItem.message,
+                                                model = model,
+                                                providerName = providerName,
+                                                assistant = assistant,
+                                                preferences = preferences,
+                                                executionSteps = renderedItem.executionSteps,
+                                                timelineAfterContent = renderedItem.timelineAfterContent,
+                                                generating = isGenerating && renderedItem.messageIndex == conversation.messages.lastIndex,
+                                                actionsEnabled = !isGenerating,
+                                                editing = editingMessageIndex == renderedItem.messageIndex,
+                                                onEdit = { editingMessageIndex = renderedItem.messageIndex },
+                                                onCancelEdit = { editingMessageIndex = null },
+                                                onSaveEdit = { content ->
+                                                    onSaveMessageEdit(renderedItem.messageIndex, content)
+                                                    editingMessageIndex = null
+                                                },
+                                                onDelete = { onDeleteMessage(renderedItem.startMessageIndex) },
+                                                onToggleFavorite = { onToggleMessageFavorite(renderedItem.messageIndex) },
+                                                onFork = { onForkAtMessage(renderedItem.messageIndex) },
+                                                onTranslate = { onTranslateMessage(renderedItem.messageIndex) },
+                                                highlighted = renderedItem.highlighted,
+                                                onRegenerate = { onRegenerateMessage(renderedItem.startMessageIndex) },
+                                                onSelectVariant = { variantIndex ->
+                                                    onSelectMessageVariant(renderedItem.messageIndex, variantIndex)
+                                                },
+                                                onAskUserAnswer = { toolCall, answer ->
+                                                    onAskUserAnswer(conversation.id, toolCall, answer)
+                                                },
+                                                onSaveMermaidImage = onSaveMermaidImage
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            item {
+                                Spacer(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(18.dp)
+                                )
+                            }
+                        }
+                        ChatContentEdgeFade()
+                    }
+                }
+                if (conversation.messages.isNotEmpty() && preferences.showMessageJumper) {
+                    Box(
+                        Modifier.align(Alignment.CenterEnd)
+                            .fillMaxHeight()
+                            .width(16.dp)
+                            .onPointerEvent(PointerEventType.Enter) {
+                                pointerOverMessageJumperEdge = true
+                                showMessageJumper = true
+                            }
+                            .onPointerEvent(PointerEventType.Exit) { pointerOverMessageJumperEdge = false }
+                    )
+                    DesktopMessageJumper(
+                        visible = showMessageJumper && !listState.isScrollInProgress,
+                        onLeft = preferences.messageJumperOnLeft,
+                        state = listState,
+                        items = navigationItems,
+                        language = preferences.language,
+                        onPointerOverChange = { pointerOverMessageJumper = it },
+                        onMessageSelected = { messageId ->
+                            highlightedMessageId = messageId
+                            scope.launch {
+                                delay(1_800)
+                                if (highlightedMessageId == messageId) highlightedMessageId = null
+                            }
+                        }
+                    )
+                }
+                Composer(
+                    modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { composerHeightPx = it.height },
+                    prompt = prompt,
+                    pendingAttachments = pendingAttachments,
+                    model = model,
+                    isGenerating = isGenerating,
+                    onPromptChange = onPromptChange,
+                    onAddAttachments = onAddAttachments,
+                    onRemoveAttachment = onRemoveAttachment,
+                    onSend = onSend,
+                    onAddWithoutResponse = onAddWithoutResponse,
+                    onCancel = onCancel,
+                    onSettings = onSettings,
+                    onAssistantSettings = onAssistantSettings,
+                    sendOnEnter = preferences.sendOnEnter,
+                    providers = providers,
+                    selectedProviderId = selectedProviderId,
+                    webSearchEnabled = webSearchEnabled,
+                    onProviderModelSelect = onProviderModelSelect,
+                    onReasoningEffortChange = onReasoningEffortChange,
+                    client = client,
+                    assistant = assistant,
+                    assistants = assistants,
+                    language = preferences.language,
+                    onAssistantSelect = onAssistantSelect,
+                    mcpServers = mcpServers,
+                    mcpClient = mcpClient,
+                    onMcpServersChange = onMcpServersChange,
+                    onAssistantMcpServerIdsChange = onAssistantMcpServerIdsChange,
+                    onMcpSettings = onMcpSettings,
+                    onToggleWebSearch = onToggleWebSearch,
+                    onQuickMessageSelect = onPromptChange,
+                    suggestions = conversation.suggestions,
+                    onSuggestionSelect = onPromptChange,
+                    hazeState = hazeState
+                )
+            }
+
+            errorMessage?.let {
+                Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.padding(horizontal = 20.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            it,
+                            Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            fontSize = 13.sp
+                        )
+                        TextButton(onClick = onDismissError) { Text(desktopText(language, "chat.close")) }
+                    }
                 }
             }
-        }
         }
     }
 }
@@ -3371,7 +3621,10 @@ private fun BoxScope.DesktopMessageJumper(
                                         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Text(
-                                                    desktopText(language, if (item.role == "user") "jumper.user" else "jumper.assistant"),
+                                                    desktopText(
+                                                        language,
+                                                        if (item.role == "user") "jumper.user" else "jumper.assistant"
+                                                    ),
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.SemiBold
                                                 )
@@ -3607,7 +3860,11 @@ private fun MessageBlock(
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 if (configuredUserNickname.isBlank()) {
-                                    Icon(Lucide.UserRound, desktopText(language, "message.user_avatar"), Modifier.size(16.dp))
+                                    Icon(
+                                        Lucide.UserRound,
+                                        desktopText(language, "message.user_avatar"),
+                                        Modifier.size(16.dp)
+                                    )
                                 } else {
                                     Text(
                                         userNickname.take(1),
@@ -3699,7 +3956,11 @@ private fun MessageBlock(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp)
-                    Text(desktopText(language, "message.thinking"), Modifier.padding(start = 9.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        desktopText(language, "message.thinking"),
+                        Modifier.padding(start = 9.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             } else if (!timelineAfterContent && displayContent.isNotBlank()) {
                 assistantContent()
@@ -3726,7 +3987,11 @@ private fun MessageBlock(
         }
         if (!isUser && message.citations.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(desktopText(language, "message.sources"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text(
+                    desktopText(language, "message.sources"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp
+                )
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -3747,7 +4012,10 @@ private fun MessageBlock(
                             ) {
                                 Text(
                                     citation.title.ifBlank {
-                                        desktopText(language, "message.source_number").replace("%d", (index + 1).toString())
+                                        desktopText(language, "message.source_number").replace(
+                                            "%d",
+                                            (index + 1).toString()
+                                        )
                                     },
                                     fontSize = 11.sp,
                                     maxLines = 1,
@@ -3763,7 +4031,7 @@ private fun MessageBlock(
         }
         if (!generating && !isUser && (
                 message.promptTokens != null || message.completionTokens != null || message.cachedTokens != null
-            )
+                )
         ) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -3831,17 +4099,36 @@ private fun MessageBlock(
                     enabled = actionsEnabled && currentVariantIndex < variants.lastIndex
                 ) { onSelectVariant(currentVariantIndex + 1) }
             }
-            MessageAction(if (copied) Lucide.Check else Lucide.Copy, desktopText(language, "message.copy"), enabled = displayContent.isNotEmpty()) {
+            MessageAction(
+                if (copied) Lucide.Check else Lucide.Copy,
+                desktopText(language, "message.copy"),
+                enabled = displayContent.isNotEmpty()
+            ) {
                 clipboardScope.launch {
                     clipboard.setClipEntry(ClipEntry(StringSelection(displayContent)))
                     copyVersion++
                 }
             }
-            MessageAction(Lucide.GitFork, desktopText(language, "message.fork"), enabled = actionsEnabled, onClick = onFork)
+            MessageAction(
+                Lucide.GitFork,
+                desktopText(language, "message.fork"),
+                enabled = actionsEnabled,
+                onClick = onFork
+            )
             if (!isUser) {
-                MessageAction(Lucide.RotateCcw, desktopText(language, "message.regenerate"), enabled = actionsEnabled, onClick = onRegenerate)
+                MessageAction(
+                    Lucide.RotateCcw,
+                    desktopText(language, "message.regenerate"),
+                    enabled = actionsEnabled,
+                    onClick = onRegenerate
+                )
             }
-            MessageAction(Lucide.Languages, desktopText(language, "message.translate"), enabled = actionsEnabled && displayContent.isNotBlank(), onClick = onTranslate)
+            MessageAction(
+                Lucide.Languages,
+                desktopText(language, "message.translate"),
+                enabled = actionsEnabled && displayContent.isNotBlank(),
+                onClick = onTranslate
+            )
             MessageAction(
                 if (message.isFavorite) FilledStar else Lucide.Star,
                 desktopText(language, if (message.isFavorite) "message.unfavorite" else "message.favorite"),
@@ -3849,9 +4136,19 @@ private fun MessageBlock(
                 onClick = onToggleFavorite
             )
             if (isUser) {
-                MessageAction(Lucide.Pencil, desktopText(language, "message.edit"), enabled = actionsEnabled, onClick = onEdit)
+                MessageAction(
+                    Lucide.Pencil,
+                    desktopText(language, "message.edit"),
+                    enabled = actionsEnabled,
+                    onClick = onEdit
+                )
             }
-            MessageAction(Lucide.Trash2, desktopText(language, "message.delete"), enabled = actionsEnabled, onClick = onDelete)
+            MessageAction(
+                Lucide.Trash2,
+                desktopText(language, "message.delete"),
+                enabled = actionsEnabled,
+                onClick = onDelete
+            )
         }
     }
 }
@@ -3949,7 +4246,10 @@ private fun DesktopExecutionTimeline(
                 ) {
                     Icon(
                         if (expanded) Lucide.ChevronDown else Lucide.ChevronRight,
-                        desktopText(language, if (expanded) "timeline.collapse_execution" else "timeline.expand_execution"),
+                        desktopText(
+                            language,
+                            if (expanded) "timeline.collapse_execution" else "timeline.expand_execution"
+                        ),
                         Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -4010,7 +4310,12 @@ private fun DesktopExecutionTimelineStep(
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Lucide.Lightbulb, desktopText(language, "timeline.reasoning"), Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    Lucide.Lightbulb,
+                    desktopText(language, "timeline.reasoning"),
+                    Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
                 Text(
                     message.reasoningDurationMillis?.let {
                         desktopText(language, "timeline.reasoning_duration").replace("%s", formatReasoningDuration(it))
@@ -4045,7 +4350,11 @@ private fun DesktopExecutionTimelineStep(
             }
         }
 
-        is DesktopExecutionStep.ToolResult -> DesktopToolResultTimelineStep(step.message.content, language, markdownOptions)
+        is DesktopExecutionStep.ToolResult -> DesktopToolResultTimelineStep(
+            step.message.content,
+            language,
+            markdownOptions
+        )
     }
 }
 
@@ -4133,7 +4442,11 @@ private fun DesktopToolDetail(label: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun DesktopToolResultTimelineStep(content: String, language: DesktopLanguage, markdownOptions: MarkdownRenderOptions) {
+private fun DesktopToolResultTimelineStep(
+    content: String,
+    language: DesktopLanguage,
+    markdownOptions: MarkdownRenderOptions
+) {
     var expanded by remember(content) { mutableStateOf(false) }
     Row(
         modifier = Modifier
@@ -4436,7 +4749,12 @@ private fun ModelPickerMenu(
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(desktopText(language, "model_picker.title"), Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text(
+                desktopText(language, "model_picker.title"),
+                Modifier.weight(1f),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
             IconButton(onClick = onSettings, modifier = Modifier.size(30.dp)) {
                 Icon(Lucide.Settings, desktopText(language, "model_picker.manage_providers"), Modifier.size(16.dp))
             }
@@ -4449,7 +4767,12 @@ private fun ModelPickerMenu(
             singleLine = true
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(desktopText(language, "model_picker.reasoning"), Modifier.weight(1f), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                desktopText(language, "model_picker.reasoning"),
+                Modifier.weight(1f),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Text(
                 listOf("model_picker.default", "model_picker.low", "model_picker.medium", "model_picker.high")
                     .map { desktopText(language, it) }[reasoningSliderValue.roundToInt().coerceIn(0, 3)],
@@ -4462,13 +4785,20 @@ private fun ModelPickerMenu(
             value = reasoningSliderValue,
             onValueChange = { reasoningSliderValue = it },
             onValueChangeFinished = {
-                onReasoningEffortChange(listOf("", "low", "medium", "high")[reasoningSliderValue.roundToInt().coerceIn(0, 3)])
+                onReasoningEffortChange(
+                    listOf("", "low", "medium", "high")[reasoningSliderValue.roundToInt().coerceIn(0, 3)]
+                )
             },
             valueRange = 0f..3f,
             steps = 2
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            listOf("model_picker.default", "model_picker.low", "model_picker.medium", "model_picker.high").forEach { key ->
+            listOf(
+                "model_picker.default",
+                "model_picker.low",
+                "model_picker.medium",
+                "model_picker.high"
+            ).forEach { key ->
                 Text(desktopText(language, key), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -4484,7 +4814,12 @@ private fun ModelPickerMenu(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     DesktopProviderIcon(provider.name, Modifier.size(16.dp))
-                    Text(provider.name, Modifier.padding(start = 6.dp).weight(1f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    Text(
+                        provider.name,
+                        Modifier.padding(start = 6.dp).weight(1f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                     if (provider.config.balanceOptions.enabled) {
                         Text(
                             balances[provider.id] ?: desktopText(language, "model_picker.checking_balance"),
@@ -4518,8 +4853,18 @@ private fun ModelPickerMenu(
                     ) {
                         Column(Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(availableModel, Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                                if (selected) Icon(Lucide.Sparkles, desktopText(language, "model_picker.current_model"), Modifier.size(14.dp), MaterialTheme.colorScheme.primary)
+                                Text(
+                                    availableModel,
+                                    Modifier.weight(1f),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                if (selected) Icon(
+                                    Lucide.Sparkles,
+                                    desktopText(language, "model_picker.current_model"),
+                                    Modifier.size(14.dp),
+                                    MaterialTheme.colorScheme.primary
+                                )
                             }
                             Text(
                                 modelCapabilityLabels(availableModel, language).joinToString(" · "),
@@ -4538,9 +4883,21 @@ private fun modelCapabilityLabels(model: String, language: DesktopLanguage): Lis
     val normalized = model.lowercase()
     return buildList {
         add(desktopText(language, "model_capability.text"))
-        if (listOf("gpt-4o", "gpt-4.1", "gemini", "claude", "qwen-vl", "vision").any(normalized::contains)) add(desktopText(language, "model_capability.vision"))
-        if (listOf("o1", "o3", "r1", "reasoner", "thinking", "deepseek-r").any(normalized::contains)) add(desktopText(language, "model_capability.reasoning"))
-        if (!listOf("embedding", "image", "tts", "whisper").any(normalized::contains)) add(desktopText(language, "model_capability.tools"))
+        if (listOf("gpt-4o", "gpt-4.1", "gemini", "claude", "qwen-vl", "vision").any(normalized::contains)) add(
+            desktopText(language, "model_capability.vision")
+        )
+        if (listOf("o1", "o3", "r1", "reasoner", "thinking", "deepseek-r").any(normalized::contains)) add(
+            desktopText(
+                language,
+                "model_capability.reasoning"
+            )
+        )
+        if (!listOf("embedding", "image", "tts", "whisper").any(normalized::contains)) add(
+            desktopText(
+                language,
+                "model_capability.tools"
+            )
+        )
     }
 }
 
@@ -4634,295 +4991,335 @@ private fun Composer(
                         .then(if (composerExpanded) Modifier.fillMaxSize() else Modifier)
                         .padding(horizontal = 12.dp, vertical = 9.dp)
                 ) {
-                if (suggestions.isNotEmpty()) {
-                    FlowRow(
-                        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        suggestions.forEach { suggestion ->
-                            OutlinedButton(
-                                onClick = {
-                                    onSuggestionSelect(suggestion)
-                                    inputFocusRequester.requestFocus()
-                                },
-                                modifier = Modifier.widthIn(max = 360.dp)
-                            ) {
-                                Text(suggestion, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                    }
-                }
-                if (pendingAttachments.isNotEmpty()) {
-                    FlowRow(
-                        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        pendingAttachments.forEach { attachment ->
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh
-                            ) {
-                                Row(
-                                    Modifier.padding(start = 9.dp, end = 2.dp, top = 3.dp, bottom = 3.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                    if (suggestions.isNotEmpty()) {
+                        FlowRow(
+                            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            suggestions.forEach { suggestion ->
+                                OutlinedButton(
+                                    onClick = {
+                                        onSuggestionSelect(suggestion)
+                                        inputFocusRequester.requestFocus()
+                                    },
+                                    modifier = Modifier.widthIn(max = 360.dp)
                                 ) {
-                                    Icon(Lucide.Paperclip, null, Modifier.size(14.dp))
-                                    Text(
-                                        if (attachment.kind == DesktopAttachmentKind.AUDIO) {
-                                            "${desktopText(language, "attachment.audio")} · ${attachment.name}"
-                                        } else {
-                                            attachment.name
-                                        },
-                                        Modifier.padding(start = 5.dp),
-                                        fontSize = 11.sp,
-                                        maxLines = 1
-                                    )
-                                    IconButton(
-                                        onClick = { onRemoveAttachment(attachment) },
-                                        modifier = Modifier.size(28.dp)
-                                    ) { Icon(Lucide.Trash2, desktopText(language, "attachment.remove"), Modifier.size(14.dp)) }
+                                    Text(suggestion, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                         }
                     }
-                }
-                TextField(
-                    value = prompt,
-                    onValueChange = onPromptChange,
-                    modifier = Modifier.fillMaxWidth()
-                        .focusRequester(inputFocusRequester)
-                        .then(
-                            if (composerExpanded) {
-                                Modifier.weight(1f)
-                            } else {
-                                Modifier.heightIn(min = 58.dp, max = 150.dp)
+                    if (pendingAttachments.isNotEmpty()) {
+                        FlowRow(
+                            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            pendingAttachments.forEach { attachment ->
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                                ) {
+                                    Row(
+                                        Modifier.padding(start = 9.dp, end = 2.dp, top = 3.dp, bottom = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Lucide.Paperclip, null, Modifier.size(14.dp))
+                                        Text(
+                                            if (attachment.kind == DesktopAttachmentKind.AUDIO) {
+                                                "${desktopText(language, "attachment.audio")} · ${attachment.name}"
+                                            } else {
+                                                attachment.name
+                                            },
+                                            Modifier.padding(start = 5.dp),
+                                            fontSize = 11.sp,
+                                            maxLines = 1
+                                        )
+                                        IconButton(
+                                            onClick = { onRemoveAttachment(attachment) },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                Lucide.Trash2,
+                                                desktopText(language, "attachment.remove"),
+                                                Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                }
                             }
-                        )
-                        .onPreviewKeyEvent { event ->
-                            if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isAltPressed) {
-                                onAddWithoutResponse()
-                                return@onPreviewKeyEvent true
+                        }
+                    }
+                    TextField(
+                        value = prompt,
+                        onValueChange = onPromptChange,
+                        modifier = Modifier.fillMaxWidth()
+                            .focusRequester(inputFocusRequester)
+                            .then(
+                                if (composerExpanded) {
+                                    Modifier.weight(1f)
+                                } else {
+                                    Modifier.heightIn(min = 58.dp, max = 150.dp)
+                                }
+                            )
+                            .onPreviewKeyEvent { event ->
+                                if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isAltPressed) {
+                                    onAddWithoutResponse()
+                                    return@onPreviewKeyEvent true
+                                }
+                                val enterToSend = sendOnEnter && !event.isShiftPressed
+                                val shortcutToSend = !sendOnEnter && event.isCtrlPressed
+                                if (event.type == KeyEventType.KeyDown && event.key == Key.Enter &&
+                                    (enterToSend || shortcutToSend)
+                                ) {
+                                    onSend()
+                                    true
+                                } else false
+                            },
+                        placeholder = { Text(desktopText(language, "composer.placeholder")) },
+                        trailingIcon = {
+                            IconButton(onClick = { composerExpanded = !composerExpanded }) {
+                                Icon(
+                                    if (composerExpanded) Lucide.Minimize2 else Lucide.Maximize2,
+                                    desktopText(
+                                        language,
+                                        if (composerExpanded) "composer.collapse" else "composer.expand"
+                                    ),
+                                    Modifier.size(18.dp)
+                                )
                             }
-                            val enterToSend = sendOnEnter && !event.isShiftPressed
-                            val shortcutToSend = !sendOnEnter && event.isCtrlPressed
-                            if (event.type == KeyEventType.KeyDown && event.key == Key.Enter &&
-                                (enterToSend || shortcutToSend)
-                            ) {
-                                onSend()
-                                true
-                            } else false
                         },
-                    placeholder = { Text(desktopText(language, "composer.placeholder")) },
-                    trailingIcon = {
-                        IconButton(onClick = { composerExpanded = !composerExpanded }) {
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            disabledIndicatorColor = Color.Transparent
+                        ),
+                        minLines = if (composerExpanded) 12 else 2,
+                        maxLines = if (composerExpanded) Int.MAX_VALUE else 6
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onAddAttachments, modifier = Modifier.size(34.dp)) {
                             Icon(
-                                if (composerExpanded) Lucide.Minimize2 else Lucide.Maximize2,
-                                desktopText(language, if (composerExpanded) "composer.collapse" else "composer.expand"),
+                                Lucide.Paperclip,
+                                desktopText(language, "composer.add_attachment"),
                                 Modifier.size(18.dp)
                             )
                         }
-                    },
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        disabledIndicatorColor = Color.Transparent
-                    ),
-                    minLines = if (composerExpanded) 12 else 2,
-                    maxLines = if (composerExpanded) Int.MAX_VALUE else 6
-                )
-                Row(Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onAddAttachments, modifier = Modifier.size(34.dp)) {
-                        Icon(Lucide.Paperclip, desktopText(language, "composer.add_attachment"), Modifier.size(18.dp))
-                    }
-                    IconButton(onClick = onToggleWebSearch, modifier = Modifier.size(34.dp)) {
-                        Icon(
-                            Lucide.Globe,
-                            desktopText(language, if (webSearchEnabled) "composer.disable_web_search" else "composer.enable_web_search"),
-                            Modifier.size(18.dp),
-                            tint = if (webSearchEnabled) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
-                    Box {
-                        IconButton(onClick = { mcpMenuOpen = true }, modifier = Modifier.size(34.dp)) {
+                        IconButton(onClick = onToggleWebSearch, modifier = Modifier.size(34.dp)) {
                             Icon(
-                                Lucide.Wrench,
-                                desktopText(language, "mcp.manage"),
+                                Lucide.Globe,
+                                desktopText(
+                                    language,
+                                    if (webSearchEnabled) "composer.disable_web_search" else "composer.enable_web_search"
+                                ),
                                 Modifier.size(18.dp),
-                                tint = if (mcpServers.any { it.enabled && it.id in assistant.mcpServerIds }) {
+                                tint = if (webSearchEnabled) {
                                     MaterialTheme.colorScheme.primary
                                 } else {
                                     MaterialTheme.colorScheme.onSurfaceVariant
                                 }
                             )
                         }
-                        DropdownMenu(
-                            expanded = mcpMenuOpen,
-                            onDismissRequest = { mcpMenuOpen = false }
-                        ) {
-                            McpQuickManager(
-                                servers = mcpServers,
-                                selectedServerIds = assistant.mcpServerIds,
-                                mcpClient = mcpClient,
-                                language = language,
-                                onServersChange = onMcpServersChange,
-                                onSelectedServerIdsChange = onAssistantMcpServerIdsChange,
-                                onOpenSettings = {
-                                    mcpMenuOpen = false
-                                    onMcpSettings()
-                                }
-                            )
-                        }
-                    }
-                    if (assistant.quickMessages.isNotEmpty()) {
                         Box {
-                            IconButton(onClick = { quickMessageMenuOpen = true }, modifier = Modifier.size(34.dp)) {
-                                Icon(Lucide.Plus, desktopText(language, "composer.quick_messages"), Modifier.size(18.dp))
+                            IconButton(onClick = { mcpMenuOpen = true }, modifier = Modifier.size(34.dp)) {
+                                Icon(
+                                    Lucide.Wrench,
+                                    desktopText(language, "mcp.manage"),
+                                    Modifier.size(18.dp),
+                                    tint = if (mcpServers.any { it.enabled && it.id in assistant.mcpServerIds }) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
                             }
-                            DropdownMenu(quickMessageMenuOpen, onDismissRequest = { quickMessageMenuOpen = false }) {
-                                assistant.quickMessages.forEach { message ->
+                            DropdownMenu(
+                                expanded = mcpMenuOpen,
+                                onDismissRequest = { mcpMenuOpen = false }
+                            ) {
+                                McpQuickManager(
+                                    servers = mcpServers,
+                                    selectedServerIds = assistant.mcpServerIds,
+                                    mcpClient = mcpClient,
+                                    language = language,
+                                    onServersChange = onMcpServersChange,
+                                    onSelectedServerIdsChange = onAssistantMcpServerIdsChange,
+                                    onOpenSettings = {
+                                        mcpMenuOpen = false
+                                        onMcpSettings()
+                                    }
+                                )
+                            }
+                        }
+                        if (assistant.quickMessages.isNotEmpty()) {
+                            Box {
+                                IconButton(onClick = { quickMessageMenuOpen = true }, modifier = Modifier.size(34.dp)) {
+                                    Icon(
+                                        Lucide.Plus,
+                                        desktopText(language, "composer.quick_messages"),
+                                        Modifier.size(18.dp)
+                                    )
+                                }
+                                DropdownMenu(
+                                    quickMessageMenuOpen,
+                                    onDismissRequest = { quickMessageMenuOpen = false }) {
+                                    assistant.quickMessages.forEach { message ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text(message.title.ifBlank {
+                                                        desktopText(
+                                                            language,
+                                                            "common.unnamed"
+                                                        )
+                                                    }, fontSize = 13.sp)
+                                                    Text(
+                                                        message.content,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        fontSize = 11.sp,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            },
+                                            onClick = {
+                                                quickMessageMenuOpen = false
+                                                onQuickMessageSelect(message.content)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Box {
+                            Row(
+                                Modifier.padding(start = 6.dp).clip(RoundedCornerShape(16.dp))
+                                    .clickable { assistantMenuOpen = true }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Lucide.Sparkles,
+                                    null,
+                                    Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    assistant.name,
+                                    Modifier.padding(horizontal = 7.dp),
+                                    fontSize = 12.sp,
+                                    maxLines = 1
+                                )
+                                Icon(Lucide.ChevronDown, null, Modifier.size(14.dp))
+                            }
+                            DropdownMenu(assistantMenuOpen, onDismissRequest = { assistantMenuOpen = false }) {
+                                assistants.forEach { availableAssistant ->
                                     DropdownMenuItem(
-                                        text = {
-                                            Column {
-                                                Text(message.title.ifBlank { desktopText(language, "common.unnamed") }, fontSize = 13.sp)
-                                                Text(
-                                                    message.content,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    fontSize = 11.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
+                                        text = { Text(availableAssistant.name) },
+                                        leadingIcon = {
+                                            if (availableAssistant.id == assistant.id) {
+                                                Icon(Lucide.Sparkles, null, Modifier.size(17.dp))
                                             }
                                         },
                                         onClick = {
-                                            quickMessageMenuOpen = false
-                                            onQuickMessageSelect(message.content)
+                                            assistantMenuOpen = false
+                                            onAssistantSelect(availableAssistant.id)
+                                        }
+                                    )
+                                }
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text(desktopText(language, "composer.manage_assistants")) },
+                                    leadingIcon = { Icon(Lucide.Settings, null, Modifier.size(17.dp)) },
+                                    onClick = {
+                                        assistantMenuOpen = false
+                                        onAssistantSettings()
+                                    }
+                                )
+                            }
+                        }
+                        Box {
+                            Row(
+                                Modifier.padding(start = 6.dp).clip(RoundedCornerShape(16.dp))
+                                    .clickable { modelMenuOpen = true }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Lucide.Bot, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary)
+                                Text(model, Modifier.padding(horizontal = 7.dp), fontSize = 12.sp, maxLines = 1)
+                                Icon(Lucide.ChevronDown, null, Modifier.size(14.dp))
+                            }
+                            DropdownMenu(
+                                expanded = modelMenuOpen,
+                                onDismissRequest = { modelMenuOpen = false }
+                            ) {
+                                ModelPickerMenu(
+                                    providers = providers,
+                                    selectedProviderId = selectedProviderId,
+                                    selectedModel = model,
+                                    reasoningEffort = assistant.reasoningEffort,
+                                    language = language,
+                                    client = client,
+                                    onSelect = { providerId, selectedModel ->
+                                        modelMenuOpen = false
+                                        onProviderModelSelect(providerId, selectedModel)
+                                    },
+                                    onReasoningEffortChange = onReasoningEffortChange,
+                                    onSettings = {
+                                        modelMenuOpen = false
+                                        onSettings()
+                                    }
+                                )
+                            }
+                        }
+                        Spacer(Modifier.weight(1f))
+                        val sendEnabled = isGenerating || prompt.isNotBlank() || pendingAttachments.isNotEmpty()
+                        Surface(
+                            modifier = Modifier.size(42.dp),
+                            shape = CircleShape,
+                            color = if (sendEnabled) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            }
+                        ) {
+                            Box(
+                                Modifier.fillMaxSize().combinedClickable(
+                                    enabled = sendEnabled,
+                                    onClick = if (isGenerating) onCancel else onSend,
+                                    onLongClick = if (isGenerating) null else onAddWithoutResponse
+                                ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isGenerating) {
+                                    Icon(
+                                        Lucide.Square,
+                                        desktopText(language, "composer.stop_generation"),
+                                        Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                } else {
+                                    Icon(
+                                        Lucide.Send,
+                                        desktopText(language, "composer.send"),
+                                        Modifier.size(18.dp),
+                                        tint = if (sendEnabled) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
                                         }
                                     )
                                 }
                             }
                         }
                     }
-                    Box {
-                        Row(
-                            Modifier.padding(start = 6.dp).clip(RoundedCornerShape(16.dp))
-                                .clickable { assistantMenuOpen = true }
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Lucide.Sparkles, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                            Text(assistant.name, Modifier.padding(horizontal = 7.dp), fontSize = 12.sp, maxLines = 1)
-                            Icon(Lucide.ChevronDown, null, Modifier.size(14.dp))
-                        }
-                        DropdownMenu(assistantMenuOpen, onDismissRequest = { assistantMenuOpen = false }) {
-                            assistants.forEach { availableAssistant ->
-                                DropdownMenuItem(
-                                    text = { Text(availableAssistant.name) },
-                                    leadingIcon = {
-                                        if (availableAssistant.id == assistant.id) {
-                                            Icon(Lucide.Sparkles, null, Modifier.size(17.dp))
-                                        }
-                                    },
-                                    onClick = {
-                                        assistantMenuOpen = false
-                                        onAssistantSelect(availableAssistant.id)
-                                    }
-                                )
-                            }
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text(desktopText(language, "composer.manage_assistants")) },
-                                leadingIcon = { Icon(Lucide.Settings, null, Modifier.size(17.dp)) },
-                                onClick = {
-                                    assistantMenuOpen = false
-                                    onAssistantSettings()
-                                }
-                            )
-                        }
-                    }
-                    Box {
-                        Row(
-                            Modifier.padding(start = 6.dp).clip(RoundedCornerShape(16.dp))
-                                .clickable { modelMenuOpen = true }
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Lucide.Bot, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary)
-                            Text(model, Modifier.padding(horizontal = 7.dp), fontSize = 12.sp, maxLines = 1)
-                            Icon(Lucide.ChevronDown, null, Modifier.size(14.dp))
-                        }
-                        DropdownMenu(
-                            expanded = modelMenuOpen,
-                            onDismissRequest = { modelMenuOpen = false }
-                        ) {
-                            ModelPickerMenu(
-                                providers = providers,
-                                selectedProviderId = selectedProviderId,
-                                selectedModel = model,
-                                reasoningEffort = assistant.reasoningEffort,
-                                language = language,
-                                client = client,
-                                onSelect = { providerId, selectedModel ->
-                                    modelMenuOpen = false
-                                    onProviderModelSelect(providerId, selectedModel)
-                                },
-                                onReasoningEffortChange = onReasoningEffortChange,
-                                onSettings = {
-                                    modelMenuOpen = false
-                                    onSettings()
-                                }
-                            )
-                        }
-                    }
-                    Spacer(Modifier.weight(1f))
-                    val sendEnabled = isGenerating || prompt.isNotBlank() || pendingAttachments.isNotEmpty()
-                    Surface(
-                        modifier = Modifier.size(42.dp),
-                        shape = CircleShape,
-                        color = if (sendEnabled) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerHighest
-                        }
-    ) {
-                        Box(
-                            Modifier.fillMaxSize().combinedClickable(
-                                enabled = sendEnabled,
-                                onClick = if (isGenerating) onCancel else onSend,
-                                onLongClick = if (isGenerating) null else onAddWithoutResponse
-                            ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isGenerating) {
-                                Icon(
-                                    Lucide.Square,
-                                    desktopText(language, "composer.stop_generation"),
-                                    Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.onPrimary
-                                )
-                            } else {
-                                Icon(
-                                    Lucide.Send,
-                                    desktopText(language, "composer.send"),
-                                    Modifier.size(18.dp),
-                                    tint = if (sendEnabled) {
-                                        MaterialTheme.colorScheme.onPrimary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
                 }
             }
         }
@@ -4956,7 +5353,7 @@ private fun McpQuickManager(
                     val existingTools = server.tools.associateBy { it.name }
                     onServersChange(servers.map { candidate ->
                         if (candidate.id == server.id) {
-                            candidate.copy(tools = tools.map { tool ->
+                            candidate.withSyncedTools(tools.map { tool ->
                                 tool.copy(enabled = existingTools[tool.name]?.enabled ?: true)
                             })
                         } else {
@@ -5008,8 +5405,13 @@ private fun McpQuickManager(
                 McpAvailability.UNKNOWN -> if (server.tools.isEmpty()) desktopText(language, "mcp.not_checked") else {
                     desktopText(language, "mcp.tools_synced").replace("%d", server.tools.size.toString())
                 }
+
                 McpAvailability.CHECKING -> desktopText(language, "mcp.checking")
-                McpAvailability.AVAILABLE -> desktopText(language, "mcp.available_tools").replace("%d", server.tools.size.toString())
+                McpAvailability.AVAILABLE -> desktopText(language, "mcp.available_tools").replace(
+                    "%d",
+                    server.tools.size.toString()
+                )
+
                 McpAvailability.UNAVAILABLE -> desktopText(language, "mcp.unavailable")
             }
             Column(
@@ -5018,7 +5420,11 @@ private fun McpQuickManager(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(server.name.ifBlank { desktopText(language, "mcp.unnamed_service") }, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            server.name.ifBlank { desktopText(language, "mcp.unnamed_service") },
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                         Text(
                             status,
                             color = when (state) {
@@ -5037,7 +5443,7 @@ private fun McpQuickManager(
                         if (state == McpAvailability.CHECKING) {
                             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                         } else {
-                    Icon(Lucide.RotateCcw, desktopText(language, "mcp.check"), Modifier.size(16.dp))
+                            Icon(Lucide.RotateCcw, desktopText(language, "mcp.check"), Modifier.size(16.dp))
                         }
                     }
                 }
@@ -5051,7 +5457,11 @@ private fun McpQuickManager(
                             )
                         }
                     )
-                    Text(desktopText(language, "mcp.enabled"), Modifier.padding(start = 10.dp, end = 6.dp), fontSize = 12.sp)
+                    Text(
+                        desktopText(language, "mcp.enabled"),
+                        Modifier.padding(start = 10.dp, end = 6.dp),
+                        fontSize = 12.sp
+                    )
                     Switch(
                         checked = server.enabled,
                         onCheckedChange = { enabled ->

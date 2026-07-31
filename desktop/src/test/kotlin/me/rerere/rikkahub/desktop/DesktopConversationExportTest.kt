@@ -67,8 +67,10 @@ class DesktopConversationExportTest {
         val exported = exportConversationMarkdown(
             DesktopConversation(
                 title = "# First line\nSecond line",
-                messages = listOf(ChatMessage("assistant", "Visible response").beginAlternative()
-                    .copy(content = "Current response").completeAlternative())
+                messages = listOf(
+                    ChatMessage("assistant", "Visible response").beginAlternative()
+                        .copy(content = "Current response").completeAlternative()
+                )
             ),
             ""
         )
