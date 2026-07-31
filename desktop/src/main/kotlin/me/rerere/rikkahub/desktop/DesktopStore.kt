@@ -195,7 +195,7 @@ internal class DesktopStore(
                     "无法将 ${provider.name} 的 API 密钥写入系统密钥库；为保护密钥，设置未保存。"
                 }
             }
-            provider.copy(config = provider.config.copy(apiKey = ""))
+            provider.copy(config = provider.config.withoutSecrets())
         }
         val searchSettings = data.webSearchSettings
         val searchKeys = searchSettings.apiKeys + (searchSettings.providerType to searchSettings.apiKey)
@@ -212,18 +212,18 @@ internal class DesktopStore(
         secretStore.delete(legacySearchSecretId)
         val sanitized = data.copy(
             providers = providers,
-            webSearchSettings = searchSettings.copy(apiKey = "", apiKeys = emptyMap())
+            webSearchSettings = searchSettings.withoutSecrets()
         )
         return sanitized.copy(config = sanitized.activeProvider().config)
     }
 
     private fun stripSecrets(data: DesktopData): DesktopData {
         val providers = data.providers.map { provider ->
-            provider.copy(config = provider.config.copy(apiKey = ""))
+            provider.copy(config = provider.config.withoutSecrets())
         }
         val sanitized = data.copy(
             providers = providers,
-            webSearchSettings = data.webSearchSettings.copy(apiKey = "")
+            webSearchSettings = data.webSearchSettings.withoutSecrets()
         )
         return sanitized.copy(config = sanitized.activeProvider().config)
     }
@@ -245,6 +245,16 @@ internal class DesktopStore(
         }
     }
 }
+
+private fun DesktopConfig.withoutSecrets(): DesktopConfig = copy(
+    apiKey = "",
+    webSearchSettings = webSearchSettings.withoutSecrets()
+)
+
+private fun DesktopWebSearchSettings.withoutSecrets(): DesktopWebSearchSettings = copy(
+    apiKey = "",
+    apiKeys = emptyMap()
+)
 
 internal fun DesktopData.normalized(): DesktopData {
     val validProviders = providers.ifEmpty { listOf(DesktopProviderProfile(config = config)) }

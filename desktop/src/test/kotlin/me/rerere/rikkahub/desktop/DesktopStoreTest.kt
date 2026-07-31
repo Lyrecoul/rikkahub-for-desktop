@@ -285,13 +285,46 @@ class DesktopStoreTest {
     fun exportsRedactedDataWithoutTouchingTheSecretStore() {
         val directory = Files.createTempDirectory("rikkahub-desktop-redacted-export")
         val secrets = MemorySecrets()
-        val provider = DesktopProviderProfile(config = DesktopConfig(apiKey = "provider-secret"))
+        val nestedSearchSettings = DesktopWebSearchSettings(
+            providerType = DesktopSearchProviderType.EXA,
+            apiKey = "nested-current-search-secret",
+            apiKeys = mapOf(DesktopSearchProviderType.JINA to "nested-stored-search-secret")
+        )
+        val provider = DesktopProviderProfile(config = DesktopConfig(
+            apiKey = "provider-secret",
+            webSearchSettings = nestedSearchSettings
+        ))
+        val searchSettings = DesktopWebSearchSettings(
+            providerType = DesktopSearchProviderType.TAVILY,
+            apiKey = "current-search-secret",
+            apiKeys = mapOf(
+                DesktopSearchProviderType.TAVILY to "current-search-secret",
+                DesktopSearchProviderType.BRAVE to "stored-search-secret"
+            )
+        )
         val store = DesktopStore(directory.resolve("desktop.json"), secrets)
         val backup = directory.resolve("backup.json")
 
-        store.exportData(backup, DesktopData(providers = listOf(provider), selectedProviderId = provider.id))
+        store.exportData(backup, DesktopData(
+            providers = listOf(provider),
+            selectedProviderId = provider.id,
+            webSearchSettings = searchSettings
+        ))
 
-        assertFalse(Files.readString(backup).contains("provider-secret"))
+        val raw = Files.readString(backup)
+        listOf(
+            "provider-secret",
+            "nested-current-search-secret",
+            "nested-stored-search-secret",
+            "current-search-secret",
+            "stored-search-secret"
+        ).forEach { secret -> assertFalse(raw.contains(secret)) }
+        val imported = store.importData(backup)
+        assertEquals("", imported.activeProvider().config.apiKey)
+        assertEquals("", imported.activeProvider().config.webSearchSettings.apiKey)
+        assertTrue(imported.activeProvider().config.webSearchSettings.apiKeys.isEmpty())
+        assertEquals("", imported.webSearchSettings.apiKey)
+        assertTrue(imported.webSearchSettings.apiKeys.isEmpty())
         assertTrue(secrets.values.isEmpty())
     }
 
