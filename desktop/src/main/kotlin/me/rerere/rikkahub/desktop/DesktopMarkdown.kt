@@ -68,9 +68,13 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.relocation.BringIntoViewModifierNode
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -345,7 +349,7 @@ internal fun MarkdownContent(
     options: MarkdownRenderOptions = MarkdownRenderOptions()
 ) {
     val blocks = remember(content) { DesktopMarkdownParser.parse(content) }
-    SelectionContainer {
+    SelectionContainer(Modifier.preventSelectionFocusScroll()) {
         Column(
             modifier.animateContentSize(tween(180, easing = FastOutSlowInEasing)),
             verticalArrangement = Arrangement.spacedBy(9.dp)
@@ -353,6 +357,21 @@ internal fun MarkdownContent(
             blocks.forEach { MarkdownBlockView(it, options) }
         }
     }
+}
+
+private fun Modifier.preventSelectionFocusScroll(): Modifier = this.then(PreventSelectionFocusScrollElement)
+
+private data object PreventSelectionFocusScrollElement : ModifierNodeElement<PreventSelectionFocusScrollNode>() {
+    override fun create() = PreventSelectionFocusScrollNode()
+
+    override fun update(node: PreventSelectionFocusScrollNode) = Unit
+}
+
+private class PreventSelectionFocusScrollNode : Modifier.Node(), BringIntoViewModifierNode {
+    override suspend fun bringIntoView(
+        childCoordinates: LayoutCoordinates,
+        boundsProvider: () -> Rect?
+    ) = Unit
 }
 
 @Composable
