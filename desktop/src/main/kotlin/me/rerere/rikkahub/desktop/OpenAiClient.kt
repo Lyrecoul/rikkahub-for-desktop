@@ -29,7 +29,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 import java.util.Locale
 import kotlin.coroutines.resumeWithException
 
@@ -45,7 +49,7 @@ internal data class StreamDelta(
 )
 
 class OpenAiClient(
-    private val httpClient: OkHttpClient = OkHttpClient()
+    private val httpClient: OkHttpClient = desktopHttpClient()
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val balanceCache = mutableMapOf<String, DesktopBalanceCacheEntry>()
@@ -65,7 +69,13 @@ class OpenAiClient(
             requestBuilder.addHeader(header.name, header.value)
         }
         val request = requestBuilder.build()
-        val call = httpClient.newCall(request)
+        // A long-running reasoning stream is valid as long as it continues to make progress.
+        // Only the idle read timeout is relaxed; connection and write timeouts remain bounded.
+        val call = (if (config.streamOutput) {
+            httpClient.newBuilder().readTimeout(StreamReadTimeoutMillis, TimeUnit.MILLISECONDS).build()
+        } else {
+            httpClient
+        }).newCall(request)
 
         call.awaitResponse().use { response ->
             if (!response.isSuccessful) {
@@ -328,12 +338,14 @@ class OpenAiClient(
             requestBuilder.addHeader(header.name, header.value)
         }
         val request = requestBuilder.build()
-        httpClient.newCall(request).awaitResponse().use { response ->
-            if (!response.isSuccessful) {
-                val detail = response.body.string().take(1000)
-                error("Connection failed (${response.code}): $detail")
+        retryOnceOnNetworkFailure {
+            httpClient.newCall(request).awaitResponse().use { response ->
+                if (!response.isSuccessful) {
+                    val detail = response.body.string().take(1000)
+                    error("Connection failed (${response.code}): $detail")
+                }
+                parseModels(response.body.string())
             }
-            parseModels(response.body.string())
         }
     }
 
@@ -348,13 +360,15 @@ class OpenAiClient(
         val request = Request.Builder().url(endpoint)
             .header("Authorization", "Bearer ${config.apiKey}")
             .get().build()
-        httpClient.newCall(request).awaitResponse().use { response ->
-            if (!response.isSuccessful) error("余额查询失败（${response.code}）：${response.body.string().take(500)}")
-            val result = evaluateDesktopJsonExpression(
-                input = options.resultPath,
-                root = json.parseToJsonElement(response.body.string()).jsonObject
-            )
-            result.toDoubleOrNull()?.let { "%.2f".format(Locale.ROOT, it) } ?: result
+        retryOnceOnNetworkFailure {
+            httpClient.newCall(request).awaitResponse().use { response ->
+                if (!response.isSuccessful) error("余额查询失败（${response.code}）：${response.body.string().take(500)}")
+                val result = evaluateDesktopJsonExpression(
+                    input = options.resultPath,
+                    root = json.parseToJsonElement(response.body.string()).jsonObject
+                )
+                result.toDoubleOrNull()?.let { "%.2f".format(Locale.ROOT, it) } ?: result
+            }
         }
     }
 
@@ -408,6 +422,40 @@ class OpenAiClient(
 private data class DesktopBalanceCacheEntry(val value: String, val fetchedAt: Long)
 
 private const val BalanceCacheTtlMillis = 2 * 60 * 1000L
+internal const val ConnectTimeoutMillis = 15_000L
+internal const val WriteTimeoutMillis = 30_000L
+internal const val ReadTimeoutMillis = 60_000L
+internal const val StreamReadTimeoutMillis = 120_000L
+
+internal fun desktopHttpClient(): OkHttpClient = OkHttpClient.Builder()
+    .connectTimeout(ConnectTimeoutMillis, TimeUnit.MILLISECONDS)
+    .writeTimeout(WriteTimeoutMillis, TimeUnit.MILLISECONDS)
+    .readTimeout(ReadTimeoutMillis, TimeUnit.MILLISECONDS)
+    // Streaming requests can legitimately exceed any fixed wall-clock duration.
+    .callTimeout(0, TimeUnit.MILLISECONDS)
+    .build()
+
+internal fun Throwable.userFacingMessage(): String = when (this) {
+    is SocketTimeoutException -> "Network timed out. Check your connection and try again."
+    is ConnectException -> "Unable to connect. Check the server address and your connection."
+    is UnknownHostException -> "Unable to resolve the server address. Check your network and server URL."
+    is IOException -> "Network connection was interrupted. Check your connection and try again."
+    else -> message ?: "Request failed"
+}
+
+/** Retries only operations that are safe to repeat and failed before producing a response. */
+internal suspend fun <T> retryOnceOnNetworkFailure(block: suspend () -> T): T {
+    var failure: IOException? = null
+    repeat(2) { attempt ->
+        try {
+            return block()
+        } catch (error: IOException) {
+            failure = error
+            if (attempt == 1) throw error
+        }
+    }
+    throw checkNotNull(failure)
+}
 
 internal const val DesktopWebSearchToolName = "web_search"
 internal const val DesktopCurrentTimeToolName = "current_time"

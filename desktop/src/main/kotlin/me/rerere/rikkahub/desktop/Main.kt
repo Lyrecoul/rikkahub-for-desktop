@@ -214,6 +214,9 @@ private const val SmoothScrollAnimationTimeMillis = 400L
 private const val SmoothScrollFrameDelayMillis = 7L
 private const val SmoothScrollAccelerationDeltaMillis = 50L
 private const val SmoothScrollAccelerationMax = 3f
+private const val StreamUiUpdateIntervalMillis = 75L
+private const val LongStreamUiUpdateIntervalMillis = 200L
+private const val LongStreamContentThreshold = 6_000
 
 private fun DesktopData.settingsContentDiffersFrom(other: DesktopData): Boolean =
     config != other.config ||
@@ -677,7 +680,7 @@ private fun RikkaHubDesktop(
                 // Keep the existing title when the request is cancelled.
             } catch (error: Throwable) {
                 generationErrors[conversationId] =
-                    error.message ?: desktopText(data.preferences.language, "runtime.title_failed")
+                    error.userFacingMessage()
             } finally {
                 generationJobs.remove(conversationId)
             }
@@ -718,7 +721,7 @@ private fun RikkaHubDesktop(
                 // Cancellation leaves existing suggestions unchanged.
             } catch (error: Throwable) {
                 generationErrors[conversationId] =
-                    error.message ?: desktopText(data.preferences.language, "runtime.suggestions_failed")
+                    error.userFacingMessage()
             } finally {
                 suggestionJobs.remove(conversationId)
             }
@@ -770,7 +773,7 @@ private fun RikkaHubDesktop(
                     startGeneration(conversationId, requestMessages, title, alternativeTarget)
                 } catch (error: Throwable) {
                     generationErrors[conversationId] = desktopText(data.preferences.language, "runtime.mcp_sync_failed")
-                        .replace("%s", error.message ?: desktopText(data.preferences.language, "runtime.unknown_error"))
+                        .replace("%s", error.userFacingMessage())
                 } finally {
                     if (!handedOffToGeneration) generationJobs.remove(conversationId)
                 }
@@ -819,33 +822,91 @@ private fun RikkaHubDesktop(
                 var request = generationMessages
                 var toolRounds = 0
                 while (true) {
-                    client.stream(generationConfig, request).collect { delta ->
+                    val pendingContent = StringBuilder()
+                    val pendingReasoning = StringBuilder()
+                    val pendingCitations = mutableListOf<DesktopCitation>()
+                    val pendingToolCallDeltas = mutableListOf<DesktopToolCallDelta>()
+                    var pendingModelId: String? = null
+                    var pendingPromptTokens: Int? = null
+                    var pendingCompletionTokens: Int? = null
+                    var pendingCachedTokens: Int? = null
+                    var lastUiUpdateAt = 0L
+                    var accumulatedOutputLength = 0
+
+                    fun flushPendingDelta() {
+                        if (
+                            pendingContent.isEmpty() && pendingReasoning.isEmpty() && pendingModelId == null &&
+                            pendingPromptTokens == null && pendingCompletionTokens == null && pendingCachedTokens == null &&
+                            pendingCitations.isEmpty() && pendingToolCallDeltas.isEmpty()
+                        ) return
+                        val content = pendingContent.toString()
+                        val reasoning = pendingReasoning.toString()
+                        val citations = pendingCitations.toList()
+                        val toolCallDeltas = pendingToolCallDeltas.toList()
+                        val modelId = pendingModelId
+                        val promptTokens = pendingPromptTokens
+                        val completionTokens = pendingCompletionTokens
+                        val cachedTokens = pendingCachedTokens
+                        pendingContent.clear()
+                        pendingReasoning.clear()
+                        pendingCitations.clear()
+                        pendingToolCallDeltas.clear()
+                        pendingModelId = null
+                        pendingPromptTokens = null
+                        pendingCompletionTokens = null
+                        pendingCachedTokens = null
                         updateConversation(conversationId) { conversation ->
                             val messages = conversation.messages.toMutableList()
                             val last = messages.lastOrNull()
                             if (last?.role == "assistant") {
                                 val receivedAt = System.currentTimeMillis()
                                 val reasoningStartedAt = last.reasoningStartedAt
-                                    ?: delta.reasoning.takeIf { it.isNotBlank() }?.let { receivedAt }
+                                    ?: reasoning.takeIf { it.isNotBlank() }?.let { receivedAt }
                                 messages[messages.lastIndex] = last.copy(
-                                    content = last.content + delta.content,
-                                    reasoning = last.reasoning + delta.reasoning,
+                                    content = last.content + content,
+                                    reasoning = last.reasoning + reasoning,
                                     reasoningStartedAt = reasoningStartedAt,
-                                    reasoningDurationMillis = if (delta.reasoning.isNotBlank() && reasoningStartedAt != null) {
+                                    reasoningDurationMillis = if (reasoning.isNotBlank() && reasoningStartedAt != null) {
                                         (receivedAt - reasoningStartedAt).coerceAtLeast(0)
                                     } else {
                                         last.reasoningDurationMillis
                                     },
-                                    modelId = delta.modelId ?: last.modelId,
-                                    promptTokens = delta.promptTokens ?: last.promptTokens,
-                                    completionTokens = delta.completionTokens ?: last.completionTokens,
-                                    cachedTokens = delta.cachedTokens ?: last.cachedTokens,
-                                    citations = (last.citations + delta.citations).distinctBy { it.url },
-                                    toolCalls = last.toolCalls.merge(delta.toolCallDeltas)
+                                    modelId = modelId ?: last.modelId,
+                                    promptTokens = promptTokens ?: last.promptTokens,
+                                    completionTokens = completionTokens ?: last.completionTokens,
+                                    cachedTokens = cachedTokens ?: last.cachedTokens,
+                                    citations = (last.citations + citations).distinctBy { it.url },
+                                    toolCalls = last.toolCalls.merge(toolCallDeltas)
                                 )
                             }
                             conversation.copy(messages = messages, updatedAt = System.currentTimeMillis())
                         }
+                    }
+                    try {
+                        client.stream(generationConfig, request).collect { delta ->
+                            pendingContent.append(delta.content)
+                            pendingReasoning.append(delta.reasoning)
+                            accumulatedOutputLength += delta.content.length + delta.reasoning.length
+                            pendingCitations += delta.citations
+                            pendingToolCallDeltas += delta.toolCallDeltas
+                            pendingModelId = delta.modelId ?: pendingModelId
+                            pendingPromptTokens = delta.promptTokens ?: pendingPromptTokens
+                            pendingCompletionTokens = delta.completionTokens ?: pendingCompletionTokens
+                            pendingCachedTokens = delta.cachedTokens ?: pendingCachedTokens
+                            val now = System.currentTimeMillis()
+                            val updateInterval = if (accumulatedOutputLength >= LongStreamContentThreshold) {
+                                LongStreamUiUpdateIntervalMillis
+                            } else {
+                                StreamUiUpdateIntervalMillis
+                            }
+                            if (now - lastUiUpdateAt >= updateInterval) {
+                                flushPendingDelta()
+                                lastUiUpdateAt = now
+                            }
+                        }
+                    } finally {
+                        // Do not lose the final fragments when the server closes or the user stops generation.
+                        flushPendingDelta()
                     }
                     val toolCalls = data.conversations.firstOrNull { it.id == conversationId }
                         ?.messages?.lastOrNull()?.toolCalls.orEmpty()
@@ -970,7 +1031,7 @@ private fun RikkaHubDesktop(
                 }
             } catch (error: Throwable) {
                 generationErrors[conversationId] =
-                    error.message ?: desktopText(data.preferences.language, "runtime.request_failed")
+                    error.userFacingMessage()
                 updateConversation(conversationId) { conversation ->
                     val last = conversation.messages.lastOrNull()
                     if (last?.role == "assistant" && last.content.isEmpty() && last.reasoning.isEmpty()) {
@@ -1055,7 +1116,7 @@ private fun RikkaHubDesktop(
                 // Cancellation leaves the original conversation untouched.
             } catch (error: Throwable) {
                 generationErrors[conversationId] =
-                    error.message ?: desktopText(data.preferences.language, "runtime.compression_failed")
+                    error.userFacingMessage()
             } finally {
                 generationJobs.remove(conversationId)
             }
@@ -1101,7 +1162,7 @@ private fun RikkaHubDesktop(
                 // Cancellation leaves the original message untouched.
             } catch (error: Throwable) {
                 generationErrors[target.conversationId] =
-                    error.message ?: desktopText(data.preferences.language, "runtime.translation_failed")
+                    error.userFacingMessage()
             } finally {
                 generationJobs.remove(target.conversationId)
                 translatedMessageId?.let { messageId ->
@@ -2983,7 +3044,12 @@ private fun ChatPane(
     LaunchedEffect(conversation.messages.size, lastContent, lastReasoning, isGenerating) {
         if (preferences.enableAutoScroll && isGenerating && conversation.messages.isNotEmpty()) {
             val targetIndex = displayItems.size
-            listState.animateScrollToItem(targetIndex)
+            if (lastContent.orEmpty().length + lastReasoning.orEmpty().length < LongStreamContentThreshold) {
+                listState.animateScrollToItem(targetIndex)
+            } else {
+                // Avoid repeatedly restarting a long animation once the rendered content is expensive.
+                listState.scrollToItem(targetIndex)
+            }
         }
     }
     LaunchedEffect(jumpToMessageId, jumpToMessageRequest, conversation.id) {
@@ -3000,8 +3066,9 @@ private fun ChatPane(
             if (highlightedMessageId == jumpToMessageId) highlightedMessageId = null
         }
     }
-    LaunchedEffect(listState.isScrollInProgress, pointerOverMessageJumper, pointerOverMessageJumperEdge) {
-        if (listState.isScrollInProgress) {
+    val messageJumperScrolling = listState.isScrollInProgress || smoothScrollInProgress
+    LaunchedEffect(messageJumperScrolling, pointerOverMessageJumper, pointerOverMessageJumperEdge) {
+        if (messageJumperScrolling) {
             showMessageJumper = true
         } else if (showMessageJumper && !pointerOverMessageJumper && !pointerOverMessageJumperEdge) {
             delay(1_500)
@@ -3238,6 +3305,7 @@ private fun ChatPane(
 
                                 val scrollDelta = event.changes.firstOrNull()?.scrollDelta?.y ?: return@onPointerEvent
                                 if (scrollDelta != 0f) {
+                                    showMessageJumper = true
                                     event.changes.forEach { it.consume() }
                                     val direction = if (scrollDelta > 0f) 1 else -1
                                     val currentTimeMillis = System.currentTimeMillis()
@@ -3370,7 +3438,9 @@ private fun ChatPane(
                 }
                 if (conversation.messages.isNotEmpty() && preferences.showMessageJumper) {
                     Box(
-                        Modifier.align(Alignment.CenterEnd)
+                        Modifier.align(
+                            if (preferences.messageJumperOnLeft) Alignment.CenterStart else Alignment.CenterEnd
+                        )
                             .fillMaxHeight()
                             .width(16.dp)
                             .onPointerEvent(PointerEventType.Enter) {
@@ -3380,7 +3450,7 @@ private fun ChatPane(
                             .onPointerEvent(PointerEventType.Exit) { pointerOverMessageJumperEdge = false }
                     )
                     DesktopMessageJumper(
-                        visible = showMessageJumper && !listState.isScrollInProgress,
+                        visible = showMessageJumper,
                         onLeft = preferences.messageJumperOnLeft,
                         state = listState,
                         items = navigationItems,
@@ -3812,6 +3882,7 @@ private fun MessageBlock(
         mermaidCliPath = preferences.mermaidCliPath,
         mermaidUseSystemBrowser = preferences.mermaidUseSystemBrowser,
         language = preferences.language,
+        animateContent = !generating || message.content.length + message.reasoning.length < LongStreamContentThreshold,
         onSaveMermaidImage = onSaveMermaidImage
     )
     val highlightAlpha by animateFloatAsState(
@@ -3935,9 +4006,6 @@ private fun MessageBlock(
                     )
                 }
             }
-            if (timelineAfterContent && displayContent.isNotBlank()) {
-                assistantContent()
-            }
             if (hasVisibleExecutionSteps) {
                 DesktopExecutionTimeline(
                     steps = executionSteps,
@@ -3962,7 +4030,9 @@ private fun MessageBlock(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            } else if (!timelineAfterContent && displayContent.isNotBlank()) {
+            } else if (displayContent.isNotBlank()) {
+                // Keep the response below the execution timeline. Tool-call fragments can arrive
+                // after text during streaming, so allowing their order to change moves the body.
                 assistantContent()
             }
         }
@@ -4280,6 +4350,7 @@ private fun DesktopExecutionTimeline(
                     DesktopExecutionTimelineStep(
                         step = step,
                         generating = generating,
+                        autoCollapse = autoCollapse,
                         language = language,
                         markdownOptions = markdownOptions,
                         onAskUserAnswer = onAskUserAnswer,
@@ -4294,13 +4365,16 @@ private fun DesktopExecutionTimeline(
 private fun DesktopExecutionTimelineStep(
     step: DesktopExecutionStep,
     generating: Boolean,
+    autoCollapse: Boolean,
     language: DesktopLanguage,
     markdownOptions: MarkdownRenderOptions,
     onAskUserAnswer: (DesktopToolCall, String) -> Unit,
 ) {
     when (step) {
         is DesktopExecutionStep.Reasoning -> {
-            var expanded by remember(step.message.id) { mutableStateOf(generating) }
+            var expanded by remember(step.message.id, generating, autoCollapse) {
+                mutableStateOf(generating || !autoCollapse)
+            }
             val message = step.message
             Row(
                 modifier = Modifier

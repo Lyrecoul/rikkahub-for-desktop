@@ -837,7 +837,7 @@ internal fun DesktopSettingsPane(
                                                                 preferences.language,
                                                                 "settings.search_test_failed"
                                                             )
-                                                        }: ${error.message ?: ""}"
+                                                        }: ${error.userFacingMessage()}"
                                                     }
                                                     webSearchTesting = false
                                                 }

@@ -7,6 +7,8 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.net.SocketTimeoutException
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -14,6 +16,39 @@ import kotlin.test.assertTrue
 
 class OpenAiClientTest {
     private val client = OpenAiClient()
+
+    @Test
+    fun defaultHttpClientUsesBoundedNetworkTimeouts() {
+        val httpClient = desktopHttpClient()
+        try {
+            assertEquals(ConnectTimeoutMillis, httpClient.connectTimeoutMillis.toLong())
+            assertEquals(WriteTimeoutMillis, httpClient.writeTimeoutMillis.toLong())
+            assertEquals(ReadTimeoutMillis, httpClient.readTimeoutMillis.toLong())
+            assertEquals(0L, httpClient.callTimeoutMillis.toLong())
+        } finally {
+            httpClient.connectionPool.evictAll()
+            httpClient.dispatcher.executorService.shutdown()
+        }
+    }
+
+    @Test
+    fun networkTimeoutHasActionableMessage() {
+        assertTrue(SocketTimeoutException().userFacingMessage().contains("timed out"))
+    }
+
+    @Test
+    fun safeNetworkReadIsRetriedOnce() = runBlocking {
+        var attempts = 0
+
+        val result = retryOnceOnNetworkFailure {
+            attempts++
+            if (attempts == 1) throw SocketTimeoutException()
+            "recovered"
+        }
+
+        assertEquals("recovered", result)
+        assertEquals(2, attempts)
+    }
 
     @Test
     fun parsesTextDelta() {

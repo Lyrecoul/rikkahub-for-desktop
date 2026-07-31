@@ -145,6 +145,7 @@ internal data class MarkdownRenderOptions(
     val mermaidCliPath: String = "",
     val mermaidUseSystemBrowser: Boolean = false,
     val language: DesktopLanguage = DesktopLanguage.SYSTEM,
+    val animateContent: Boolean = true,
     val onSaveMermaidImage: ((MermaidRenderResult) -> Unit)? = null
 )
 
@@ -356,7 +357,7 @@ internal fun MarkdownContent(
     val blocks = remember(content) { DesktopMarkdownParser.parse(content) }
     SelectionContainer(Modifier.preventSelectionFocusScroll()) {
         Column(
-            modifier.animateContentSize(tween(180, easing = FastOutSlowInEasing)),
+            if (options.animateContent) modifier.animateContentSize(tween(180, easing = FastOutSlowInEasing)) else modifier,
             verticalArrangement = Arrangement.spacedBy(9.dp)
         ) {
             blocks.forEach { MarkdownBlockView(it, options) }

@@ -3,6 +3,7 @@ package me.rerere.rikkahub.desktop
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.sse.SSE
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.serialization.kotlinx.json.json
@@ -120,6 +121,19 @@ private fun List<String>.normalizedMcpArguments(): List<String> =
 /** Keeps one initialized MCP session per server, matching the Android client's connection model. */
 internal class DesktopMcpClient : Closeable {
     private val httpClient = HttpClient(OkHttp) {
+        engine {
+            config {
+                connectTimeout(ConnectTimeoutMillis, TimeUnit.MILLISECONDS)
+                writeTimeout(WriteTimeoutMillis, TimeUnit.MILLISECONDS)
+                readTimeout(StreamReadTimeoutMillis, TimeUnit.MILLISECONDS)
+            }
+        }
+        install(HttpTimeout) {
+            connectTimeoutMillis = ConnectTimeoutMillis
+            socketTimeoutMillis = StreamReadTimeoutMillis
+            // Remote MCP SSE sessions are long-lived; per-operation limits are set by the SDK calls.
+            requestTimeoutMillis = null
+        }
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         install(SSE)
     }

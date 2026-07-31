@@ -36,22 +36,23 @@ internal suspend fun searchSearxng(
         .addQueryParameter("q", query)
         .addQueryParameter("format", "json")
         .build()
-    val response = httpClient.newCall(Request.Builder().url(url).get().build()).execute()
-    response.use {
-        if (!it.isSuccessful) error("SearXNG 搜索失败（${it.code}）：${it.body.string().take(300)}")
-        val results = SearxngJson.parseToJsonElement(it.body.string())
-            .jsonObject["results"]?.jsonArray.orEmpty()
-            .take(settings.resultCount.coerceIn(1, 10))
-            .mapNotNull { item ->
-                runCatching {
-                    val result = item.jsonObject
-                    val title = result["title"]?.jsonPrimitive?.content.orEmpty().singleLine()
-                    val link = result["url"]?.jsonPrimitive?.content.orEmpty()
-                    val summary = result["content"]?.jsonPrimitive?.content.orEmpty().singleLine()
-                    if (link.isBlank()) null else formatSearchResult(title, link, summary)
-                }.getOrNull()
-            }
-        searchResultsMessage(query, results)
+    retryOnceOnNetworkFailure {
+        httpClient.newCall(Request.Builder().url(url).get().build()).execute().use {
+            if (!it.isSuccessful) error("SearXNG 搜索失败（${it.code}）：${it.body.string().take(300)}")
+            val results = SearxngJson.parseToJsonElement(it.body.string())
+                .jsonObject["results"]?.jsonArray.orEmpty()
+                .take(settings.resultCount.coerceIn(1, 10))
+                .mapNotNull { item ->
+                    runCatching {
+                        val result = item.jsonObject
+                        val title = result["title"]?.jsonPrimitive?.content.orEmpty().singleLine()
+                        val link = result["url"]?.jsonPrimitive?.content.orEmpty()
+                        val summary = result["content"]?.jsonPrimitive?.content.orEmpty().singleLine()
+                        if (link.isBlank()) null else formatSearchResult(title, link, summary)
+                    }.getOrNull()
+                }
+            searchResultsMessage(query, results)
+        }
     }
 }
 
@@ -203,19 +204,21 @@ private suspend fun searchBrave(
         .header("Accept", "application/json")
         .header("X-Subscription-Token", settings.apiKey)
         .get().build()
-    httpClient.newCall(request).execute().use { response ->
-        if (!response.isSuccessful) error("Brave 搜索失败（${response.code}）：${response.body.string().take(300)}")
-        val results = SearxngJson.parseToJsonElement(response.body.string()).jsonObject["web"]?.jsonObject
-            ?.get("results")?.jsonArray.orEmpty().mapNotNull { item ->
-                runCatching {
-                    val result = item.jsonObject
-                    val title = result["title"]?.jsonPrimitive?.content.orEmpty().singleLine()
-                    val link = result["url"]?.jsonPrimitive?.content.orEmpty()
-                    val summary = result["description"]?.jsonPrimitive?.content.orEmpty().singleLine()
-                    if (link.isBlank()) null else formatSearchResult(title, link, summary)
-                }.getOrNull()
-            }
-        searchResultsMessage(query, results)
+    retryOnceOnNetworkFailure {
+        httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) error("Brave 搜索失败（${response.code}）：${response.body.string().take(300)}")
+            val results = SearxngJson.parseToJsonElement(response.body.string()).jsonObject["web"]?.jsonObject
+                ?.get("results")?.jsonArray.orEmpty().mapNotNull { item ->
+                    runCatching {
+                        val result = item.jsonObject
+                        val title = result["title"]?.jsonPrimitive?.content.orEmpty().singleLine()
+                        val link = result["url"]?.jsonPrimitive?.content.orEmpty()
+                        val summary = result["description"]?.jsonPrimitive?.content.orEmpty().singleLine()
+                        if (link.isBlank()) null else formatSearchResult(title, link, summary)
+                    }.getOrNull()
+                }
+            searchResultsMessage(query, results)
+        }
     }
 }
 
