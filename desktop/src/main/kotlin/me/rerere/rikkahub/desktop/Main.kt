@@ -10,9 +10,11 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -154,6 +156,8 @@ import com.composables.icons.lucide.ExternalLink
 import com.composables.icons.lucide.Folder
 import com.composables.icons.lucide.Pencil
 import com.composables.icons.lucide.Paperclip
+import com.composables.icons.lucide.PanelLeftClose
+import com.composables.icons.lucide.PanelLeftOpen
 import com.composables.icons.lucide.Pin
 import com.composables.icons.lucide.PinOff
 import com.composables.icons.lucide.Plus
@@ -1105,9 +1109,18 @@ private fun RikkaHubDesktop(
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         BoxWithConstraints(
             Modifier.fillMaxSize().onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.isCtrlPressed && event.key == Key.N) {
-                    requestSettingsExit(::newConversation)
-                    true
+                if (event.type == KeyEventType.KeyDown && event.isCtrlPressed) {
+                    when (event.key) {
+                        Key.N -> {
+                            requestSettingsExit(::newConversation)
+                            true
+                        }
+                        Key.B -> {
+                            showSidebar = !showSidebar
+                            true
+                        }
+                        else -> false
+                    }
                 } else {
                     false
                 }
@@ -1118,81 +1131,94 @@ private fun RikkaHubDesktop(
         val sidebarWidth = if (compact) maxWidth else sidebarPreferredWidth.coerceIn(240.dp, maxSidebarWidth)
         val density = LocalDensity.current
         Row(Modifier.fillMaxSize()) {
-            if (!compact || showSidebar) {
-                ConversationSidebar(
-                    data = data,
-                    settingsSelected = showSettings,
-                    generatingConversationIds = generationJobs.keys,
-                    onSelect = {
-                        requestSettingsExit(afterExit = {
-                            update(data.copy(selectedConversationId = it))
-                            jumpToMessageId = null
+            AnimatedVisibility(
+                visible = showSidebar,
+                enter = expandHorizontally(
+                    expandFrom = Alignment.Start,
+                    animationSpec = tween(240, easing = FastOutSlowInEasing)
+                ) + fadeIn(animationSpec = tween(160)),
+                exit = shrinkHorizontally(
+                    shrinkTowards = Alignment.Start,
+                    animationSpec = tween(240, easing = FastOutSlowInEasing)
+                ) + fadeOut(animationSpec = tween(140))
+            ) {
+                Row {
+                    ConversationSidebar(
+                        data = data,
+                        settingsSelected = showSettings,
+                        generatingConversationIds = generationJobs.keys,
+                        onSelect = {
+                            requestSettingsExit(afterExit = {
+                                update(data.copy(selectedConversationId = it))
+                                jumpToMessageId = null
+                                if (compact) showSidebar = false
+                            })
+                        },
+                        onSelectFavorite = { conversationId, messageId ->
+                            requestSettingsExit(afterExit = {
+                                update(data.copy(selectedConversationId = conversationId))
+                                jumpToMessageId = messageId
+                                jumpToMessageRequest++
+                                if (compact) showSidebar = false
+                            })
+                        },
+                        onNew = {
+                            requestSettingsExit(afterExit = {
+                                newConversation()
+                                if (compact) showSidebar = false
+                            })
+                        },
+                        onDelete = { id ->
+                            generationJobs.remove(id)?.cancel()
+                            suggestionJobs.remove(id)?.cancel()
+                            generationErrors.remove(id)
+                            update(data.deleteConversation(id))
+                        },
+                        onPin = { id ->
+                            updateConversation(id) { it.copy(isPinned = !it.isPinned, updatedAt = System.currentTimeMillis()) }
+                        },
+                        onMoveToFolder = { conversationId, folderId ->
+                            update(data.moveConversationToFolder(conversationId, folderId))
+                        },
+                        onCreateFolder = { assistantId ->
+                            folderCreateTarget = FolderCreateTarget(assistantId = assistantId)
+                        },
+                        onConversationSortChange = { sort ->
+                            update(data.copy(preferences = data.preferences.copy(conversationSort = sort)))
+                        },
+                        onSettings = {
+                            openSettings(DesktopSettingsSection.GENERAL)
                             if (compact) showSidebar = false
-                        })
-                    },
-                    onSelectFavorite = { conversationId, messageId ->
-                        requestSettingsExit(afterExit = {
-                            update(data.copy(selectedConversationId = conversationId))
-                            jumpToMessageId = messageId
-                            jumpToMessageRequest++
-                            if (compact) showSidebar = false
-                        })
-                    },
-                    onNew = {
-                        requestSettingsExit(afterExit = {
-                            newConversation()
-                            if (compact) showSidebar = false
-                        })
-                    },
-                    onDelete = { id ->
-                        generationJobs.remove(id)?.cancel()
-                        suggestionJobs.remove(id)?.cancel()
-                        generationErrors.remove(id)
-                        update(data.deleteConversation(id))
-                    },
-                    onPin = { id ->
-                        updateConversation(id) { it.copy(isPinned = !it.isPinned, updatedAt = System.currentTimeMillis()) }
-                    },
-                    onMoveToFolder = { conversationId, folderId ->
-                        update(data.moveConversationToFolder(conversationId, folderId))
-                    },
-                    onCreateFolder = { assistantId ->
-                        folderCreateTarget = FolderCreateTarget(assistantId = assistantId)
-                    },
-                    onConversationSortChange = { sort ->
-                        update(data.copy(preferences = data.preferences.copy(conversationSort = sort)))
-                    },
-                    onSettings = {
-                        openSettings(DesktopSettingsSection.GENERAL)
-                        if (compact) showSidebar = false
-                    },
-                    modifier = Modifier.width(sidebarWidth)
-                )
-                if (!compact) {
-                    Box(
-                        Modifier.fillMaxHeight().width(8.dp)
-                            .onPointerEvent(PointerEventType.Enter) { sidebarResizeHovered = true }
-                            .onPointerEvent(PointerEventType.Exit) { sidebarResizeHovered = false }
-                            .pointerInput(maxSidebarWidth) {
-                                detectDragGestures(
-                                    onDragStart = { sidebarResizeHovered = true },
-                                    onDragEnd = { sidebarResizeHovered = false },
-                                    onDragCancel = { sidebarResizeHovered = false }
-                                ) { _, dragAmount ->
-                                    sidebarPreferredWidth = (sidebarPreferredWidth + with(density) { dragAmount.x.toDp() })
-                                        .coerceIn(240.dp, maxSidebarWidth)
-                                }
-                            }
-                    ) {
+                        },
+                        onCollapse = { showSidebar = false },
+                        modifier = Modifier.width(sidebarWidth)
+                    )
+                    if (!compact) {
                         Box(
-                            Modifier.align(Alignment.Center).fillMaxHeight()
-                                .width(if (sidebarResizeHovered) 2.dp else 1.dp)
-                                .background(
-                                    MaterialTheme.colorScheme.outlineVariant.copy(
-                                        alpha = if (sidebarResizeHovered) 0.9f else 0.45f
+                            Modifier.fillMaxHeight().width(8.dp)
+                                .onPointerEvent(PointerEventType.Enter) { sidebarResizeHovered = true }
+                                .onPointerEvent(PointerEventType.Exit) { sidebarResizeHovered = false }
+                                .pointerInput(maxSidebarWidth) {
+                                    detectDragGestures(
+                                        onDragStart = { sidebarResizeHovered = true },
+                                        onDragEnd = { sidebarResizeHovered = false },
+                                        onDragCancel = { sidebarResizeHovered = false }
+                                    ) { _, dragAmount ->
+                                        sidebarPreferredWidth = (sidebarPreferredWidth + with(density) { dragAmount.x.toDp() })
+                                            .coerceIn(240.dp, maxSidebarWidth)
+                                    }
+                                }
+                        ) {
+                            Box(
+                                Modifier.align(Alignment.Center).fillMaxHeight()
+                                    .width(if (sidebarResizeHovered) 2.dp else 1.dp)
+                                    .background(
+                                        MaterialTheme.colorScheme.outlineVariant.copy(
+                                            alpha = if (sidebarResizeHovered) 0.9f else 0.45f
+                                        )
                                     )
-                                )
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -1219,6 +1245,7 @@ private fun RikkaHubDesktop(
                         mcpClient = mcpClient,
                         initialSection = settingsSection,
                         showMenu = compact,
+                        showSidebarToggle = !compact && !showSidebar,
                         onMenu = { showSidebar = true },
                         onBack = { language -> requestSettingsExit(language = language) },
                         modifiedProviderIds = modifiedProviderIds,
@@ -1306,7 +1333,8 @@ private fun RikkaHubDesktop(
                         conversationScrollPositions = conversationScrollPositions,
                         onAskUserAnswer = ::submitAskUserAnswer,
                         onSaveMermaidImage = { mermaidImageExportTarget = it },
-                        showMenu = compact,
+                        showMenu = compact || !showSidebar,
+                        sidebarCollapsed = !compact && !showSidebar,
                         onMenu = { showSidebar = true },
                         onNew = ::newConversation,
                         onSettings = {
@@ -2073,6 +2101,7 @@ private fun ConversationSidebar(
     onCreateFolder: (String) -> Unit,
     onConversationSortChange: (DesktopConversationSort) -> Unit,
     onSettings: () -> Unit,
+    onCollapse: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val language = data.preferences.language
@@ -2120,9 +2149,16 @@ private fun ConversationSidebar(
                         Icon(Lucide.Sparkles, null, Modifier.padding(9.dp).size(19.dp), tint = MaterialTheme.colorScheme.primary)
                     }
                 }
-                Column(Modifier.padding(start = 10.dp)) {
+                Column(Modifier.padding(start = 10.dp).weight(1f)) {
                     Text("RikkaHub", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                     Text(desktopText(language, "sidebar.welcome"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+                IconButton(onClick = onCollapse) {
+                    Icon(
+                        Lucide.PanelLeftClose,
+                        desktopText(language, "common.collapse").trim(),
+                        Modifier.size(19.dp)
+                    )
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -2637,6 +2673,7 @@ private fun ChatPane(
     onAskUserAnswer: (String, DesktopToolCall, String) -> Unit,
     onSaveMermaidImage: (MermaidRenderResult) -> Unit,
     showMenu: Boolean,
+    sidebarCollapsed: Boolean,
     onMenu: () -> Unit,
     onNew: () -> Unit,
     onSettings: () -> Unit,
@@ -2756,7 +2793,15 @@ private fun ChatPane(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (showMenu) {
-                IconButton(onClick = onMenu) { Icon(Lucide.Menu, desktopText(language, "chat.open_conversations")) }
+                IconButton(onClick = onMenu) {
+                    Icon(
+                        if (sidebarCollapsed) Lucide.PanelLeftOpen else Lucide.Menu,
+                        desktopText(
+                            language,
+                            if (sidebarCollapsed) "common.expand" else "chat.open_conversations"
+                        ).trim()
+                    )
+                }
             }
             Surface(
                 onClick = onRename,
@@ -3923,29 +3968,22 @@ private fun DesktopExecutionTimeline(
                 }
             }
 
-            AnimatedContent(
-                targetState = renderedSteps,
-                transitionSpec = {
-                    (fadeIn(tween(180)) + scaleIn(tween(180), initialScale = 0.96f)) togetherWith
-                        (fadeOut(tween(140)) + scaleOut(tween(140), targetScale = 0.96f))
-                },
-                label = "executionSteps"
-            ) { currentSteps ->
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    currentSteps.forEachIndexed { index, step ->
-                        if (index > 0) {
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
-                            )
-                        }
-                        DesktopExecutionTimelineStep(
-                            step = step,
-                            generating = generating,
-                            language = language,
-                            markdownOptions = markdownOptions,
-                            onAskUserAnswer = onAskUserAnswer,
+            // Step data changes for every streamed tool-call fragment. Animating the data list itself
+            // restarts the crossfade on each fragment and makes the whole timeline flicker.
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                renderedSteps.forEachIndexed { index, step ->
+                    if (index > 0) {
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
                         )
                     }
+                    DesktopExecutionTimelineStep(
+                        step = step,
+                        generating = generating,
+                        language = language,
+                        markdownOptions = markdownOptions,
+                        onAskUserAnswer = onAskUserAnswer,
+                    )
                 }
             }
         }

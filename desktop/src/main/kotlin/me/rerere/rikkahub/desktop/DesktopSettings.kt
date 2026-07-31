@@ -85,6 +85,7 @@ import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Menu
 import com.composables.icons.lucide.MessageSquareText
 import com.composables.icons.lucide.Palette
+import com.composables.icons.lucide.PanelLeftOpen
 import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.Save
 import com.composables.icons.lucide.ServerCog
@@ -121,6 +122,7 @@ internal fun DesktopSettingsPane(
     mcpClient: DesktopMcpClient,
     initialSection: DesktopSettingsSection,
     showMenu: Boolean,
+    showSidebarToggle: Boolean,
     onMenu: () -> Unit,
     onBack: (DesktopLanguage?) -> Unit,
     modifiedProviderIds: Set<String>,
@@ -286,8 +288,22 @@ internal fun DesktopSettingsPane(
             Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = if (showMenu) onMenu else ::requestBack) {
-                Icon(if (showMenu) Lucide.Menu else Lucide.ArrowLeft, desktopText(preferences.language, "settings.back"))
+            if (showMenu) {
+                IconButton(onClick = onMenu) {
+                    Icon(Lucide.Menu, desktopText(preferences.language, "chat.open_conversations"))
+                }
+            } else {
+                if (showSidebarToggle) {
+                    IconButton(onClick = onMenu) {
+                        Icon(
+                            Lucide.PanelLeftOpen,
+                            desktopText(preferences.language, "common.expand").trim()
+                        )
+                    }
+                }
+                IconButton(onClick = ::requestBack) {
+                    Icon(Lucide.ArrowLeft, desktopText(preferences.language, "settings.back"))
+                }
             }
             Column(Modifier.padding(start = 4.dp)) {
                 Text(desktopText(preferences.language, "settings.title"), fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
