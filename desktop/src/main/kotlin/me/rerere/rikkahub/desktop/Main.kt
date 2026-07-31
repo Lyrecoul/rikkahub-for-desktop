@@ -214,7 +214,7 @@ private const val SmoothScrollAnimationTimeMillis = 400L
 private const val SmoothScrollFrameDelayMillis = 7L
 private const val SmoothScrollAccelerationDeltaMillis = 50L
 private const val SmoothScrollAccelerationMax = 3f
-private const val StreamUiUpdateIntervalMillis = 75L
+private const val StreamUiUpdateIntervalMillis = 50L
 private const val LongStreamUiUpdateIntervalMillis = 200L
 private const val LongStreamContentThreshold = 6_000
 
@@ -3777,15 +3777,15 @@ private fun SoftMessageReveal(messageId: String, content: @Composable () -> Unit
     LaunchedEffect(messageId) { revealed = true }
     val progress by animateFloatAsState(
         targetValue = if (revealed) 1f else 0f,
-        animationSpec = tween(240, easing = FastOutSlowInEasing),
+        animationSpec = tween(360, easing = FastOutSlowInEasing),
         label = "messageReveal"
     )
     Box(
         Modifier.graphicsLayer {
             alpha = progress
-            translationY = (1f - progress) * 10f
+            translationY = (1f - progress) * 8f
         }.blur(
-            radius = ((1f - progress) * 7f).dp,
+            radius = ((1f - progress) * 5f).dp,
             edgeTreatment = BlurredEdgeTreatment.Unbounded
         )
     ) {
@@ -3882,7 +3882,9 @@ private fun MessageBlock(
         mermaidCliPath = preferences.mermaidCliPath,
         mermaidUseSystemBrowser = preferences.mermaidUseSystemBrowser,
         language = preferences.language,
-        animateContent = !generating || message.content.length + message.reasoning.length < LongStreamContentThreshold,
+        // Only the visible answer counts toward the threshold; long hidden reasoning must not
+        // disable the content transition for short answers.
+        animateContent = !generating || message.content.length < LongStreamContentThreshold,
         onSaveMermaidImage = onSaveMermaidImage
     )
     val highlightAlpha by animateFloatAsState(
@@ -4405,7 +4407,11 @@ private fun DesktopExecutionTimelineStep(
                 MarkdownContent(
                     message.reasoning,
                     Modifier.fillMaxWidth().padding(start = 31.dp, bottom = 8.dp),
-                    markdownOptions
+                    // Long reasoning must stay cheap to render; the gentle growth animation
+                    // is reserved for short reasoning and the visible answer.
+                    markdownOptions.copy(
+                        animateContent = !generating || message.reasoning.length < LongStreamContentThreshold
+                    )
                 )
             }
         }
@@ -4490,10 +4496,10 @@ private fun DesktopToolCallTimelineStep(
 private fun DesktopExecutionStepDetails(visible: Boolean, content: @Composable () -> Unit) {
     AnimatedVisibility(
         visible = visible,
-        enter = expandVertically(tween(220, easing = FastOutSlowInEasing), expandFrom = Alignment.Top) +
-            fadeIn(tween(150)) + scaleIn(tween(220, easing = FastOutSlowInEasing), initialScale = 0.98f),
-        exit = shrinkVertically(tween(180, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) +
-            fadeOut(tween(120)) + scaleOut(tween(180, easing = FastOutSlowInEasing), targetScale = 0.98f),
+        enter = expandVertically(tween(320, easing = FastOutSlowInEasing), expandFrom = Alignment.Top) +
+            fadeIn(tween(200)) + scaleIn(tween(320, easing = FastOutSlowInEasing), initialScale = 0.98f),
+        exit = shrinkVertically(tween(260, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) +
+            fadeOut(tween(160)) + scaleOut(tween(260, easing = FastOutSlowInEasing), targetScale = 0.98f),
         label = "executionStepDetails"
     ) {
         content()

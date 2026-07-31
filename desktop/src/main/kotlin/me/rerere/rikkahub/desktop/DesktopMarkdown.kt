@@ -357,7 +357,7 @@ internal fun MarkdownContent(
     val blocks = remember(content) { DesktopMarkdownParser.parse(content) }
     SelectionContainer(Modifier.preventSelectionFocusScroll()) {
         Column(
-            if (options.animateContent) modifier.animateContentSize(tween(180, easing = FastOutSlowInEasing)) else modifier,
+            if (options.animateContent) modifier.animateContentSize(tween(320, easing = FastOutSlowInEasing)) else modifier,
             verticalArrangement = Arrangement.spacedBy(9.dp)
         ) {
             blocks.forEach { MarkdownBlockView(it, options) }
