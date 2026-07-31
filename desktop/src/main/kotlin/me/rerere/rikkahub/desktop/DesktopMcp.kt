@@ -30,10 +30,16 @@ import io.modelcontextprotocol.kotlin.sdk.types.ToolListChangedNotification
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.asSink
 import kotlinx.io.asSource
 import kotlinx.io.buffered
@@ -53,7 +59,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
-private const val MCP_CONNECTION_TIMEOUT_MILLIS = 30_000L
+private const val MCP_CONNECTION_TIMEOUT_MILLIS = 10_000L
+private const val MCP_CLOSE_TIMEOUT_MILLIS = 2_000L
 
 @Serializable
 enum class DesktopMcpTransport {
@@ -138,6 +145,8 @@ internal class DesktopMcpClient : Closeable {
         install(SSE)
     }
     private val sessions = ConcurrentHashMap<String, McpSession>()
+    private val activeSessions = ConcurrentHashMap<String, McpSession>()
+    private val activeProcesses = ConcurrentHashMap<String, Process>()
     private val serverMutexes = ConcurrentHashMap<String, Mutex>()
     private val invalidatedToolServers = ConcurrentHashMap.newKeySet<String>()
     private val closed = AtomicBoolean(false)
@@ -168,6 +177,32 @@ internal class DesktopMcpClient : Closeable {
             }
         }
 
+    suspend fun probeTools(
+        server: DesktopMcpServer,
+        timeoutMillis: Long = MCP_CONNECTION_TIMEOUT_MILLIS
+    ): List<DesktopMcpTool> = coroutineScope {
+        val watchdog = launch {
+            delay(timeoutMillis)
+            cancelProbe(server.id)
+        }
+        try {
+            withTimeout(timeoutMillis) { syncTools(server) }
+        } finally {
+            watchdog.cancel()
+            disconnect(server.id)
+        }
+    }
+
+    suspend fun cancelProbe(serverId: String) {
+        withContext(NonCancellable + Dispatchers.IO) {
+            val process = activeProcesses.remove(serverId)
+            process?.stop()
+            val session = activeSessions.remove(serverId) ?: return@withContext
+            sessions.remove(serverId, session)
+            session.abort(processAlreadyStopped = process != null)
+        }
+    }
+
     fun toolsAreCurrent(server: DesktopMcpServer): Boolean =
         server.hasCurrentTools() && server.id !in invalidatedToolServers
 
@@ -188,8 +223,22 @@ internal class DesktopMcpClient : Closeable {
                 mutex.withLock {
                     val session = sessions[serverId] ?: return@withLock
                     if (expectedConnections[serverId] != session.connection && sessions.remove(serverId, session)) {
+                        activeSessions.remove(serverId, session)
+                        activeProcesses.remove(serverId, session.process)
                         runCatching { session.close() }
                     }
+                }
+            }
+        }
+    }
+
+    private suspend fun disconnect(serverId: String) {
+        withContext(NonCancellable + Dispatchers.IO) {
+            serverMutexes.computeIfAbsent(serverId) { Mutex() }.withLock {
+                sessions.remove(serverId)?.let { session ->
+                    activeSessions.remove(serverId, session)
+                    activeProcesses.remove(serverId, session.process)
+                    session.close()
                 }
             }
         }
@@ -198,12 +247,19 @@ internal class DesktopMcpClient : Closeable {
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         kotlinx.coroutines.runBlocking(Dispatchers.IO) {
-            sessions.values.toList().forEach { session -> runCatching { session.close() } }
             serverMutexes.keys.toList().forEach { serverId ->
                 serverMutexes[serverId]?.withLock {
-                    sessions.remove(serverId)?.let { session -> runCatching { session.close() } }
+                    sessions.remove(serverId)?.let { session ->
+                        activeSessions.remove(serverId, session)
+                        activeProcesses.remove(serverId, session.process)
+                        runCatching { session.close() }
+                    }
                 }
             }
+            activeSessions.values.toList().forEach { session -> runCatching { session.close() } }
+            activeSessions.clear()
+            activeProcesses.values.toList().forEach { process -> runCatching { process.stop() } }
+            activeProcesses.clear()
             sessions.values.toList().forEach { session -> runCatching { session.close() } }
             sessions.clear()
         }
@@ -227,6 +283,8 @@ internal class DesktopMcpClient : Closeable {
             val connection = server.connectionKey()
             val existing = sessions[server.id]
             if (existing != null && existing.connection != connection && sessions.remove(server.id, existing)) {
+                activeSessions.remove(server.id, existing)
+                activeProcesses.remove(server.id, existing.process)
                 runCatching { existing.close() }
             }
 
@@ -234,11 +292,15 @@ internal class DesktopMcpClient : Closeable {
                 check(!closed.get()) { "MCP client is closed" }
                 val cachedSession = sessions[server.id]
                 if (cachedSession?.process?.isAlive == false && sessions.remove(server.id, cachedSession)) {
+                    activeSessions.remove(server.id, cachedSession)
+                    activeProcesses.remove(server.id, cachedSession.process)
                     runCatching { cachedSession.close() }
                 }
                 val session = sessions[server.id] ?: createSession(server).also { sessions[server.id] = it }
                 if (closed.get()) {
                     sessions.remove(server.id, session)
+                    activeSessions.remove(server.id, session)
+                    activeProcesses.remove(server.id, session.process)
                     runCatching { session.close() }
                     error("MCP client is closed")
                 }
@@ -246,9 +308,14 @@ internal class DesktopMcpClient : Closeable {
                     return@withLock action(session.client)
                 } catch (error: CancellationException) {
                     if (sessions.remove(server.id, session)) runCatching { session.close() }
+                    activeSessions.remove(server.id, session)
+                    activeProcesses.remove(server.id, session.process)
                     throw error
                 } catch (error: Throwable) {
                     if (sessions.remove(server.id, session)) runCatching { session.close() }
+                    activeSessions.remove(server.id, session)
+                    activeProcesses.remove(server.id, session.process)
+                    coroutineContext.ensureActive()
                     if (!retryOnce || attempt == 1) throw error
                 }
             }
@@ -259,17 +326,24 @@ internal class DesktopMcpClient : Closeable {
 
     private suspend fun createSession(server: DesktopMcpServer): McpSession {
         val process = server.createProcess()
+        process?.let { activeProcesses[server.id] = it }
+        val client = Client(Implementation(name = "RikkaHub Desktop", version = "1.0"))
+        val session = McpSession(server.connectionKey(), client, process)
+        activeSessions[server.id] = session
         return try {
-            val client = Client(Implementation(name = "RikkaHub Desktop", version = "1.0"))
             val toolListChanged = ToolListChangedNotification()
             client.setNotificationHandler<ToolListChangedNotification>(toolListChanged.method) {
                 invalidatedToolServers += server.id
                 CompletableDeferred(Unit)
             }
             client.connect(createTransport(server, process))
-            McpSession(server.connectionKey(), client, process)
+            session
         } catch (error: Throwable) {
-            process?.let { runCatching { it.stop() } }
+            withContext(NonCancellable) {
+                activeSessions.remove(server.id, session)
+                process?.let { activeProcesses.remove(server.id, it) }
+                runCatching { session.close() }
+            }
             throw error
         }
     }
@@ -284,9 +358,18 @@ internal class DesktopMcpClient : Closeable {
         suspend fun close() {
             if (!closed.compareAndSet(false, true)) return
             try {
-                client.close()
+                client.closeWithinDeadline()
             } finally {
                 process?.stop()
+            }
+        }
+
+        suspend fun abort(processAlreadyStopped: Boolean = false) {
+            if (!closed.compareAndSet(false, true)) return
+            try {
+                if (!processAlreadyStopped) process?.stop()
+            } finally {
+                client.closeWithinDeadline()
             }
         }
     }
@@ -345,6 +428,10 @@ internal class DesktopMcpClient : Closeable {
     }
 }
 
+private suspend fun Client.closeWithinDeadline() {
+    withTimeoutOrNull(MCP_CLOSE_TIMEOUT_MILLIS) { close() }
+}
+
 internal fun DesktopMcpTool.openAiParameters(): JsonObject = buildJsonObject {
     put("type", "object")
     put("properties", inputSchema)
@@ -352,9 +439,31 @@ internal fun DesktopMcpTool.openAiParameters(): JsonObject = buildJsonObject {
     if (definitions.isNotEmpty()) put("\$defs", definitions)
 }
 
-private fun Process.stop() {
+internal fun Process.stop() {
+    val descendants = toHandle().descendants().toList().asReversed()
+    descendants.forEach { handle -> runCatching { handle.destroy() } }
     destroy()
-    if (!waitFor(2, TimeUnit.SECONDS)) destroyForcibly()
+
+    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+    descendants.forEach { handle -> handle.waitUntil(deadline) }
+    waitUntil(deadline)
+
+    descendants.filter { it.isAlive }.forEach { handle -> runCatching { handle.destroyForcibly() } }
+    if (isAlive) destroyForcibly()
+
+    val forceDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+    descendants.forEach { handle -> handle.waitUntil(forceDeadline) }
+    waitUntil(forceDeadline)
+}
+
+private fun ProcessHandle.waitUntil(deadlineNanos: Long) {
+    val remaining = deadlineNanos - System.nanoTime()
+    if (isAlive && remaining > 0) runCatching { onExit().get(remaining, TimeUnit.NANOSECONDS) }
+}
+
+private fun Process.waitUntil(deadlineNanos: Long) {
+    val remaining = deadlineNanos - System.nanoTime()
+    if (isAlive && remaining > 0) runCatching { waitFor(remaining, TimeUnit.NANOSECONDS) }
 }
 
 internal fun CallToolResult.desktopOutput(): String {

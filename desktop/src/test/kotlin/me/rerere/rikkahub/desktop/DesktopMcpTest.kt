@@ -9,6 +9,13 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import java.nio.file.Files
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -132,5 +139,83 @@ class DesktopMcpTest {
         val arguments = listOf(" /tmp/server.js ", "  mcp  ")
 
         assertEquals(listOf("/tmp/server.js", "mcp"), arguments.map(String::trim).filter(String::isNotBlank))
+    }
+
+    @Test
+    fun stoppingProcessAlsoStopsDescendants() {
+        val process = ProcessBuilder("sh", "-c", "sleep 30 & wait").start()
+        try {
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+            var descendants = process.toHandle().descendants().toList()
+            while (descendants.isEmpty() && System.nanoTime() < deadline) {
+                Thread.sleep(10)
+                descendants = process.toHandle().descendants().toList()
+            }
+
+            assertTrue(descendants.isNotEmpty())
+            process.stop()
+
+            assertFalse(process.isAlive)
+            assertTrue(descendants.none { it.isAlive })
+        } finally {
+            if (process.isAlive) process.stop()
+        }
+    }
+
+    @Test
+    fun cancellingProbeStopsUnresponsiveStdioProcess() = runBlocking {
+        val pidFile = Files.createTempFile("rikkahub-mcp-test", ".pid")
+        Files.deleteIfExists(pidFile)
+        val client = DesktopMcpClient()
+        val stdioServer = DesktopMcpServer(
+            id = "cancel-probe",
+            name = "CancelProbe",
+            transport = DesktopMcpTransport.STDIO,
+            command = "sh",
+            arguments = listOf("-c", "echo $$ > '$pidFile'; sleep 30")
+        )
+        val probe = launch { runCatching { client.probeTools(stdioServer) } }
+
+        try {
+            withTimeout(2_000) {
+                while (!Files.exists(pidFile) || Files.readString(pidFile).isBlank()) delay(10)
+            }
+            delay(50)
+            val process = ProcessHandle.of(Files.readString(pidFile).trim().toLong()).orElseThrow()
+
+            probe.cancel()
+            client.cancelProbe(stdioServer.id)
+            probe.cancelAndJoin()
+
+            assertFalse(process.isAlive)
+        } finally {
+            probe.cancelAndJoin()
+            client.close()
+            Files.deleteIfExists(pidFile)
+        }
+    }
+
+    @Test
+    fun probeTimeoutStopsUnresponsiveStdioProcess() = runBlocking {
+        val pidFile = Files.createTempFile("rikkahub-mcp-timeout-test", ".pid")
+        Files.deleteIfExists(pidFile)
+        val client = DesktopMcpClient()
+        val stdioServer = DesktopMcpServer(
+            id = "timeout-probe",
+            name = "TimeoutProbe",
+            transport = DesktopMcpTransport.STDIO,
+            command = "sh",
+            arguments = listOf("-c", "echo $$ > '$pidFile'; sleep 30")
+        )
+
+        try {
+            val result = runCatching { client.probeTools(stdioServer, timeoutMillis = 500) }
+            assertTrue(result.isFailure)
+            val pid = Files.readString(pidFile).trim().toLong()
+            assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false))
+        } finally {
+            client.close()
+            Files.deleteIfExists(pidFile)
+        }
     }
 }

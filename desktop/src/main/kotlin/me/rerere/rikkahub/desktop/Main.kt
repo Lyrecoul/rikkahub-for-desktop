@@ -5430,7 +5430,7 @@ private fun McpQuickManager(
         if (!canCheck(server) || availability[server.id] == McpAvailability.CHECKING) return
         availability[server.id] = McpAvailability.CHECKING
         scope.launch {
-            runCatching { mcpClient.syncTools(server) }
+            runCatching { mcpClient.probeTools(server) }
                 .onSuccess { tools ->
                     availability[server.id] = McpAvailability.AVAILABLE
                     val existingTools = server.tools.associateBy { it.name }

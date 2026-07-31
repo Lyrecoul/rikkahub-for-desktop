@@ -266,6 +266,7 @@ internal val KoreanDesktopTranslations = mapOf(
     "mcp_settings.enable_server" to "서버 사용",
     "mcp_settings.enable_server_help" to "꺼져 있으면 도구가 모델에 노출되지 않습니다",
     "mcp_settings.sync_failed" to "MCP 도구 동기화 실패",
+    "mcp_settings.sync_timeout" to "MCP 도구 동기화가 10초 후 시간 초과되었습니다",
     "mcp_settings.sync_tools" to "도구 동기화",
     "mcp_settings.collapse_tools" to "도구 접기",
     "mcp_settings.manage_tools" to "도구 %d개 관리(%e개 활성)",

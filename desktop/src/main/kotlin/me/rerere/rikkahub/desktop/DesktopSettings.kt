@@ -89,9 +89,12 @@ import com.composables.icons.lucide.PanelLeftOpen
 import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.Save
 import com.composables.icons.lucide.ServerCog
+import com.composables.icons.lucide.Square
 import com.composables.icons.lucide.Trash2
 import com.composables.icons.lucide.Upload
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlin.math.roundToInt
@@ -3382,6 +3385,7 @@ private fun DesktopMcpSettings(
 ) {
     val scope = rememberCoroutineScope()
     var syncingServerId by remember { mutableStateOf<String?>(null) }
+    var syncJob by remember { mutableStateOf<Job?>(null) }
     var syncError by remember { mutableStateOf<String?>(null) }
     var expandedToolServerIds by remember { mutableStateOf(emptySet<String>()) }
 
@@ -3512,34 +3516,48 @@ private fun DesktopMcpSettings(
                     onServersChange(servers.replaceMcpServer(server.id) { it.copy(enabled = enabled) })
                 }
                 OutlinedButton(
-                    enabled = syncingServerId == null && server.name.matches(Regex("[A-Za-z0-9]+")) &&
+                    enabled = syncingServerId == server.id || syncingServerId == null &&
+                        server.name.matches(Regex("[A-Za-z0-9]+")) &&
                         (if (server.transport == DesktopMcpTransport.STDIO) server.command.isNotBlank() else server.url.isNotBlank()),
                     onClick = {
+                        if (syncingServerId == server.id) {
+                            syncJob?.cancel()
+                            scope.launch { mcpClient.cancelProbe(server.id) }
+                            return@OutlinedButton
+                        }
                         syncingServerId = server.id
                         syncError = null
-                        scope.launch {
-                            runCatching { mcpClient.syncTools(server) }
-                                .onSuccess { tools ->
-                                    val prior = server.tools.associateBy { it.name }
-                                    onServersChange(servers.replaceMcpServer(server.id) {
-                                        it.withSyncedTools(tools.map { tool ->
-                                            tool.copy(enabled = prior[tool.name]?.enabled ?: true)
-                                        })
+                        syncJob = scope.launch {
+                            try {
+                                val tools = mcpClient.probeTools(server)
+                                val prior = server.tools.associateBy { it.name }
+                                onServersChange(servers.replaceMcpServer(server.id) {
+                                    it.withSyncedTools(tools.map { tool ->
+                                        tool.copy(enabled = prior[tool.name]?.enabled ?: true)
                                     })
-                                }
-                                .onFailure {
-                                    syncError = it.message ?: desktopText(language, "mcp_settings.sync_failed")
-                                }
-                            syncingServerId = null
+                                })
+                            } catch (_: TimeoutCancellationException) {
+                                syncError = desktopText(language, "mcp_settings.sync_timeout")
+                            } catch (_: CancellationException) {
+                                // User cancellation is already represented by the button returning to idle.
+                            } catch (error: Throwable) {
+                                syncError = error.message ?: desktopText(language, "mcp_settings.sync_failed")
+                            } finally {
+                                syncingServerId = null
+                                syncJob = null
+                            }
                         }
                     }
                 ) {
-                    if (syncingServerId == server.id) CircularProgressIndicator(
-                        Modifier.size(16.dp),
-                        strokeWidth = 2.dp
-                    )
+                    if (syncingServerId == server.id) Icon(Lucide.Square, null, Modifier.size(16.dp))
                     else Icon(Lucide.Download, null, Modifier.size(17.dp))
-                    Text(desktopText(language, "mcp_settings.sync_tools"), Modifier.padding(start = 7.dp))
+                    Text(
+                        desktopText(
+                            language,
+                            if (syncingServerId == server.id) "common.cancel" else "mcp_settings.sync_tools"
+                        ),
+                        Modifier.padding(start = 7.dp)
+                    )
                 }
                 if (server.tools.isNotEmpty()) {
                     val toolsExpanded = server.id in expandedToolServerIds

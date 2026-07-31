@@ -266,6 +266,7 @@ internal val SimplifiedChineseDesktopTranslations = mapOf(
     "mcp_settings.enable_server" to "启用服务器",
     "mcp_settings.enable_server_help" to "关闭后不会向模型暴露其中的工具",
     "mcp_settings.sync_failed" to "同步 MCP 工具失败",
+    "mcp_settings.sync_timeout" to "同步 MCP 工具超时（10 秒）",
     "mcp_settings.sync_tools" to "同步工具",
     "mcp_settings.collapse_tools" to "收起工具",
     "mcp_settings.manage_tools" to "管理 %d 个工具（已启用 %e 个）",

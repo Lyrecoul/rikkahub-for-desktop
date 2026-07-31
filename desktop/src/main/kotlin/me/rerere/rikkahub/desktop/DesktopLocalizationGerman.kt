@@ -266,6 +266,7 @@ internal val GermanDesktopTranslations = mapOf(
     "mcp_settings.enable_server" to "Server aktivieren",
     "mcp_settings.enable_server_help" to "Wenn deaktiviert, werden seine Werkzeuge dem Modell nicht zur Verfügung gestellt",
     "mcp_settings.sync_failed" to "Synchronisierung der MCP-Werkzeuge fehlgeschlagen",
+    "mcp_settings.sync_timeout" to "Zeitüberschreitung bei der MCP-Werkzeugsynchronisierung nach 10 Sekunden",
     "mcp_settings.sync_tools" to "Werkzeuge synchronisieren",
     "mcp_settings.collapse_tools" to "Werkzeuge einklappen",
     "mcp_settings.manage_tools" to "%d Werkzeuge verwalten (%e aktiviert)",

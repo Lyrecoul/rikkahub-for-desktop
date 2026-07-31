@@ -271,6 +271,7 @@ internal val EnglishDesktopTranslations = mapOf(
     "mcp_settings.enable_server" to "Enable server",
     "mcp_settings.enable_server_help" to "When off, its tools are not exposed to the model",
     "mcp_settings.sync_failed" to "Failed to sync MCP tools",
+    "mcp_settings.sync_timeout" to "MCP tool sync timed out after 10 seconds",
     "mcp_settings.sync_tools" to "Sync tools",
     "mcp_settings.collapse_tools" to "Collapse tools",
     "mcp_settings.manage_tools" to "Manage %d tools (%e enabled)",

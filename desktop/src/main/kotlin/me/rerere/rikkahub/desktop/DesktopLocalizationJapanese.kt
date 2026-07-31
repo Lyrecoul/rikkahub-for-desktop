@@ -266,6 +266,7 @@ internal val JapaneseDesktopTranslations = mapOf(
     "mcp_settings.enable_server" to "サーバーを有効化",
     "mcp_settings.enable_server_help" to "オフの場合、ツールはモデルに公開されません",
     "mcp_settings.sync_failed" to "MCP ツールの同期に失敗",
+    "mcp_settings.sync_timeout" to "MCP ツールの同期が10秒後にタイムアウトしました",
     "mcp_settings.sync_tools" to "ツールを同期",
     "mcp_settings.collapse_tools" to "ツールを折りたたむ",
     "mcp_settings.manage_tools" to "%d ツールを管理 (%e 有効)",

@@ -266,6 +266,7 @@ internal val RussianDesktopTranslations = mapOf(
     "mcp_settings.enable_server" to "Включить сервер",
     "mcp_settings.enable_server_help" to "Когда выключено, его инструменты не передаются модели",
     "mcp_settings.sync_failed" to "Не удалось синхронизировать инструменты MCP",
+    "mcp_settings.sync_timeout" to "Синхронизация инструментов MCP превысила лимит в 10 секунд",
     "mcp_settings.sync_tools" to "Синхронизировать инструменты",
     "mcp_settings.collapse_tools" to "Свернуть инструменты",
     "mcp_settings.manage_tools" to "Управлять %d инструментами (включено %e)",
