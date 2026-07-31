@@ -778,12 +778,34 @@ internal fun DesktopConversation.replaceHistoryWithSummary(
     require(summary.isNotBlank()) { "Summary must not be blank" }
     require(keepRecentMessages >= 0) { "Keep count must not be negative" }
     require(messages.size > keepRecentMessages) { "Not enough messages to compress" }
-    val recent = if (keepRecentMessages == 0) emptyList() else messages.takeLast(keepRecentMessages)
+    val recent = messages.takeRecentMessagesPreservingToolCalls(keepRecentMessages)
     return copy(
         messages = listOf(ChatMessage(role = "user", content = "[历史对话摘要]\n${summary.trim()}")) + recent,
         branches = branches + DesktopConversationBranch(name = "压缩前历史", messages = messages),
         updatedAt = System.currentTimeMillis()
     )
+}
+
+internal fun List<ChatMessage>.takeRecentMessagesPreservingToolCalls(count: Int): List<ChatMessage> {
+    require(count >= 0) { "Keep count must not be negative" }
+    if (count == 0) return emptyList()
+
+    var startIndex = (size - count).coerceAtLeast(0)
+    if (getOrNull(startIndex)?.role != "tool") return subList(startIndex, size)
+
+    val resultIds = mutableSetOf<String>()
+    var callIndex = startIndex
+    while (callIndex >= 0 && this[callIndex].role == "tool") {
+        this[callIndex].toolCallId?.let(resultIds::add)
+        callIndex--
+    }
+    val toolCallIds = getOrNull(callIndex)?.takeIf { it.role == "assistant" }
+        ?.toolCalls
+        ?.mapTo(mutableSetOf()) { it.id }
+        .orEmpty()
+    if (resultIds.isNotEmpty() && toolCallIds.containsAll(resultIds)) startIndex = callIndex
+
+    return subList(startIndex, size)
 }
 
 fun DesktopConversation.forkAtMessage(messageIndex: Int): DesktopConversation {
@@ -1023,7 +1045,7 @@ private fun jsonString(value: String): String = buildString {
 }
 
 fun DesktopAssistantProfile.limitContext(messages: List<ChatMessage>): List<ChatMessage> =
-    if (contextMessageSize > 0) messages.takeLast(contextMessageSize) else messages
+    if (contextMessageSize > 0) messages.takeRecentMessagesPreservingToolCalls(contextMessageSize) else messages
 
 fun DesktopAssistantProfile.newConversation(): DesktopConversation = DesktopConversation(
     assistantId = id,

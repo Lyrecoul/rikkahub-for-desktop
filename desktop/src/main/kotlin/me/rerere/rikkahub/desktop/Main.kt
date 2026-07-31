@@ -1088,7 +1088,8 @@ private fun RikkaHubDesktop(
             generationErrors[conversationId] = desktopText(data.preferences.language, "runtime.not_enough_messages")
             return
         }
-        val messagesToCompress = conversation.messages.dropLast(keepRecentMessages)
+        val recentMessages = conversation.messages.takeRecentMessagesPreservingToolCalls(keepRecentMessages)
+        val messagesToCompress = conversation.messages.dropLast(recentMessages.size)
         val config = data.configForConversation(conversation).backgroundRequestConfig(maxTokens = targetTokens)
         val request = buildString {
             appendLine("You are a conversation compression assistant. Summarize the conversation below for a future assistant.")
@@ -3751,11 +3752,6 @@ private fun BoxScope.DesktopMessageJumper(
 private suspend fun LazyListState.animateScrollToPreviousMessage() {
     val previousIndex = (firstVisibleItemIndex - 1).coerceAtLeast(0)
     animateScrollToItem(previousIndex)
-
-    val previousItem = layoutInfo.visibleItemsInfo.firstOrNull { it.index == previousIndex } ?: return
-    val visibleHeight = layoutInfo.viewportEndOffset - previousItem.offset
-    val remainingHeight = (previousItem.size - visibleHeight).coerceAtLeast(0)
-    if (remainingHeight > 0) animateScrollBy(remainingHeight.toFloat())
 }
 
 @Composable

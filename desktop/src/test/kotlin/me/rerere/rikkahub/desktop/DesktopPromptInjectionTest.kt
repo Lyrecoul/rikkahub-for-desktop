@@ -110,6 +110,46 @@ class DesktopPromptInjectionTest {
     }
 
     @Test
+    fun compressionDoesNotSplitAssistantToolCallsFromTheirResults() {
+        val toolCalls = listOf(
+            DesktopToolCall("call-1", "first"),
+            DesktopToolCall("call-2", "second")
+        )
+        val conversation = DesktopConversation(
+            messages = listOf(
+                ChatMessage("user", "old question"),
+                ChatMessage("assistant", "", toolCalls = toolCalls),
+                ChatMessage("tool", "first result", toolCallId = "call-1"),
+                ChatMessage("tool", "second result", toolCallId = "call-2"),
+                ChatMessage("assistant", "final answer")
+            )
+        )
+
+        val compressed = conversation.replaceHistoryWithSummary("old context", keepRecentMessages = 2)
+
+        assertEquals(
+            listOf("user", "assistant", "tool", "tool", "assistant"),
+            compressed.messages.map { it.role }
+        )
+        assertEquals(toolCalls, compressed.messages[1].toolCalls)
+    }
+
+    @Test
+    fun contextLimitDoesNotSplitAssistantToolCallsFromTheirResults() {
+        val messages = listOf(
+            ChatMessage("user", "old question"),
+            ChatMessage("assistant", "", toolCalls = listOf(DesktopToolCall("call-1", "lookup"))),
+            ChatMessage("tool", "result", toolCallId = "call-1"),
+            ChatMessage("assistant", "final answer")
+        )
+
+        val limited = DesktopAssistantProfile(contextMessageSize = 2).limitContext(messages)
+
+        assertEquals(listOf("assistant", "tool", "assistant"), limited.map { it.role })
+        assertEquals("call-1", limited[1].toolCallId)
+    }
+
+    @Test
     fun conversationCanDisableAssistantPromptInjectionsWhenAllowed() {
         val assistant = DesktopAssistantProfile(allowConversationPromptInjection = true)
 
