@@ -10,6 +10,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -2082,6 +2086,7 @@ private fun ConversationSidebar(
     var folderFilterId by remember { mutableStateOf<String?>(null) }
     var showFavorites by remember { mutableStateOf(false) }
     var sortMenuOpen by remember { mutableStateOf(false) }
+    val conversationListState = rememberLazyListState()
     val availableFolders = data.folders
     val conversations = data.filteredConversations(query, assistantFilterId).filter {
         (folderFilterId == null || it.folderId == folderFilterId) &&
@@ -2252,54 +2257,88 @@ private fun ConversationSidebar(
                     }
                 }
             }
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.weight(1f)) {
-                if (showFavorites) {
-                    items(favorites, key = { (conversation, message) -> "${conversation.id}:${message.id}" }) {
-                            (conversation, message) ->
-                        Column(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                                .clickable { onSelectFavorite(conversation.id, message.id) }
-                                .padding(horizontal = 10.dp, vertical = 8.dp)
-                        ) {
-                            Text(conversation.title, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-                            Text(
-                                message.content.ifBlank { message.reasoning }.ifBlank { desktopText(language, "sidebar.tool_call") },
-                                Modifier.padding(top = 3.dp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                } else {
-                    var previousTimelineLabel: String? = null
-                    conversationRows.forEach { item ->
-                        val conversation = item.conversation
-                        if (folderFilterId == null && item.branchDepth == 0) {
-                            val timelineLabel = conversationTimelineLabel(conversation.updatedAt, language)
-                            if (timelineLabel != previousTimelineLabel) {
-                                item(key = "timeline:$timelineLabel") {
-                                    ConversationTimelineHeader(timelineLabel)
-                                }
-                                previousTimelineLabel = timelineLabel
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    state = conversationListState,
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    if (showFavorites) {
+                        items(favorites, key = { (conversation, message) -> "${conversation.id}:${message.id}" }) {
+                                (conversation, message) ->
+                            Column(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                    .clickable { onSelectFavorite(conversation.id, message.id) }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                            ) {
+                                Text(conversation.title, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                                Text(
+                                    message.content.ifBlank { message.reasoning }.ifBlank { desktopText(language, "sidebar.tool_call") },
+                                    Modifier.padding(top = 3.dp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
-                        item(key = conversation.id) {
-                        ConversationRow(
-                            conversation = conversation,
-                            branchDepth = item.branchDepth,
-                            language = language,
-                            selected = !settingsSelected && conversation.id == data.selectedConversationId,
-                            generating = conversation.id in generatingConversationIds,
-                            onClick = { onSelect(conversation.id) },
-                            onPin = { onPin(conversation.id) },
-                            onDelete = { onDelete(conversation.id) },
-                            folders = data.folders,
-                            onMoveToFolder = { folderId -> onMoveToFolder(conversation.id, folderId) }
-                        )
+                    } else {
+                        var previousTimelineLabel: String? = null
+                        conversationRows.forEach { item ->
+                            val conversation = item.conversation
+                            if (folderFilterId == null && item.branchDepth == 0) {
+                                val timelineLabel = conversationTimelineLabel(conversation.updatedAt, language)
+                                if (timelineLabel != previousTimelineLabel) {
+                                    item(key = "timeline:$timelineLabel") {
+                                        ConversationTimelineHeader(timelineLabel)
+                                    }
+                                    previousTimelineLabel = timelineLabel
+                                }
+                            }
+                            item(key = conversation.id) {
+                            ConversationRow(
+                                conversation = conversation,
+                                branchDepth = item.branchDepth,
+                                language = language,
+                                selected = !settingsSelected && conversation.id == data.selectedConversationId,
+                                generating = conversation.id in generatingConversationIds,
+                                onClick = { onSelect(conversation.id) },
+                                onPin = { onPin(conversation.id) },
+                                onDelete = { onDelete(conversation.id) },
+                                folders = data.folders,
+                                onMoveToFolder = { folderId -> onMoveToFolder(conversation.id, folderId) }
+                            )
+                            }
                         }
                     }
+                }
+                if (conversationListState.canScrollBackward) {
+                    Box(
+                        Modifier.align(Alignment.TopCenter).fillMaxWidth().height(28.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        MaterialTheme.colorScheme.surfaceContainerLow,
+                                        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                    )
+                }
+                if (conversationListState.canScrollForward) {
+                    Box(
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(28.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.Transparent,
+                                        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
+                                        MaterialTheme.colorScheme.surfaceContainerLow
+                                    )
+                                )
+                            )
+                    )
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
@@ -3239,7 +3278,7 @@ private fun BoxScope.DesktopMessageJumper(
                 scope.launch { state.animateScrollToItem(0) }
             }
             MessageJumperButton(Lucide.ArrowUp, desktopText(language, "jumper.previous"), color) {
-                scope.launch { state.animateScrollToItem((state.firstVisibleItemIndex - 1).coerceAtLeast(0)) }
+                scope.launch { state.animateScrollToPreviousMessage() }
             }
             Box {
                 Surface(
@@ -3336,6 +3375,16 @@ private fun BoxScope.DesktopMessageJumper(
             }
         }
     }
+}
+
+private suspend fun LazyListState.animateScrollToPreviousMessage() {
+    val previousIndex = (firstVisibleItemIndex - 1).coerceAtLeast(0)
+    animateScrollToItem(previousIndex)
+
+    val previousItem = layoutInfo.visibleItemsInfo.firstOrNull { it.index == previousIndex } ?: return
+    val visibleHeight = layoutInfo.viewportEndOffset - previousItem.offset
+    val remainingHeight = (previousItem.size - visibleHeight).coerceAtLeast(0)
+    if (remainingHeight > 0) animateScrollBy(remainingHeight.toFloat())
 }
 
 @Composable
@@ -3837,7 +3886,7 @@ private fun DesktopExecutionTimeline(
 
     Surface(
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Column(
@@ -3846,7 +3895,11 @@ private fun DesktopExecutionTimeline(
         ) {
             if (canCollapse) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { expanded = !expanded }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -3870,19 +3923,30 @@ private fun DesktopExecutionTimeline(
                 }
             }
 
-            renderedSteps.forEachIndexed { index, step ->
-                if (index > 0) {
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
-                    )
+            AnimatedContent(
+                targetState = renderedSteps,
+                transitionSpec = {
+                    (fadeIn(tween(180)) + scaleIn(tween(180), initialScale = 0.96f)) togetherWith
+                        (fadeOut(tween(140)) + scaleOut(tween(140), targetScale = 0.96f))
+                },
+                label = "executionSteps"
+            ) { currentSteps ->
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    currentSteps.forEachIndexed { index, step ->
+                        if (index > 0) {
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                            )
+                        }
+                        DesktopExecutionTimelineStep(
+                            step = step,
+                            generating = generating,
+                            language = language,
+                            markdownOptions = markdownOptions,
+                            onAskUserAnswer = onAskUserAnswer,
+                        )
+                    }
                 }
-                DesktopExecutionTimelineStep(
-                    step = step,
-                    generating = generating,
-                    language = language,
-                    markdownOptions = markdownOptions,
-                    onAskUserAnswer = onAskUserAnswer,
-                )
             }
         }
     }
@@ -3901,7 +3965,11 @@ private fun DesktopExecutionTimelineStep(
             var expanded by remember(step.message.id) { mutableStateOf(generating) }
             val message = step.message
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(Lucide.Lightbulb, desktopText(language, "timeline.reasoning"), Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
@@ -3916,10 +3984,10 @@ private fun DesktopExecutionTimelineStep(
                 )
                 Icon(if (expanded) Lucide.ChevronDown else Lucide.ChevronRight, null, Modifier.size(15.dp))
             }
-            if (expanded) {
+            DesktopExecutionStepDetails(expanded) {
                 MarkdownContent(
                     message.reasoning,
-                    Modifier.fillMaxWidth().padding(start = 23.dp, bottom = 8.dp),
+                    Modifier.fillMaxWidth().padding(start = 31.dp, bottom = 8.dp),
                     markdownOptions
                 )
             }
@@ -3957,7 +4025,11 @@ private fun DesktopToolCallTimelineStep(
     val hasDetails = input != null || output != null
     val status = desktopText(language, if (generating && result == null) "tool.calling" else "tool.completed")
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(enabled = hasDetails) { expanded = !expanded }.padding(vertical = 7.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = hasDetails) { expanded = !expanded }
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(Lucide.Wrench, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
@@ -3974,9 +4046,9 @@ private fun DesktopToolCallTimelineStep(
             Icon(if (expanded) Lucide.ChevronDown else Lucide.ChevronRight, null, Modifier.size(15.dp))
         }
     }
-    if (expanded && hasDetails) {
+    DesktopExecutionStepDetails(expanded && hasDetails) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(start = 23.dp, bottom = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 31.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             input?.let { value ->
@@ -3990,6 +4062,20 @@ private fun DesktopToolCallTimelineStep(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DesktopExecutionStepDetails(visible: Boolean, content: @Composable () -> Unit) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = expandVertically(tween(220, easing = FastOutSlowInEasing), expandFrom = Alignment.Top) +
+            fadeIn(tween(150)) + scaleIn(tween(220, easing = FastOutSlowInEasing), initialScale = 0.98f),
+        exit = shrinkVertically(tween(180, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) +
+            fadeOut(tween(120)) + scaleOut(tween(180, easing = FastOutSlowInEasing), targetScale = 0.98f),
+        label = "executionStepDetails"
+    ) {
+        content()
     }
 }
 
@@ -4012,7 +4098,11 @@ private fun DesktopToolDetail(label: String, content: @Composable () -> Unit) {
 private fun DesktopToolResultTimelineStep(content: String, language: DesktopLanguage, markdownOptions: MarkdownRenderOptions) {
     var expanded by remember(content) { mutableStateOf(false) }
     Row(
-        modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 7.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { expanded = !expanded }
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(Lucide.Wrench, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
@@ -4027,8 +4117,8 @@ private fun DesktopToolResultTimelineStep(content: String, language: DesktopLang
         )
         Icon(if (expanded) Lucide.ChevronDown else Lucide.ChevronRight, null, Modifier.size(15.dp))
     }
-    if (expanded && content.isNotBlank()) {
-        Box(Modifier.fillMaxWidth().padding(start = 23.dp, bottom = 8.dp)) {
+    DesktopExecutionStepDetails(expanded && content.isNotBlank()) {
+        Box(Modifier.fillMaxWidth().padding(start = 31.dp, bottom = 8.dp)) {
             DesktopToolDetail(desktopText(language, "tool.output")) {
                 MarkdownContent(content, Modifier.fillMaxWidth(), markdownOptions)
             }

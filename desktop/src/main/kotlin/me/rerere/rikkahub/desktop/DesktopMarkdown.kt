@@ -7,6 +7,10 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -645,15 +649,26 @@ private fun MermaidDiagram(block: MarkdownBlock.Code, options: MarkdownRenderOpt
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
+    val cachedRenderResult = remember(block.content, dark, options.mermaidCliPath, options.mermaidUseSystemBrowser) {
+        DesktopMermaidRenderer.cachedResult(
+            block.content, dark, options.mermaidUseSystemBrowser, options.mermaidCliPath
+        )
+    }
     var renderResult by remember(block.content, dark, options.mermaidCliPath, options.mermaidUseSystemBrowser) {
-        mutableStateOf<MermaidRenderResult?>(null)
+        mutableStateOf(cachedRenderResult)
+    }
+    var renderingFinished by remember(block.content, dark, options.mermaidCliPath, options.mermaidUseSystemBrowser) {
+        mutableStateOf(cachedRenderResult != null)
     }
     LaunchedEffect(block.content, dark, options.mermaidCliPath, options.mermaidUseSystemBrowser) {
-        renderResult = withContext(Dispatchers.IO) {
+        if (cachedRenderResult != null) return@LaunchedEffect
+        val result = withContext(Dispatchers.IO) {
             DesktopMermaidRenderer.render(
                 block.content, dark, options.mermaidUseSystemBrowser, options.mermaidCliPath
             )
         }
+        renderResult = result
+        renderingFinished = true
     }
     val bitmap = remember(renderResult?.pngBytes) {
         renderResult?.pngBytes?.let { bytes ->
@@ -662,7 +677,9 @@ private fun MermaidDiagram(block: MarkdownBlock.Code, options: MarkdownRenderOpt
     }
     val renderedResult = renderResult
 
-    if (bitmap == null || bitmap.width <= 0 || bitmap.height <= 0 || renderedResult == null) {
+    if (!renderingFinished) {
+        MermaidLoadingPlaceholder()
+    } else if (bitmap == null || bitmap.width <= 0 || bitmap.height <= 0 || renderedResult == null) {
         CodeBlock(block, options)
     } else {
         var showDiagram by remember(block.content) { mutableStateOf(true) }
@@ -757,6 +774,66 @@ private fun MermaidDiagram(block: MarkdownBlock.Code, options: MarkdownRenderOpt
                 language = options.language,
                 onDismiss = { showFullscreen = false }
             )
+        }
+    }
+}
+
+@Composable
+private fun MermaidLoadingPlaceholder() {
+    val transition = rememberInfiniteTransition(label = "mermaidSkeleton")
+    val alpha by transition.animateFloat(
+        initialValue = 0.38f,
+        targetValue = 0.68f,
+        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "mermaidSkeletonAlpha"
+    )
+    val skeletonColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha * 0.2f)
+    val connectorColor = MaterialTheme.colorScheme.primary.copy(alpha = alpha * 0.24f)
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .padding(horizontal = 6.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.width(74.dp).height(22.dp).clip(RoundedCornerShape(6.dp)).background(skeletonColor))
+                Box(Modifier.weight(1f))
+                Box(Modifier.width(26.dp).height(22.dp).clip(RoundedCornerShape(6.dp)).background(skeletonColor))
+            }
+            Box(
+                Modifier.fillMaxWidth().height(420.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 72.dp)
+                        .size(width = 108.dp, height = 46.dp)
+                        .clip(RoundedCornerShape(8.dp)).background(skeletonColor)
+                )
+                Box(
+                    Modifier.align(Alignment.Center).width(96.dp).height(2.dp)
+                        .background(connectorColor)
+                )
+                Box(
+                    Modifier.align(Alignment.Center).size(width = 122.dp, height = 52.dp)
+                        .clip(RoundedCornerShape(10.dp)).background(skeletonColor)
+                )
+                Box(
+                    Modifier.align(Alignment.BottomEnd).padding(end = 48.dp, bottom = 72.dp)
+                        .size(width = 112.dp, height = 46.dp)
+                        .clip(RoundedCornerShape(8.dp)).background(skeletonColor)
+                )
+                Box(
+                    Modifier.align(Alignment.BottomEnd).padding(end = 138.dp, bottom = 126.dp)
+                        .width(2.dp).height(68.dp).background(connectorColor)
+                )
+            }
         }
     }
 }

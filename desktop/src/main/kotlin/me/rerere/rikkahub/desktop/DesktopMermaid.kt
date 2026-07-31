@@ -47,6 +47,10 @@ internal object DesktopMermaidRenderer {
         if (key in cache) cache[key] else renderUncached(source, dark, useSystemBrowser, cliPath).also { cache[key] = it }
     }
 
+    fun cachedResult(source: String, dark: Boolean, useSystemBrowser: Boolean, cliPath: String): MermaidRenderResult? = synchronized(cache) {
+        cache[CacheKey(source, dark, useSystemBrowser, cliPath)]
+    }
+
     fun renderSvg(result: MermaidRenderResult): ByteArray? = synchronized(svgCache) {
         val key = CacheKey(result.source, result.dark, result.useSystemBrowser, result.cliPath)
         if (key in svgCache) svgCache[key] else renderSvgUncached(result, key).also { svgCache[key] = it }
