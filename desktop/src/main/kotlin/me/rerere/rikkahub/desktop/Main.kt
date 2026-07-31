@@ -2949,7 +2949,7 @@ private fun ChatPane(
                         state = listState,
                         modifier = Modifier.fillMaxSize().onPointerEvent(
                             PointerEventType.Scroll,
-                            PointerEventPass.Main
+                            PointerEventPass.Initial
                         ) { event ->
                             if (!preferences.enableSmoothScroll) return@onPointerEvent
                             if (event.changes.any { it.isConsumed }) return@onPointerEvent
