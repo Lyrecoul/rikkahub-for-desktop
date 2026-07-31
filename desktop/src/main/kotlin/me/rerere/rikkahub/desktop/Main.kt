@@ -3301,6 +3301,9 @@ private fun ChatPane(
                                 PointerEventPass.Initial
                             ) { event ->
                                 if (!preferences.enableSmoothScroll) return@onPointerEvent
+                                // The zoomable mermaid viewport owns wheel input while hovered;
+                                // otherwise its event is consumed before it can zoom.
+                                if (MermaidWheelInput.pointerOverViewport) return@onPointerEvent
                                 if (event.changes.any { it.isConsumed }) return@onPointerEvent
 
                                 val scrollDelta = event.changes.firstOrNull()?.scrollDelta?.y ?: return@onPointerEvent

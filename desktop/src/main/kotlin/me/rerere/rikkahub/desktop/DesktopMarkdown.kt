@@ -45,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -898,6 +899,15 @@ private fun MermaidModeButton(text: String, selected: Boolean, onClick: () -> Un
     }
 }
 
+/**
+ * Tracks whether the pointer currently hovers a zoomable mermaid viewport.
+ * Wheel input over the viewport belongs to the diagram (zoom), so the chat's
+ * smooth-scroll handler must ignore those events instead of consuming them first.
+ */
+internal object MermaidWheelInput {
+    var pointerOverViewport = false
+}
+
 @Composable
 @OptIn(ExperimentalComposeUiApi::class)
 private fun MermaidViewport(
@@ -914,9 +924,14 @@ private fun MermaidViewport(
         onTranslationChange(if (updatedScale > 1f || scale > 1f) translation + panChange else Offset.Zero)
         onScaleChange(updatedScale)
     }
+    DisposableEffect(Unit) {
+        onDispose { MermaidWheelInput.pointerOverViewport = false }
+    }
 
     Box(
         Modifier.width(width).height(height).clipToBounds()
+            .onPointerEvent(PointerEventType.Enter) { MermaidWheelInput.pointerOverViewport = true }
+            .onPointerEvent(PointerEventType.Exit) { MermaidWheelInput.pointerOverViewport = false }
             .onPointerEvent(PointerEventType.Scroll, PointerEventPass.Initial) { event ->
                 val delta = event.changes.firstOrNull()?.scrollDelta?.y ?: return@onPointerEvent
                 if (delta != 0f) {
