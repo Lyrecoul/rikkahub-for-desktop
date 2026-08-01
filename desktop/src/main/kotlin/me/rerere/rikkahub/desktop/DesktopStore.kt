@@ -10,7 +10,7 @@ import java.time.Instant
 
 internal class DesktopStore(
     private val dataFile: Path = defaultDataFile(),
-    private val secretStore: DesktopSecretStore = SecretToolStore()
+    private val secretStore: DesktopSecretStore = defaultDesktopSecretStore(dataFile)
 ) {
     private val json = Json {
         prettyPrint = true
@@ -244,12 +244,7 @@ internal class DesktopStore(
         private const val legacySearchSecretId = "search:brave-api-key"
         private const val CurrentSchemaVersion = 2
 
-        fun defaultDataFile(): Path {
-            val configHome = System.getenv("XDG_CONFIG_HOME")
-                ?.takeIf { it.isNotBlank() }
-                ?: Path.of(System.getProperty("user.home"), ".config").toString()
-            return Path.of(configHome, "rikkahub", "desktop.json")
-        }
+        fun defaultDataFile(): Path = DesktopPlatform.dataDirectory().resolve("desktop.json")
     }
 }
 

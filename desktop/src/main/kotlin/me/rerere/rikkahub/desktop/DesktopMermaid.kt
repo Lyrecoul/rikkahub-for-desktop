@@ -20,7 +20,9 @@ private val ChromiumExecutableCandidates = listOf(
     "/usr/bin/vivaldi"
 ).map(Path::of)
 
-private val MermaidCliNames = listOf("mmdc", "mermaid-cli")
+private val MermaidCliNames: List<String>
+    get() = if (DesktopPlatform.isWindows) listOf("mmdc.cmd", "mermaid-cli.cmd", "mmdc", "mermaid-cli")
+    else listOf("mmdc", "mermaid-cli")
 
 internal data class MermaidRenderResult(
     val pngBytes: ByteArray,
@@ -138,9 +140,9 @@ internal object DesktopMermaidRenderer {
 
     private fun findMermaidCli(configuredPath: String): Path? {
         configuredPath.trim().takeIf { it.isNotEmpty() }?.let { path ->
-            return runCatching { Path.of(path) }.getOrNull()?.takeIf(::isExecutable)
+            return runCatching { Path.of(path) }.getOrNull()?.takeIf(DesktopPlatform::isRunnableFile)
         }
-        return mermaidCliCandidates().firstOrNull(::isExecutable)
+        return mermaidCliCandidates().firstOrNull(DesktopPlatform::isRunnableFile)
     }
 
     private fun mermaidCliCandidates(): Sequence<Path> = sequence {
@@ -149,6 +151,12 @@ internal object DesktopMermaidRenderer {
             MermaidCliNames.forEach { name ->
                 yield(home.resolve(".npm-global/bin").resolve(name))
                 yield(home.resolve(".local/bin").resolve(name))
+                if (DesktopPlatform.isWindows) yield(home.resolve("AppData/Roaming/npm").resolve(name))
+            }
+        }
+        if (DesktopPlatform.isWindows) {
+            System.getenv("APPDATA")?.let { appData ->
+                MermaidCliNames.forEach { name -> yield(Path.of(appData, "npm", name)) }
             }
         }
         runCatching { System.getenv("NPM_CONFIG_PREFIX")?.let(Path::of) }.getOrNull()?.let { prefix ->
@@ -159,17 +167,29 @@ internal object DesktopMermaidRenderer {
                 MermaidCliNames.forEach { name -> yield(path.resolve(name)) }
             }
         }
-        listOf("/usr/local/bin", "/usr/bin", "/opt/homebrew/bin").forEach { directory ->
-            MermaidCliNames.forEach { name -> yield(Path.of(directory, name)) }
+        if (!DesktopPlatform.isWindows) {
+            listOf("/usr/local/bin", "/usr/bin", "/opt/homebrew/bin").forEach { directory ->
+                MermaidCliNames.forEach { name -> yield(Path.of(directory, name)) }
+            }
         }
     }
-
-    private fun isExecutable(path: Path): Boolean = Files.isRegularFile(path) && Files.isExecutable(path)
 
     private fun findChromiumExecutable(): Path? = sequence {
         runCatching { System.getenv("PUPPETEER_EXECUTABLE_PATH")?.let(Path::of) }
             .getOrNull()
             ?.let { path -> yield(path) }
-        yieldAll(ChromiumExecutableCandidates)
-    }.firstOrNull { Files.isRegularFile(it) && Files.isExecutable(it) }
+        if (DesktopPlatform.isWindows) {
+            listOfNotNull(System.getenv("PROGRAMFILES"), System.getenv("PROGRAMFILES(X86)"), System.getenv("LOCALAPPDATA"))
+                .forEach { root ->
+                    listOf(
+                        "Google/Chrome/Application/chrome.exe",
+                        "Microsoft/Edge/Application/msedge.exe",
+                        "BraveSoftware/Brave-Browser/Application/brave.exe",
+                        "Vivaldi/Application/vivaldi.exe"
+                    ).forEach { relative -> yield(Path.of(root, relative)) }
+                }
+        } else {
+            yieldAll(ChromiumExecutableCandidates)
+        }
+    }.firstOrNull(DesktopPlatform::isRunnableFile)
 }

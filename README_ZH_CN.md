@@ -1,7 +1,7 @@
 <div align="center">
   <img src="desktop/src/main/resources/icon.png" alt="RikkaHub" width="100" />
   <h1>RikkaHub</h1>
-  <p>原生 Linux 桌面 LLM 聊天客户端。</p>
+  <p>原生 Linux 与 Windows 桌面 LLM 聊天客户端。</p>
 
   简体中文 | [English](README.md)
 </div>
@@ -10,7 +10,7 @@
   <img src="docs/img/desktop.png" alt="RikkaHub 桌面版" width="450" />
 </div>
 
-RikkaHub 是一个以 Kotlin 和 Compose Desktop 构建的 Linux 原生聊天客户端。它可连接兼容 OpenAI API 的模型服务，让模型、对话、工具和个人偏好集中在一个桌面应用中管理。
+RikkaHub 是一个以 Kotlin 和 Compose Desktop 构建的 Linux 与 Windows 原生聊天客户端。它可连接兼容 OpenAI API 的模型服务，让模型、对话、工具和个人偏好集中在一个桌面应用中管理。
 
 ## 功能
 
@@ -33,11 +33,14 @@ RikkaHub 是一个以 Kotlin 和 Compose Desktop 构建的 Linux 原生聊天客
 
 ## 构建与打包
 
-开发构建和 Linux 原生发行包：
+开发构建和原生发行包：
 
 ```bash
-# 运行桌面应用
+# 运行桌面应用（Linux/macOS）
 ./gradlew :desktop:run
+
+# 运行桌面应用（Windows PowerShell）
+.\gradlew.bat :desktop:run
 
 # 生成当前平台的应用分发目录
 ./gradlew :desktop:createDistributable
@@ -47,13 +50,16 @@ RikkaHub 是一个以 Kotlin 和 Compose Desktop 构建的 Linux 原生聊天客
 
 # 构建并安装 Arch Linux 软件包
 cd packaging/arch && makepkg -si
+
+# 创建 Windows 安装程序（在 Windows 上运行）
+.\gradlew.bat :desktop:packageMsi
 ```
 
-Gradle 配置了 DEB 与 RPM 原生包目标；生成的产物位于 `desktop/build/compose/binaries/`。Arch 软件包构建脚本位于 `packaging/arch/`，并使用系统 Java 运行时。
+Gradle 配置了 DEB、RPM、EXE 与 MSI 原生包目标；Windows 安装包需在 Windows 上构建，生成的产物位于 `desktop/build/compose/binaries/`。Arch 软件包构建脚本位于 `packaging/arch/`，并使用系统 Java 运行时。
 
 ## 本地数据
 
-应用设置保存在 `$XDG_CONFIG_HOME/rikkahub/desktop.json`（默认路径为 `~/.config/rikkahub/desktop.json`），每个会话保存在同一目录下 `conversations/` 的独立文件中。可在设置中导出 JSON 备份；重置本地数据会永久删除本机的服务、助手、偏好与对话记录。
+Linux 上应用设置保存在 `$XDG_CONFIG_HOME/rikkahub/desktop.json`（默认路径为 `~/.config/rikkahub/desktop.json`），Windows 上保存在 `%APPDATA%\RikkaHub\desktop.json`；每个会话保存在同一目录下 `conversations/` 的独立文件中。可在设置中导出 JSON 备份；重置本地数据会永久删除本机的服务、助手、偏好与对话记录。Linux 使用 Secret Service 保存 API 密钥；Windows 使用仅当前 Windows 用户可解密的 DPAPI。
 
 ## 技术栈
 

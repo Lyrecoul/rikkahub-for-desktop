@@ -49,10 +49,10 @@ compose.desktop {
         mainClass = "me.rerere.rikkahub.desktop.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Deb, TargetFormat.Rpm)
+            targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Exe, TargetFormat.Msi)
             packageName = "rikkahub"
             packageVersion = project.version.toString()
-            description = "RikkaHub Linux desktop client"
+            description = "RikkaHub desktop LLM chat client"
             vendor = "RikkaHub"
             linux {
                 iconFile.set(project.file("src/main/resources/icon.png"))

@@ -315,7 +315,7 @@ internal class DesktopAgentRuntime(
         val directory = directoryPath.toFile()
         require(directory.isDirectory) { "cwd is not a directory" }
         val result = when (workspace.backend) {
-            DesktopAgentBackend.LOCAL -> runCommand(listOf("/bin/sh", "-lc", command), directory, 600_000)
+            DesktopAgentBackend.LOCAL -> runCommand(DesktopPlatform.localShellCommand(command), directory, 600_000)
             DesktopAgentBackend.DOCKER -> dockerShell(
                 workspace,
                 root,
@@ -377,7 +377,11 @@ internal class DesktopAgentRuntime(
         if (start.exitCode != 0 && !start.stderr.contains("already started", ignoreCase = true)) {
             requireDockerSuccess(start, "start Docker workspace")
         }
-        if (network) return dockerShellWithHostNetwork(name, root, cwd, command)
+        if (network) return if (DesktopPlatform.isWindows) {
+            dockerShellWithApprovedBridgeNetwork(name, root, cwd, command)
+        } else {
+            dockerShellWithHostNetwork(name, root, cwd, command)
+        }
         return runCommand(
             listOf("docker", "exec", "-w", "/workspace/$cwd", name, "/bin/sh", "-lc", command),
             null,
@@ -435,6 +439,42 @@ internal class DesktopAgentRuntime(
                         null,
                         30_000
                     ),
+                    "restore isolated Docker workspace"
+                )
+            }
+        }
+    }
+
+    private suspend fun dockerShellWithApprovedBridgeNetwork(
+        name: String,
+        root: Path,
+        cwd: String,
+        command: String
+    ): DesktopAgentCommandResult {
+        val snapshot = "$name-snapshot"
+        val networkName = "$name-network"
+        requireDockerSuccess(runCommand(listOf("docker", "commit", name, snapshot), null, 600_000), "snapshot Docker workspace")
+        requireDockerSuccess(runCommand(listOf("docker", "rm", "-f", name), null, 30_000), "prepare approved network session")
+        try {
+            ensureDockerNetwork(networkName, internal = false)
+            requireDockerSuccess(
+                runCommand(dockerCreateCommand(networkName, snapshot, networkName, root), null, 30_000),
+                "create approved network session"
+            )
+            requireDockerSuccess(runCommand(listOf("docker", "start", networkName), null, 30_000), "start approved network session")
+            val result = runCommand(
+                listOf("docker", "exec", "-w", "/workspace/$cwd", networkName, "/bin/sh", "-lc", command),
+                null,
+                600_000
+            )
+            requireDockerSuccess(runCommand(listOf("docker", "commit", networkName, snapshot), null, 600_000), "persist approved network session")
+            return result
+        } finally {
+            runCommand(listOf("docker", "rm", "-f", networkName), null, 30_000)
+            if (runCommand(listOf("docker", "container", "inspect", name), null, 10_000).exitCode != 0) {
+                ensureDockerNetwork(DesktopAgentIsolatedNetworkName, internal = true)
+                requireDockerSuccess(
+                    runCommand(dockerCreateCommand(name, snapshot, DesktopAgentIsolatedNetworkName, root), null, 30_000),
                     "restore isolated Docker workspace"
                 )
             }
@@ -539,11 +579,7 @@ internal class DesktopAgentRuntime(
     }
 }
 
-internal fun defaultDesktopSkillsRoot(): Path {
-    val configHome = System.getenv("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() }
-        ?: Path.of(System.getProperty("user.home"), ".config").toString()
-    return Path.of(configHome, "rikkahub", "skills")
-}
+internal fun defaultDesktopSkillsRoot(): Path = DesktopPlatform.dataDirectory().resolve("skills")
 
 internal fun agentToolDefinitions(config: DesktopAgentConfig?): List<JsonObject> {
     if (config == null) return emptyList()

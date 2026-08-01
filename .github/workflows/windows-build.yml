@@ -1,0 +1,38 @@
+name: Windows Desktop Build
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'desktop/**'
+      - 'gradle/**'
+      - '*.gradle.kts'
+      - '.github/workflows/windows-build.yml'
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'gradle/**'
+      - '*.gradle.kts'
+      - '.github/workflows/windows-build.yml'
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Build Windows installers
+        shell: pwsh
+        run: .\gradlew.bat :desktop:packageMsi :desktop:packageExe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rikkahub-windows-installers
+          path: |
+            desktop/build/compose/binaries/main/msi/**/*.msi
+            desktop/build/compose/binaries/main/exe/**/*.exe
+          if-no-files-found: error

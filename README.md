@@ -1,7 +1,7 @@
 <div align="center">
   <img src="desktop/src/main/resources/icon.png" alt="RikkaHub" width="100" />
   <h1>RikkaHub</h1>
-  <p>A native Linux desktop LLM chat client.</p>
+  <p>A native desktop LLM chat client for Linux and Windows.</p>
 
   [简体中文](README_ZH_CN.md) | English
 </div>
@@ -10,7 +10,7 @@
   <img src="docs/img/desktop.png" alt="RikkaHub desktop" width="450" />
 </div>
 
-RikkaHub is a native Linux chat client built with Kotlin and Compose Desktop. It connects to OpenAI-compatible model services and keeps models, conversations, tools, and personal preferences in one desktop application.
+RikkaHub is a native Linux and Windows chat client built with Kotlin and Compose Desktop. It connects to OpenAI-compatible model services and keeps models, conversations, tools, and personal preferences in one desktop application.
 
 ## Features
 
@@ -36,8 +36,11 @@ On first launch, open Settings and add a model provider. Enter an OpenAI-compati
 Development, native distribution, and test commands:
 
 ```bash
-# Run the desktop app
+# Run the desktop app (Linux/macOS)
 ./gradlew :desktop:run
+
+# Run the desktop app (Windows PowerShell)
+.\gradlew.bat :desktop:run
 
 # Create a distributable app for the current platform
 ./gradlew :desktop:createDistributable
@@ -47,13 +50,16 @@ Development, native distribution, and test commands:
 
 # Build and install the Arch Linux package
 cd packaging/arch && makepkg -si
+
+# Create a Windows installer (run on Windows)
+.\gradlew.bat :desktop:packageMsi
 ```
 
-Gradle is configured with DEB and RPM native package targets. Generated files are placed under `desktop/build/compose/binaries/`. The Arch package recipe lives in `packaging/arch/` and uses the system Java runtime.
+Gradle is configured with DEB, RPM, EXE, and MSI native package targets. Build Windows installers on Windows; generated files are placed under `desktop/build/compose/binaries/`. The Arch package recipe lives in `packaging/arch/` and uses the system Java runtime.
 
 ## Local Data
 
-Configuration is stored in `$XDG_CONFIG_HOME/rikkahub/desktop.json` (or `~/.config/rikkahub/desktop.json`), while each conversation is saved separately under `conversations/` in the same directory. Settings can export a JSON backup. Resetting local data permanently removes local providers, assistants, preferences, and conversations.
+Configuration is stored in `$XDG_CONFIG_HOME/rikkahub/desktop.json` (or `~/.config/rikkahub/desktop.json`) on Linux and `%APPDATA%\RikkaHub\desktop.json` on Windows, while each conversation is saved separately under `conversations/` in the same directory. Settings can export a JSON backup. Resetting local data permanently removes local providers, assistants, preferences, and conversations. Linux uses Secret Service for API keys; Windows encrypts them with DPAPI for the current Windows user.
 
 ## Technology
 
