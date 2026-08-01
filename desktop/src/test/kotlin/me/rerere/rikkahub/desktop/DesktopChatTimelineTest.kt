@@ -52,6 +52,74 @@ class DesktopChatTimelineTest {
     }
 
     @Test
+    fun cancellingUnresolvedToolCallsDropsAnEmptyToolCallingMessage() {
+        val call = DesktopToolCall("call_1", DesktopAskUserToolName, "{}")
+        val conversation = DesktopConversation(
+            messages = listOf(
+                ChatMessage("user", "help"),
+                ChatMessage("assistant", "", toolCalls = listOf(call))
+            )
+        )
+
+        val cleaned = conversation.cancelUnresolvedToolCalls()
+
+        assertEquals(listOf("help"), cleaned.messages.map { it.content })
+        assertEquals(listOf("user"), cleaned.messages.map { it.role })
+    }
+
+    @Test
+    fun cancellingUnresolvedToolCallsKeepsReasoningButStripsTheCalls() {
+        val call = DesktopToolCall("call_1", DesktopAskUserToolName, "{}")
+        val conversation = DesktopConversation(
+            messages = listOf(
+                ChatMessage("user", "help"),
+                ChatMessage("assistant", "", reasoning = "Need to clarify", toolCalls = listOf(call))
+            )
+        )
+
+        val cleaned = conversation.cancelUnresolvedToolCalls()
+
+        assertEquals(2, cleaned.messages.size)
+        val last = cleaned.messages.last()
+        assertEquals("assistant", last.role)
+        assertEquals("Need to clarify", last.reasoning)
+        assertTrue(last.toolCalls.isEmpty())
+    }
+
+    @Test
+    fun cancellingUnresolvedToolCallsKeepsTextButStripsTheCalls() {
+        val call = DesktopToolCall("call_1", DesktopAskUserToolName, "{}")
+        val conversation = DesktopConversation(
+            messages = listOf(
+                ChatMessage("user", "help"),
+                ChatMessage("assistant", "Let me ask you something", toolCalls = listOf(call))
+            )
+        )
+
+        val cleaned = conversation.cancelUnresolvedToolCalls()
+
+        val last = cleaned.messages.last()
+        assertEquals("Let me ask you something", last.content)
+        assertTrue(last.toolCalls.isEmpty())
+    }
+
+    @Test
+    fun cancellingUnresolvedToolCallsLeavesResolvedRoundsUntouched() {
+        val call = DesktopToolCall("call_1", "search")
+        val conversation = DesktopConversation(
+            messages = listOf(
+                ChatMessage("user", "help"),
+                ChatMessage("assistant", "", toolCalls = listOf(call)),
+                ChatMessage("tool", "result", toolCallId = call.id)
+            )
+        )
+
+        val cleaned = conversation.cancelUnresolvedToolCalls()
+
+        assertEquals(conversation.messages, cleaned.messages)
+    }
+
+    @Test
     fun textAndUserMessagesEndTheExecutionBoundary() {
         val call = DesktopToolCall("call_1", "search")
         val messages = listOf(

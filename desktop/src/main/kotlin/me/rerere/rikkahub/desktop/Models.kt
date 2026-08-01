@@ -808,6 +808,27 @@ internal fun List<ChatMessage>.takeRecentMessagesPreservingToolCalls(count: Int)
     return subList(startIndex, size)
 }
 
+/**
+ * Removes tool calls from the trailing assistant message when they were never answered by a
+ * tool result (for example an ask_user question that was still pending when generation was
+ * interrupted). Drops the message entirely when it carries no visible text or reasoning,
+ * otherwise keeps the text but clears the dangling calls so the conversation remains a valid
+ * provider context for later requests.
+ */
+internal fun DesktopConversation.cancelUnresolvedToolCalls(): DesktopConversation {
+    val messages = messages.toMutableList()
+    val last = messages.lastOrNull()
+    if (last?.role == "assistant" && last.toolCalls.isNotEmpty()) {
+        val cleaned = last.copy(toolCalls = emptyList())
+        if (cleaned.content.isBlank() && cleaned.reasoning.isBlank()) {
+            messages.removeAt(messages.lastIndex)
+        } else {
+            messages[messages.lastIndex] = cleaned
+        }
+    }
+    return copy(messages = messages, updatedAt = System.currentTimeMillis())
+}
+
 fun DesktopConversation.forkAtMessage(messageIndex: Int): DesktopConversation {
     val branchMessages = messages.take(messageIndex + 1)
     require(branchMessages.isNotEmpty()) { "Cannot fork an empty conversation" }

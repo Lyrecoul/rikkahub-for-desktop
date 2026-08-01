@@ -409,13 +409,31 @@ private fun RikkaHubDesktop(
     val suggestionJobs = remember { mutableStateMapOf<String, Job>() }
     val generationErrors = remember { mutableStateMapOf<String, String>() }
     var saveJob by remember { mutableStateOf<Job?>(null) }
-    val latestData by rememberUpdatedState(data)
     val scope = rememberCoroutineScope()
 
     DisposableEffect(store, mcpClient) {
         onDispose {
             saveJob?.cancel()
-            runCatching { store.save(latestData) }
+            // Forcibly interrupt in-flight generation. Pending tool calls (for example an
+            // ask_user question that is still waiting for an answer) are treated as cancelled
+            // by the user so the saved conversation never contains dangling tool calls.
+            val interruptedConversationIds = generationJobs.keys.toSet()
+            generationJobs.values.forEach { it.cancel() }
+            generationJobs.clear()
+            pendingAskUserAnswers.values.forEach { it.cancel() }
+            pendingAskUserAnswers.clear()
+            val dataToSave = if (interruptedConversationIds.isEmpty()) {
+                data
+            } else {
+                data.copy(conversations = data.conversations.map { conversation ->
+                    if (conversation.id in interruptedConversationIds) {
+                        conversation.cancelUnresolvedToolCalls()
+                    } else {
+                        conversation
+                    }
+                })
+            }
+            runCatching { store.save(dataToSave) }
             mcpClient.close()
         }
     }
@@ -1011,7 +1029,28 @@ private fun RikkaHubDesktop(
             } catch (_: CancellationException) {
                 updateConversation(conversationId) { conversation ->
                     val last = conversation.messages.lastOrNull()
-                    if (last?.role == "assistant" && last.content.isEmpty() && last.reasoning.isEmpty()) {
+                    if (last?.role == "assistant" && last.toolCalls.isNotEmpty()) {
+                        // The model produced tool calls (e.g. ask_user) but the user cancelled
+                        // before any result was produced. Treat the pending calls as cancelled by
+                        // the user: strip them so a pending question form disappears and the
+                        // conversation stays a valid provider context.
+                        val cleaned = last.copy(toolCalls = emptyList())
+                        if (cleaned.content.isBlank() && cleaned.reasoning.isBlank()) {
+                            conversation.copy(
+                                messages = if (alternativeTarget == null) {
+                                    conversation.messages.dropLast(1)
+                                } else {
+                                    conversation.messages.dropLast(1) + alternativeTarget
+                                }
+                            )
+                        } else {
+                            conversation.copy(
+                                messages = conversation.messages.dropLast(1) +
+                                    generationAssistant.transformGeneratedMessage(cleaned.completeReasoningDuration())
+                                        .completeAlternative()
+                            )
+                        }
+                    } else if (last?.role == "assistant" && last.content.isEmpty() && last.reasoning.isEmpty()) {
                         conversation.copy(
                             messages = if (alternativeTarget == null) {
                                 conversation.messages.dropLast(1)
