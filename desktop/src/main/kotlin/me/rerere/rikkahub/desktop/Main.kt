@@ -22,6 +22,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.scrollBy
@@ -104,6 +105,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.DragData
+import androidx.compose.ui.draganddrop.dragData
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
@@ -644,6 +648,29 @@ private fun RikkaHubDesktop(
             desktopText(data.preferences.language, "file.choose_attachments"),
             multiple = true
         )?.map(::loadDesktopAttachment)
+    }
+
+    fun addAttachments(conversationId: String, files: List<File>) {
+        if (files.isEmpty()) return
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { files.map(::loadDesktopAttachment) }
+            }.fold(
+                onSuccess = { attachments ->
+                    pendingAttachments = (pendingAttachments + attachments).distinctBy { it.name to it.data }
+                    updateConversation(conversationId) { conversation ->
+                        conversation.copy(
+                            draftAttachments = pendingAttachments,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    generationErrors[conversationId] = error.message
+                        ?: desktopText(data.preferences.language, "runtime.add_attachment_failed")
+                }
+            )
+        }
     }
 
     fun memoryToolHandler(assistantId: String) = DesktopMemoryToolHandler(
@@ -1560,6 +1587,7 @@ private fun RikkaHubDesktop(
                                 },
                                 pendingAttachments = pendingAttachments,
                                 onAddAttachments = { attachmentPickerOpen = true },
+                                onDropAttachments = { files -> addAttachments(selected.id, files) },
                                 onRemoveAttachment = { attachment ->
                                     pendingAttachments = pendingAttachments.filterNot { it == attachment }
                                     updateConversation(selected.id) { conversation ->
@@ -1872,21 +1900,7 @@ private fun RikkaHubDesktop(
                 onDismiss = { attachmentPickerOpen = false },
                 onSelect = { files ->
                     attachmentPickerOpen = false
-                    runCatching { files.map(::loadDesktopAttachment) }.fold(
-                        onSuccess = { attachments ->
-                            pendingAttachments = (pendingAttachments + attachments).distinctBy { it.name to it.data }
-                            updateConversation(selected.id) { conversation ->
-                                conversation.copy(
-                                    draftAttachments = pendingAttachments,
-                                    updatedAt = System.currentTimeMillis()
-                                )
-                            }
-                        },
-                        onFailure = { error ->
-                            generationErrors[selected.id] = error.message
-                                ?: desktopText(data.preferences.language, "runtime.add_attachment_failed")
-                        }
-                    )
+                    addAttachments(selected.id, files)
                 }
             )
         }
@@ -3029,6 +3043,7 @@ private fun ChatPane(
     onEditSystemPrompt: () -> Unit,
     onPromptChange: (String) -> Unit,
     onAddAttachments: () -> Unit,
+    onDropAttachments: (List<File>) -> Unit,
     onRemoveAttachment: (DesktopAttachment) -> Unit,
     onDismissError: () -> Unit,
     onCancel: () -> Unit,
@@ -3043,7 +3058,32 @@ private fun ChatPane(
 ) {
     var conversationMenuOpen by remember { mutableStateOf(false) }
     var folderMenuOpen by remember { mutableStateOf(false) }
+    var filesDraggedOver by remember { mutableStateOf(false) }
+    val latestOnDropAttachments by rememberUpdatedState(onDropAttachments)
+    val attachmentDropTarget = remember {
+        object : DragAndDropTarget {
+            override fun onDrop(event: androidx.compose.ui.draganddrop.DragAndDropEvent): Boolean {
+                val files = (event.dragData() as? DragData.FilesList)
+                    ?.readFiles()
+                    ?.mapNotNull { path -> runCatching { File(URI(path)) }.getOrNull() }
+                    .orEmpty()
+                filesDraggedOver = false
+                if (files.isEmpty()) return false
+                latestOnDropAttachments(files)
+                return true
+            }
+
+            override fun onEntered(event: androidx.compose.ui.draganddrop.DragAndDropEvent) {
+                filesDraggedOver = true
+            }
+
+            override fun onEnded(event: androidx.compose.ui.draganddrop.DragAndDropEvent) {
+                filesDraggedOver = false
+            }
+        }
+    }
     val language = preferences.language
+    val attachmentDropColor = MaterialTheme.colorScheme.primaryContainer
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val hazeState = rememberHazeState()
@@ -3118,7 +3158,12 @@ private fun ChatPane(
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier.fillMaxSize().dragAndDropTarget(
+            shouldStartDragAndDrop = { event -> event.dragData() is DragData.FilesList },
+            target = attachmentDropTarget
+        )
+    ) {
         Column(Modifier.fillMaxSize()) {
             Row(
                 Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 14.dp),
@@ -3560,6 +3605,34 @@ private fun ChatPane(
                         )
                         TextButton(onClick = onDismissError) { Text(desktopText(language, "chat.close")) }
                     }
+                }
+            }
+        }
+        AnimatedVisibility(
+            visible = filesDraggedOver,
+            modifier = Modifier.fillMaxSize(),
+            enter = fadeIn(tween(160)),
+            exit = fadeOut(tween(180))
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize().hazeEffect(hazeState) {
+                    blurEffect {
+                        blurRadius = 28.dp
+                        noiseFactor = 0.03f
+                        backgroundColor = attachmentDropColor.copy(alpha = 0.16f)
+                        colorEffects = listOf(HazeColorEffect.tint(attachmentDropColor.copy(alpha = 0.42f)))
+                        fallbackTint = HazeColorEffect.tint(attachmentDropColor.copy(alpha = 0.78f))
+                    }
+                },
+                color = Color.Transparent
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Lucide.Upload,
+                        desktopText(language, "composer.add_attachment"),
+                        Modifier.size(42.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             }
         }
