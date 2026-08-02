@@ -31,8 +31,11 @@ jobs:
         run: .\gradlew.bat :desktop:packageMsi :desktop:packageExe
       - uses: actions/upload-artifact@v4
         with:
-          name: rikkahub-windows-installers
-          path: |
-            desktop/build/compose/binaries/main/msi/**/*.msi
-            desktop/build/compose/binaries/main/exe/**/*.exe
+          name: rikkahub-windows-msi
+          path: desktop/build/compose/binaries/main/msi/**/*.msi
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rikkahub-windows-exe
+          path: desktop/build/compose/binaries/main/exe/**/*.exe
           if-no-files-found: error
