@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.desktop
 
+import com.sun.jna.platform.win32.Crypt32Util
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -52,14 +53,17 @@ internal class SecretToolStore : DesktopSecretStore {
 
 /** Windows DPAPI adapter. Ciphertext is scoped to the current Windows user. */
 internal class WindowsDpapiSecretStore(private val file: Path) : DesktopSecretStore {
+    @Synchronized
     override fun read(id: String): String? = load()[id]?.let(::unprotect)
 
+    @Synchronized
     override fun write(id: String, value: String): Boolean = runCatching {
         val encrypted = protect(value) ?: return false
         save(load() + (id to encrypted))
         true
     }.getOrDefault(false)
 
+    @Synchronized
     override fun delete(id: String): Boolean = runCatching {
         val entries = load()
         if (id in entries) save(entries - id)
@@ -89,26 +93,14 @@ internal class WindowsDpapiSecretStore(private val file: Path) : DesktopSecretSt
         }
     }
 
-    private fun protect(value: String): String? = runPowerShell(
-        "[Console]::Write([Convert]::ToBase64String([Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes([Console]::In.ReadToEnd()), \$null, [Security.Cryptography.DataProtectionScope]::CurrentUser)))",
-        value
-    )
+    private fun protect(value: String): String? = runCatching {
+        Crypt32Util.cryptProtectData(value.toByteArray(StandardCharsets.UTF_8))
+            .let(Base64.getEncoder()::encodeToString)
+    }.getOrNull()
 
-    private fun unprotect(value: String): String? = runPowerShell(
-        "[Console]::Write([Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String([Console]::In.ReadToEnd()), \$null, [Security.Cryptography.DataProtectionScope]::CurrentUser)))",
-        value
-    )
-
-    private fun runPowerShell(script: String, input: String): String? = runCatching {
-        val process = ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
-            .redirectErrorStream(true)
-            .start()
-        process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { it.write(input) }
-        if (!process.waitFor(2, TimeUnit.SECONDS) || process.exitValue() != 0) {
-            process.destroyForcibly()
-            null
-        } else {
-            process.inputStream.bufferedReader(StandardCharsets.UTF_8).readText()
-        }
+    private fun unprotect(value: String): String? = runCatching {
+        Base64.getDecoder().decode(value)
+            .let(Crypt32Util::cryptUnprotectData)
+            .toString(StandardCharsets.UTF_8)
     }.getOrNull()
 }

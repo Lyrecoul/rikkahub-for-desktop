@@ -38,6 +38,7 @@ dependencies {
     implementation(libs.haze.blur)
     implementation(libs.jetbrains.markdown)
     implementation(libs.pebble)
+    implementation(libs.jna.platform)
     implementation("io.github.darkokoa:pangu-jvm:0.2.0")
     implementation("org.scilab.forge:jlatexmath:1.0.7")
     implementation("org.apache.pdfbox:pdfbox:3.0.3")
@@ -57,6 +58,12 @@ compose.desktop {
             linux {
                 iconFile.set(project.file("src/main/resources/icon.png"))
                 menuGroup = "Network"
+            }
+            windows {
+                shortcut = true
+                menu = true
+                menuGroup = "RikkaHub"
+                upgradeUuid = "4d59140b-31df-49e8-a119-281b19b07cf6"
             }
         }
     }
