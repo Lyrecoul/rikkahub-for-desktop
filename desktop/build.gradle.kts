@@ -51,7 +51,11 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Exe, TargetFormat.Msi)
-            packageName = "rikkahub"
+            packageName = if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+                "RikkaHub"
+            } else {
+                "rikkahub"
+            }
             packageVersion = project.version.toString()
             description = "RikkaHub desktop LLM chat client"
             vendor = "RikkaHub"
@@ -60,6 +64,7 @@ compose.desktop {
                 menuGroup = "Network"
             }
             windows {
+                iconFile.set(project.file("src/main/resources/icon.ico"))
                 shortcut = true
                 menu = true
                 menuGroup = "RikkaHub"
