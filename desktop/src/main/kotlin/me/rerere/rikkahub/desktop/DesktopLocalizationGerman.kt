@@ -360,6 +360,8 @@ internal val GermanDesktopTranslations = mapOf(
     "assistant.save" to "Assistenten speichern",
     "provider.title_model" to "Titelmodell",
     "provider.title_model_help" to "Leer lassen, um das Chat-Modell zu verwenden",
+    "provider.suggestion_model" to "Modell fuer Antwortvorschlaege",
+    "provider.suggestion_model_help" to "Leer lassen, um das Chat-Modell zu verwenden; Vorschlaege deaktivieren das Reasoning",
     "provider.title_prompt" to "Titel-Prompt",
     "provider.title_prompt_help" to "Unterstützt die Platzhalter {locale} und {content}",
     "provider.token_usage" to "Token-Nutzung",

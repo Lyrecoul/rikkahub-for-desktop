@@ -365,6 +365,8 @@ internal val EnglishDesktopTranslations = mapOf(
     "assistant.save" to "Save assistant",
     "provider.title_model" to "Title model",
     "provider.title_model_help" to "Leave empty to use the chat model",
+    "provider.suggestion_model" to "Reply suggestion model",
+    "provider.suggestion_model_help" to "Leave empty to use the chat model; reasoning is disabled for suggestions",
     "provider.title_prompt" to "Title prompt",
     "provider.title_prompt_help" to "Supports the {locale} and {content} placeholders",
     "provider.token_usage" to "Token usage",

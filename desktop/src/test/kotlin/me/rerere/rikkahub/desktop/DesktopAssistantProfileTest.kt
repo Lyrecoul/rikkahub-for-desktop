@@ -118,6 +118,35 @@ class DesktopAssistantProfileTest {
     }
 
     @Test
+    fun replySuggestionsUseDedicatedModelWithoutReasoningOrChatTools() {
+        val conversation = DesktopConversation(assistantId = secondAssistant.id)
+        val suggestionConfig = data(conversation).copy(
+            providers = listOf(
+                secondProvider.copy(
+                    config = secondProvider.config.copy(
+                        suggestionModel = "suggestion-model",
+                        reasoningEffort = "high",
+                        localTools = setOf(DesktopLocalTool.CURRENT_TIME),
+                        customBodies = listOf(
+                            DesktopCustomBody("model", "\"overridden-model\""),
+                            DesktopCustomBody("max_tokens", "1"),
+                            DesktopCustomBody("reasoning_effort", "\"high\"")
+                        )
+                    )
+                )
+            ),
+            assistants = listOf(secondAssistant)
+        ).suggestionGenerationConfig(conversation)
+
+        assertEquals("suggestion-model", suggestionConfig.model)
+        assertEquals("", suggestionConfig.reasoningEffort)
+        assertEquals(256, suggestionConfig.maxTokens)
+        assertEquals(false, suggestionConfig.streamOutput)
+        assertEquals(emptySet(), suggestionConfig.localTools)
+        assertEquals(emptyList(), suggestionConfig.customBodies)
+    }
+
+    @Test
     fun backgroundRequestsNeverExposeChatToolsOrTransportOverrides() {
         val config = DesktopConfig(
             systemPrompt = "chat prompt",
@@ -129,6 +158,8 @@ class DesktopAssistantProfileTest {
             customBodies = listOf(
                 DesktopCustomBody("tools", "[]"),
                 DesktopCustomBody("stream", "true"),
+                DesktopCustomBody("max_tokens", "1"),
+                DesktopCustomBody("reasoning_effort", "\"high\""),
                 DesktopCustomBody("response_format", "{\"type\":\"text\"}")
             )
         )
@@ -142,7 +173,10 @@ class DesktopAssistantProfileTest {
         assertEquals(false, background.memoryEnabled)
         assertEquals(emptyList(), background.mcpServers)
         assertEquals(320, background.maxTokens)
-        assertEquals(listOf("response_format"), background.customBodies.map { it.key })
+        assertEquals(
+            listOf("max_tokens", "reasoning_effort", "response_format"),
+            background.customBodies.map { it.key }
+        )
     }
 
     @Test

@@ -360,6 +360,8 @@ internal val JapaneseDesktopTranslations = mapOf(
     "assistant.save" to "アシスタントを保存",
     "provider.title_model" to "タイトルモデル",
     "provider.title_model_help" to "空欄の場合はチャットモデルを使用",
+    "provider.suggestion_model" to "返信候補モデル",
+    "provider.suggestion_model_help" to "空欄の場合はチャットモデルを使用。返信候補では推論を無効化します",
     "provider.title_prompt" to "タイトルプロンプト",
     "provider.title_prompt_help" to "{locale} と {content} プレースホルダーをサポート",
     "provider.token_usage" to "トークン使用量",

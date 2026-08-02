@@ -738,7 +738,7 @@ private fun RikkaHubDesktop(
         if (suggestionJobs.containsKey(conversationId)) return
         val conversation = data.conversations.firstOrNull { it.id == conversationId } ?: return
         if (conversation.messages.isEmpty()) return
-        val config = data.configForConversation(conversation).backgroundRequestConfig(maxTokens = 256)
+        val config = data.suggestionGenerationConfig(conversation)
         val content = conversation.messages.takeLast(6).joinToString("\n\n") { message ->
             "${message.role.uppercase()}: ${message.content.take(700)}"
         }

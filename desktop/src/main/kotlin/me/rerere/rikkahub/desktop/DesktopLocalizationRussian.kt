@@ -360,6 +360,8 @@ internal val RussianDesktopTranslations = mapOf(
     "assistant.save" to "Сохранить ассистента",
     "provider.title_model" to "Модель заголовка",
     "provider.title_model_help" to "Оставьте пустым, чтобы использовать модель чата",
+    "provider.suggestion_model" to "Модель предложений ответа",
+    "provider.suggestion_model_help" to "Оставьте пустым, чтобы использовать модель чата; для предложений рассуждение отключено",
     "provider.title_prompt" to "Промпт заголовка",
     "provider.title_prompt_help" to "Поддерживает заполнители {locale} и {content}",
     "provider.token_usage" to "Использование токенов",

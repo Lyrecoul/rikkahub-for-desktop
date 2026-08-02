@@ -360,6 +360,8 @@ internal val FrenchDesktopTranslations = mapOf(
     "assistant.save" to "Enregistrer l'assistant",
     "provider.title_model" to "Modèle de titre",
     "provider.title_model_help" to "Laissez vide pour utiliser le modèle de chat",
+    "provider.suggestion_model" to "Modèle de suggestions de réponse",
+    "provider.suggestion_model_help" to "Laissez vide pour utiliser le modèle de chat ; le raisonnement est désactivé pour les suggestions",
     "provider.title_prompt" to "Invite de titre",
     "provider.title_prompt_help" to "Prend en charge les espaces réservés {locale} et {content}",
     "provider.token_usage" to "Utilisation des jetons",

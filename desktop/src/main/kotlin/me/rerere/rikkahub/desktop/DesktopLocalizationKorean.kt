@@ -360,6 +360,8 @@ internal val KoreanDesktopTranslations = mapOf(
     "assistant.save" to "어시스턴트 저장",
     "provider.title_model" to "제목 모델",
     "provider.title_model_help" to "비워 두면 채팅 모델 사용",
+    "provider.suggestion_model" to "답변 제안 모델",
+    "provider.suggestion_model_help" to "비워 두면 채팅 모델 사용. 제안 생성에서는 추론을 사용하지 않음",
     "provider.title_prompt" to "제목 프롬프트",
     "provider.title_prompt_help" to "{locale} 및 {content} 자리 표시자 지원",
     "provider.token_usage" to "토큰 사용량",

@@ -360,6 +360,8 @@ internal val PortugueseBrazilDesktopTranslations = mapOf(
     "assistant.save" to "Salvar assistente",
     "provider.title_model" to "Modelo de título",
     "provider.title_model_help" to "Deixe em branco para usar o modelo de chat",
+    "provider.suggestion_model" to "Modelo de sugestões de resposta",
+    "provider.suggestion_model_help" to "Deixe em branco para usar o modelo de chat; o raciocínio é desativado para sugestões",
     "provider.title_prompt" to "Prompt de título",
     "provider.title_prompt_help" to "Suporta os marcadores {locale} e {content}",
     "provider.token_usage" to "Uso de tokens",

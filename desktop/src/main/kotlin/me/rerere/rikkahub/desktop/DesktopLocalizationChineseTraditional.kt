@@ -360,6 +360,8 @@ internal val TraditionalChineseDesktopTranslations = mapOf(
     "assistant.save" to "儲存助手",
     "provider.title_model" to "標題模型",
     "provider.title_model_help" to "留空時使用聊天模型",
+    "provider.suggestion_model" to "回覆建議模型",
+    "provider.suggestion_model_help" to "留空時使用聊天模型；建議產生會關閉推理",
     "provider.title_prompt" to "標題提示詞",
     "provider.title_prompt_help" to "支援 {locale} 與 {content} 佔位符",
     "provider.token_usage" to "Token 用量",

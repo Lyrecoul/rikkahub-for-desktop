@@ -360,6 +360,8 @@ internal val SpanishDesktopTranslations = mapOf(
     "assistant.save" to "Guardar asistente",
     "provider.title_model" to "Modelo de título",
     "provider.title_model_help" to "Déjalo vacío para usar el modelo de chat",
+    "provider.suggestion_model" to "Modelo de sugerencias de respuesta",
+    "provider.suggestion_model_help" to "Déjalo vacío para usar el modelo de chat; el razonamiento se desactiva para las sugerencias",
     "provider.title_prompt" to "Prompt de título",
     "provider.title_prompt_help" to "Admite los marcadores {locale} y {content}",
     "provider.token_usage" to "Uso de tokens",

@@ -2596,6 +2596,25 @@ internal fun DesktopSettingsPane(
                                         singleLine = true
                                     )
                                     OutlinedTextField(
+                                        draftProvider.config.suggestionModel,
+                                        { value ->
+                                            draftProvider = draftProvider.copy(
+                                                config = draftProvider.config.copy(suggestionModel = value)
+                                            )
+                                        },
+                                        Modifier.fillMaxWidth(),
+                                        label = { Text(desktopText(preferences.language, "provider.suggestion_model")) },
+                                        supportingText = {
+                                            Text(
+                                                desktopText(
+                                                    preferences.language,
+                                                    "provider.suggestion_model_help"
+                                                )
+                                            )
+                                        },
+                                        singleLine = true
+                                    )
+                                    OutlinedTextField(
                                         draftProvider.config.titlePrompt,
                                         { value ->
                                             draftProvider = draftProvider.copy(

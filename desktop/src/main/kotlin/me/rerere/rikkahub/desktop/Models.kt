@@ -26,6 +26,7 @@ data class DesktopConfig(
     val apiKey: String = "",
     val model: String = "gpt-4.1-mini",
     val titleModel: String = "",
+    val suggestionModel: String = "",
     val titlePrompt: String = DefaultDesktopTitlePrompt,
     val systemPrompt: String = "You are a helpful assistant.",
     val temperature: Double = 1.0,
@@ -1016,6 +1017,18 @@ internal fun DesktopData.titleGenerationConfig(conversation: DesktopConversation
         temperature = 0.3,
         reasoningEffort = "",
         maxTokens = 0
+    )
+}
+
+/** Background reply-suggestion requests use a lightweight model configuration without reasoning. */
+internal fun DesktopData.suggestionGenerationConfig(conversation: DesktopConversation): DesktopConfig {
+    val config = configForConversation(conversation)
+    return config.backgroundRequestConfig(maxTokens = 256).copy(
+        model = config.suggestionModel.ifBlank { config.model },
+        reasoningEffort = "",
+        customBodies = config.customBodies.filterNot { body ->
+            body.key in setOf("model", "max_tokens", "reasoning_effort")
+        }
     )
 }
 
