@@ -30,6 +30,44 @@ class ConversationExecutionTest {
     }
 
     @Test
+    fun rejectsMissingSelectedMcpServerBeforeStartingExecution() = runBlocking {
+        val assistant = DesktopAssistantProfile(id = "assistant", mcpServerIds = setOf("missing"))
+        val conversation = DesktopConversation(
+            id = "conversation",
+            assistantId = assistant.id,
+            messages = listOf(ChatMessage("user", "Search"))
+        )
+        var data = DesktopData(
+            assistants = listOf(assistant),
+            selectedAssistantId = assistant.id,
+            conversations = listOf(conversation),
+            selectedConversationId = conversation.id
+        )
+        val errors = mutableListOf<String>()
+        val execution = ConversationExecution(
+            adapter = object : ConversationExecutionAdapter {
+                override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> =
+                    error("The model request must not start")
+
+                override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = error("MCP must not synchronize")
+                override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = emptyList()
+                override suspend fun executeToolCalls(
+                    config: DesktopConfig,
+                    calls: List<DesktopToolCall>
+                ): List<ChatMessage> = emptyList()
+            },
+            currentData = { data },
+            updateData = { data = it },
+            reportError = { _, message -> errors += message }
+        )
+
+        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
+
+        assertTrue(!result.completed)
+        assertEquals(desktopText(data.preferences.language, "runtime.mcp_configuration_invalid"), errors.single())
+    }
+
+    @Test
     fun rejectsUnsupportedAttachmentsBeforeCreatingAssistantMessage() = runBlocking {
         val conversation = DesktopConversation(
             id = "conversation",
