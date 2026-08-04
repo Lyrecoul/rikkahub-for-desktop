@@ -793,370 +793,69 @@ private fun RikkaHubDesktop(
         alternativeTarget: ChatMessage? = null
     ) {
         if (generationJobs.containsKey(conversationId)) return
-        val generationConversation = data.conversations.firstOrNull { it.id == conversationId } ?: return
-        val generationAssistant = data.assistantFor(generationConversation)
-        val selectedMcpServerIds = generationAssistant.mcpServerIds
-        val selectedMcpServers = data.mcpServers.filter { server ->
-            server.enabled && server.id in selectedMcpServerIds
-        }
-        val missingMcpServerIds = selectedMcpServerIds - data.mcpServers.map { it.id }.toSet()
-        if (missingMcpServerIds.isNotEmpty()) {
-            generationErrors[conversationId] =
-                desktopText(data.preferences.language, "runtime.mcp_configuration_invalid")
-            return
-        }
-        val serversNeedingSync = selectedMcpServers.filterNot(mcpClient::toolsAreCurrent)
-        if (serversNeedingSync.isNotEmpty()) {
-            generationErrors.remove(conversationId)
-            val syncJob = scope.launch {
-                var handedOffToGeneration = false
-                try {
-                    val toolsByServerId = serversNeedingSync.map { server ->
-                        server.id to mcpClient.syncTools(server).also { tools ->
-                            check(tools.isNotEmpty()) {
-                                desktopText(data.preferences.language, "runtime.mcp_no_tools").replace(
-                                    "%s",
-                                    server.name
-                                )
+        val execution = ConversationExecution(
+            adapter = DesktopConversationExecutionAdapter(client, mcpClient) { generationConfig, toolCalls ->
+                client.executeToolCalls(
+                    generationConfig,
+                    toolCalls,
+                    memoryToolHandler(data.assistantFor(
+                        data.conversations.first { it.id == conversationId }
+                    ).id),
+                    mcpClient,
+                    askUserHandler = { call ->
+                        val answer = CompletableDeferred<String>()
+                        pendingAskUserAnswers[call.id] = answer
+                        try {
+                            answer.await()
+                        } finally {
+                            pendingAskUserAnswers.remove(call.id, answer)
+                        }
+                    },
+                    agentRuntime = agentRuntime,
+                    approvalHandler = { call, request ->
+                        withContext(Dispatchers.Main) {
+                            if (rememberedAgentApprovals[conversationId].orEmpty().approves(request)) {
+                                return@withContext true
                             }
-                        }
-                    }.toMap()
-                    update(data.copy(mcpServers = data.mcpServers.map { server ->
-                        toolsByServerId[server.id]?.let(server::withSyncedTools) ?: server
-                    }))
-                    generationJobs.remove(conversationId)
-                    handedOffToGeneration = true
-                    startGeneration(conversationId, requestMessages, title, alternativeTarget)
-                } catch (error: Throwable) {
-                    generationErrors[conversationId] = desktopText(data.preferences.language, "runtime.mcp_sync_failed")
-                        .replace("%s", error.userFacingMessage())
-                } finally {
-                    if (!handedOffToGeneration) generationJobs.remove(conversationId)
-                }
-            }
-            generationJobs[conversationId] = syncJob
-            return
-        }
-        val requestAssistant = if (generationConversation.usesPromptInjections(generationAssistant)) {
-            generationAssistant
-        } else {
-            generationAssistant.copy(promptInjections = emptyList())
-        }
-        val baseGenerationConfig = data.configForConversation(generationConversation)
-        val injected = requestAssistant.injectPromptMessages(
-            requestAssistant.limitContext(requestMessages)
-        )
-        val generationConfig = baseGenerationConfig.copy(
-            systemPrompt = (injected.systemPrefix + baseGenerationConfig.systemPrompt + injected.systemSuffix)
-                .filter { it.isNotBlank() }
-                .joinToString("\n\n")
-        )
-        generationConfig.validateAttachments(injected.messages).takeIf { it.isNotEmpty() }?.let { issues ->
-            generationErrors[conversationId] = issues.toUserMessage()
-            return
-        }
-        val generationMessages = runCatching {
-            requestAssistant.renderMessageTemplate(
-                requestAssistant.transformRequestMessages(
-                    injected.messages
-                )
-            )
-        }.getOrElse { error ->
-            generationErrors[conversationId] =
-                error.message ?: desktopText(data.preferences.language, "runtime.invalid_message_template")
-            return
-        }
-        generationErrors.remove(conversationId)
-        updateConversation(conversationId) { conversation ->
-            conversation.prepareGeneration(
-                requestMessages = requestMessages,
-                alternativeTarget = alternativeTarget,
-                title = title,
-                modelId = generationConfig.model
-            )
-        }
-
-        val job = scope.launch(start = CoroutineStart.LAZY) {
-            var completed = false
-            try {
-                var request = generationMessages
-                var toolRounds = 0
-                while (true) {
-                    val pendingContent = StringBuilder()
-                    val pendingReasoning = StringBuilder()
-                    val pendingReasoningSignature = StringBuilder()
-                    val pendingCitations = mutableListOf<DesktopCitation>()
-                    val pendingAttachments = mutableListOf<DesktopAttachment>()
-                    val pendingToolCallDeltas = mutableListOf<DesktopToolCallDelta>()
-                    var pendingModelId: String? = null
-                    var pendingPromptTokens: Int? = null
-                    var pendingCompletionTokens: Int? = null
-                    var pendingCachedTokens: Int? = null
-                    var lastUiUpdateAt = 0L
-                    var accumulatedOutputLength = 0
-
-                    fun flushPendingDelta() {
-                        if (
-                            pendingContent.isEmpty() && pendingReasoning.isEmpty() &&
-                            pendingReasoningSignature.isEmpty() && pendingModelId == null &&
-                            pendingPromptTokens == null && pendingCompletionTokens == null && pendingCachedTokens == null &&
-                            pendingCitations.isEmpty() && pendingAttachments.isEmpty() && pendingToolCallDeltas.isEmpty()
-                        ) return
-                        val content = pendingContent.toString()
-                        val reasoning = pendingReasoning.toString()
-                        val reasoningSignature = pendingReasoningSignature.toString()
-                        val citations = pendingCitations.toList()
-                        val attachments = pendingAttachments.toList()
-                        val toolCallDeltas = pendingToolCallDeltas.toList()
-                        val modelId = pendingModelId
-                        val promptTokens = pendingPromptTokens
-                        val completionTokens = pendingCompletionTokens
-                        val cachedTokens = pendingCachedTokens
-                        pendingContent.clear()
-                        pendingReasoning.clear()
-                        pendingReasoningSignature.clear()
-                        pendingCitations.clear()
-                        pendingAttachments.clear()
-                        pendingToolCallDeltas.clear()
-                        pendingModelId = null
-                        pendingPromptTokens = null
-                        pendingCompletionTokens = null
-                        pendingCachedTokens = null
-                        updateConversation(conversationId) { conversation ->
-                            val messages = conversation.messages.toMutableList()
-                            val last = messages.lastOrNull()
-                            if (last?.role == "assistant") {
-                                val receivedAt = System.currentTimeMillis()
-                                val reasoningStartedAt = last.reasoningStartedAt
-                                    ?: reasoning.takeIf { it.isNotBlank() }?.let { receivedAt }
-                                messages[messages.lastIndex] = last.copy(
-                                    content = last.content + content,
-                                    reasoning = last.reasoning + reasoning,
-                                    reasoningSignature = last.reasoningSignature + reasoningSignature,
-                                    reasoningStartedAt = reasoningStartedAt,
-                                    reasoningDurationMillis = if (reasoning.isNotBlank() && reasoningStartedAt != null) {
-                                        (receivedAt - reasoningStartedAt).coerceAtLeast(0)
-                                    } else {
-                                        last.reasoningDurationMillis
-                                    },
-                                    modelId = modelId ?: last.modelId,
-                                    promptTokens = promptTokens ?: last.promptTokens,
-                                    completionTokens = completionTokens ?: last.completionTokens,
-                                    cachedTokens = cachedTokens ?: last.cachedTokens,
-                                    citations = (last.citations + citations).distinctBy { it.url },
-                                    attachments = (last.attachments + attachments).distinctBy { it.data },
-                                    toolCalls = last.toolCalls.merge(toolCallDeltas)
-                                )
-                            }
-                            conversation.copy(messages = messages, updatedAt = System.currentTimeMillis())
-                        }
-                    }
-                    try {
-                        client.stream(generationConfig, request).collect { delta ->
-                            pendingContent.append(delta.content)
-                            pendingReasoning.append(delta.reasoning)
-                            pendingReasoningSignature.append(delta.reasoningSignature)
-                            accumulatedOutputLength += delta.content.length + delta.reasoning.length
-                            pendingCitations += delta.citations
-                            pendingAttachments += delta.attachments
-                            pendingToolCallDeltas += delta.toolCallDeltas
-                            pendingModelId = delta.modelId ?: pendingModelId
-                            pendingPromptTokens = delta.promptTokens ?: pendingPromptTokens
-                            pendingCompletionTokens = delta.completionTokens ?: pendingCompletionTokens
-                            pendingCachedTokens = delta.cachedTokens ?: pendingCachedTokens
-                            val now = System.currentTimeMillis()
-                            val updateInterval = if (accumulatedOutputLength >= LongStreamContentThreshold) {
-                                LongStreamUiUpdateIntervalMillis
-                            } else {
-                                StreamUiUpdateIntervalMillis
-                            }
-                            if (now - lastUiUpdateAt >= updateInterval) {
-                                flushPendingDelta()
-                                lastUiUpdateAt = now
-                            }
-                        }
-                    } finally {
-                        // Do not lose the final fragments when the server closes or the user stops generation.
-                        flushPendingDelta()
-                    }
-                    val toolCalls = data.conversations.firstOrNull { it.id == conversationId }
-                        ?.messages?.lastOrNull()?.toolCalls.orEmpty()
-                    if (toolCalls.isEmpty()) break
-                    // The model has finished this message. Freeze reasoning before any approval or tool wait.
-                    updateConversation(conversationId) { conversation ->
-                        val messages = conversation.messages.toMutableList()
-                        val last = messages.lastOrNull()
-                        if (last?.role == "assistant") {
-                            messages[messages.lastIndex] = last.completeReasoningDuration()
-                        }
-                        conversation.copy(messages = messages, updatedAt = System.currentTimeMillis())
-                    }
-                    if (generationAssistant.maxToolRounds > 0 && toolRounds >= generationAssistant.maxToolRounds) {
-                        val limitMessage = desktopText(data.preferences.language, "runtime.tool_round_limit")
-                            .replace("%d", generationAssistant.maxToolRounds.toString())
-                        updateConversation(conversationId) { conversation ->
-                            conversation.copy(
-                                messages = conversation.messages + toolCalls.map { call ->
-                                    ChatMessage(role = "tool", content = limitMessage, toolCallId = call.id)
-                                } + ChatMessage(role = "assistant", content = limitMessage),
-                                updatedAt = System.currentTimeMillis()
-                            )
-                        }
-                        break
-                    }
-                    toolRounds++
-                    val results = client.executeToolCalls(
-                        generationConfig,
-                        toolCalls,
-                        memoryToolHandler(generationAssistant.id),
-                        mcpClient,
-                        askUserHandler = { call ->
-                            val answer = CompletableDeferred<String>()
-                            pendingAskUserAnswers[call.id] = answer
+                            val answer = CompletableDeferred<DesktopAgentApprovalDecision>()
+                            pendingAgentApproval = PendingDesktopAgentApproval(call, request, answer)
                             try {
-                                answer.await()
-                            } finally {
-                                pendingAskUserAnswers.remove(call.id, answer)
-                            }
-                        },
-                        agentRuntime = agentRuntime,
-                        approvalHandler = { call, request ->
-                            withContext(Dispatchers.Main) {
-                                if (rememberedAgentApprovals[conversationId].orEmpty()
-                                        .approves(request)
-                                ) return@withContext true
-                                val answer = CompletableDeferred<DesktopAgentApprovalDecision>()
-                                pendingAgentApproval = PendingDesktopAgentApproval(call, request, answer)
-                                try {
-                                    answer.await().also { decision ->
-                                        if (decision.approved && decision.autoApprove) {
-                                            request.rememberedGrant()?.let { grant ->
-                                                rememberedAgentApprovals[conversationId] =
-                                                    rememberedAgentApprovals[conversationId].orEmpty() + grant
-                                            }
+                                answer.await().also { decision ->
+                                    if (decision.approved && decision.autoApprove) {
+                                        request.rememberedGrant()?.let { grant ->
+                                            rememberedAgentApprovals[conversationId] =
+                                                rememberedAgentApprovals[conversationId].orEmpty() + grant
                                         }
-                                    }.approved
-                                } finally {
-                                    if (pendingAgentApproval?.answer === answer) pendingAgentApproval = null
-                                }
+                                    }
+                                }.approved
+                            } finally {
+                                if (pendingAgentApproval?.answer === answer) pendingAgentApproval = null
                             }
                         }
-                    )
-                    updateConversation(conversationId) { conversation ->
-                        conversation.copy(
-                            messages = conversation.messages + results,
-                            updatedAt = System.currentTimeMillis()
-                        )
                     }
-                    if (results.any { it.content == DesktopAgentApprovalDeniedResult }) break
-                    val current = data.conversations.firstOrNull { it.id == conversationId } ?: break
-                    request = requestAssistant.renderMessageTemplate(
-                        requestAssistant.transformRequestMessages(
-                            requestAssistant.injectPromptMessages(
-                                requestAssistant.limitContext(current.messages)
-                            ).messages
-                        )
-                    )
-                    updateConversation(conversationId) { conversation ->
-                        conversation.copy(
-                            messages = conversation.messages + ChatMessage(
-                                role = "assistant",
-                                content = "",
-                                modelId = generationConfig.model
-                            ),
-                            updatedAt = System.currentTimeMillis()
-                        )
-                    }
+                )
+            },
+            currentData = { data },
+            updateData = ::update,
+            reportError = { id, message -> generationErrors[id] = message }
+        )
+        generationErrors.remove(conversationId)
+        val executionJob = scope.launch(start = CoroutineStart.LAZY) {
+            val completed = execution.execute(
+                ConversationExecutionCommand(conversationId, requestMessages, title, alternativeTarget)
+            ).completed
+            generationJobs.remove(conversationId)
+            if (completed) {
+                val latest = data.conversations.firstOrNull { it.id == conversationId }
+                if (latest?.title == "新对话" && latest.messages.any { it.role == "assistant" }) {
+                    startTitleGeneration(conversationId, force = false)
                 }
-                updateConversation(conversationId) { conversation ->
-                    val messages = conversation.messages.toMutableList()
-                    val last = messages.lastOrNull()
-                    if (last?.role == "assistant") {
-                        messages[messages.lastIndex] =
-                            generationAssistant.transformGeneratedMessage(last.completeReasoningDuration())
-                                .completeAlternative()
-                    }
-                    conversation.copy(messages = messages, updatedAt = System.currentTimeMillis())
-                }
-                completed = true
-            } catch (_: CancellationException) {
-                updateConversation(conversationId) { conversation ->
-                    val last = conversation.messages.lastOrNull()
-                    if (last?.role == "assistant" && last.toolCalls.isNotEmpty()) {
-                        // The model produced tool calls (e.g. ask_user) but the user cancelled
-                        // before any result was produced. Treat the pending calls as cancelled by
-                        // the user: strip them so a pending question form disappears and the
-                        // conversation stays a valid provider context.
-                        val cleaned = last.copy(toolCalls = emptyList())
-                        if (cleaned.content.isBlank() && cleaned.reasoning.isBlank()) {
-                            conversation.copy(
-                                messages = if (alternativeTarget == null) {
-                                    conversation.messages.dropLast(1)
-                                } else {
-                                    conversation.messages.dropLast(1) + alternativeTarget
-                                }
-                            )
-                        } else {
-                            conversation.copy(
-                                messages = conversation.messages.dropLast(1) +
-                                    generationAssistant.transformGeneratedMessage(cleaned.completeReasoningDuration())
-                                        .completeAlternative()
-                            )
-                        }
-                    } else if (last?.role == "assistant" && last.content.isEmpty() && last.reasoning.isEmpty()) {
-                        conversation.copy(
-                            messages = if (alternativeTarget == null) {
-                                conversation.messages.dropLast(1)
-                            } else {
-                                conversation.messages.dropLast(1) + alternativeTarget
-                            }
-                        )
-                    } else if (last?.role == "assistant") {
-                        conversation.copy(
-                            messages = conversation.messages.dropLast(1) +
-                                generationAssistant.transformGeneratedMessage(last.completeReasoningDuration())
-                                    .completeAlternative()
-                        )
-                    } else {
-                        conversation
-                    }
-                }
-            } catch (error: Throwable) {
-                generationErrors[conversationId] =
-                    error.userFacingMessage()
-                updateConversation(conversationId) { conversation ->
-                    val last = conversation.messages.lastOrNull()
-                    if (last?.role == "assistant" && last.content.isEmpty() && last.reasoning.isEmpty()) {
-                        conversation.copy(
-                            messages = if (alternativeTarget == null) {
-                                conversation.messages.dropLast(1)
-                            } else {
-                                conversation.messages.dropLast(1) + alternativeTarget
-                            }
-                        )
-                    } else if (last?.role == "assistant") {
-                        conversation.copy(
-                            messages = conversation.messages.dropLast(1) +
-                                generationAssistant.transformGeneratedMessage(last.completeReasoningDuration())
-                                    .completeAlternative()
-                        )
-                    } else {
-                        conversation
-                    }
-                }
-            } finally {
-                generationJobs.remove(conversationId)
-                if (completed) {
-                    val latest = data.conversations.firstOrNull { it.id == conversationId }
-                    if (latest?.title == "新对话" && latest.messages.any { it.role == "assistant" }) {
-                        startTitleGeneration(conversationId, force = false)
-                    }
-                    startSuggestionGeneration(conversationId)
-                }
+                startSuggestionGeneration(conversationId)
             }
         }
-        generationJobs[conversationId] = job
-        job.start()
+        generationJobs[conversationId] = executionJob
+        executionJob.start()
+        return
     }
 
     fun submitAskUserAnswer(conversationId: String, toolCall: DesktopToolCall, answer: String) {
