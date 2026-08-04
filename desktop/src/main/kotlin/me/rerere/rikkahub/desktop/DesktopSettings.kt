@@ -176,39 +176,8 @@ internal fun DesktopSettingsPane(
     val messageTemplateValid = remember(draftAssistant.messageTemplate) {
         validateMessageTemplate(draftAssistant.messageTemplate).isSuccess
     }
-    val regexRulesValid = remember(draftAssistant.regexRules) {
-        draftAssistant.regexRules.all { rule ->
-            rule.findRegex.isNotBlank() && runCatching { Regex(rule.findRegex) }.isSuccess
-        }
-    }
-    val memoriesValid = remember(draftAssistant.memories) {
-        draftAssistant.memories.all { it.content.isNotBlank() }
-    }
-    val injectionsValid = remember(draftAssistant.promptInjections) {
-        draftAssistant.promptInjections.all { injection ->
-            injection.content.isNotBlank() && (injection.constantActive || injection.keywords.isNotEmpty()) &&
-                (!injection.useRegex || injection.keywords.all { runCatching { Regex(it) }.isSuccess })
-        }
-    }
-    val assistantBodiesValid = remember(draftAssistant.customHeaders, draftAssistant.customBodies) {
-        draftAssistant.customHeaders.all { it.name.isNotBlank() } && draftAssistant.customBodies.all { body ->
-            body.key.isNotBlank() && runCatching { Json.parseToJsonElement(body.value) }.isSuccess
-        }
-    }
-    val providerBodiesValid = remember(
-        draftProvider.config.customHeaders,
-        draftProvider.config.customBodies
-    ) {
-        draftProvider.config.customHeaders.all { it.name.isNotBlank() } && draftProvider.config.customBodies.all { body ->
-            body.key.isNotBlank() && runCatching { Json.parseToJsonElement(body.value) }.isSuccess
-        }
-    }
-    val assistantDraftValid = draftAssistant.name.isNotBlank() &&
-        draftAssistant.presetMessages.all { it.content.isNotBlank() } &&
-        draftAssistant.quickMessages.all { it.content.isNotBlank() } &&
-        messageTemplateValid && regexRulesValid && assistantBodiesValid && memoriesValid && injectionsValid
-    val providerDraftValid = draftProvider.name.isNotBlank() && providerBodiesValid &&
-        draftProvider.config.baseUrl.isNotBlank() && draftProvider.config.model.isNotBlank()
+    val assistantDraftValid = remember(draftAssistant) { draftAssistant.isValidSettingsDraft() }
+    val providerDraftValid = remember(draftProvider) { draftProvider.isValidSettingsDraft() }
     val assistantDraftChanged = draftAssistant != selectedAssistant
     val providerDraftChanged = draftProvider != selectedProvider
     val effectiveModifiedSections = if (draftLanguage != preferences.language) {

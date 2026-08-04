@@ -26,10 +26,8 @@ internal data class SettingsEditSession(
     fun commitOrNull(): SettingsEditCommit? = if (isValid) commit() else null
 
     private val isValid: Boolean
-        get() = draft.providers.all { provider ->
-            provider.name.isNotBlank() && provider.config.baseUrl.isNotBlank() && provider.config.model.isNotBlank() &&
-                provider.config.hasValidCustomFields()
-        } && draft.assistants.all(DesktopAssistantProfile::hasValidSettings)
+        get() = draft.providers.all(DesktopProviderProfile::isValidSettingsDraft) &&
+            draft.assistants.all(DesktopAssistantProfile::isValidSettingsDraft)
 
     private fun commit(): SettingsEditCommit = SettingsEditCommit(
         data = draft,
@@ -41,7 +39,10 @@ internal data class SettingsEditSession(
     )
 }
 
-private fun DesktopAssistantProfile.hasValidSettings(): Boolean =
+internal fun DesktopProviderProfile.isValidSettingsDraft(): Boolean =
+    name.isNotBlank() && config.baseUrl.isNotBlank() && config.model.isNotBlank() && config.isValidSettingsDraft()
+
+internal fun DesktopAssistantProfile.isValidSettingsDraft(): Boolean =
     name.isNotBlank() &&
         presetMessages.all { it.content.isNotBlank() } &&
         quickMessages.all { it.content.isNotBlank() } &&
@@ -55,7 +56,7 @@ private fun DesktopAssistantProfile.hasValidSettings(): Boolean =
         customHeaders.all { it.name.isNotBlank() } &&
         hasValidCustomBodies(customBodies)
 
-private fun DesktopConfig.hasValidCustomFields(): Boolean =
+internal fun DesktopConfig.isValidSettingsDraft(): Boolean =
     customHeaders.all { it.name.isNotBlank() } && hasValidCustomBodies(customBodies)
 
 private fun hasValidCustomBodies(bodies: List<DesktopCustomBody>): Boolean =
