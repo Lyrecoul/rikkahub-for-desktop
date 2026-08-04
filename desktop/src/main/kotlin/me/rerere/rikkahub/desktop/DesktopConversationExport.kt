@@ -33,7 +33,7 @@ internal fun exportConversationMarkdown(
                     DesktopAttachmentKind.AUDIO -> "Audio"
                     DesktopAttachmentKind.FILE -> "File"
                 }
-                appendLine("- $type: ${attachment.name} (${attachment.mimeType})")
+                appendLine("- $type: ${attachment.name} (${attachment.rawMimeType ?: attachment.mimeType})")
             }
         }
         if (message.reasoning.isNotBlank()) {

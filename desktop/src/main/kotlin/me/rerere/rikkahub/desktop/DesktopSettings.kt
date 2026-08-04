@@ -87,6 +87,7 @@ import com.composables.icons.lucide.MessageSquareText
 import com.composables.icons.lucide.Palette
 import com.composables.icons.lucide.PanelLeftOpen
 import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.RotateCcw
 import com.composables.icons.lucide.Save
 import com.composables.icons.lucide.ServerCog
 import com.composables.icons.lucide.Square
@@ -222,6 +223,26 @@ internal fun DesktopSettingsPane(
     fun saveCurrentProfileDrafts() {
         if (assistantDraftChanged && assistantDraftValid) onAssistantSave(draftAssistant)
         if (providerDraftChanged && providerDraftValid) onProviderSave(draftProvider)
+    }
+
+    fun updateCurrentModelCapabilities(transform: (DesktopModelCapabilities) -> DesktopModelCapabilities) {
+        val model = draftProvider.config.model.trim()
+        if (model.isEmpty()) return
+        val capabilities = transform(draftProvider.config.modelCapabilities(model))
+        draftProvider = draftProvider.copy(
+            config = draftProvider.config.copy(
+                modelCapabilityOverrides = draftProvider.config.modelCapabilityOverrides + (model to capabilities)
+            )
+        )
+    }
+
+    fun clearCurrentModelCapabilities() {
+        val model = draftProvider.config.model.trim()
+        draftProvider = draftProvider.copy(
+            config = draftProvider.config.copy(
+                modelCapabilityOverrides = draftProvider.config.modelCapabilityOverrides - model
+            )
+        )
     }
 
     fun requestBack() {
@@ -2442,7 +2463,8 @@ internal fun DesktopSettingsPane(
                                                             name = preset.name,
                                                             config = draftProvider.config.copy(
                                                                 baseUrl = preset.baseUrl,
-                                                                balanceOptions = preset.balanceOptions
+                                                                balanceOptions = preset.balanceOptions,
+                                                                protocol = preset.protocol
                                                             )
                                                         )
                                                         balanceStatus = null
@@ -2506,6 +2528,34 @@ internal fun DesktopSettingsPane(
                                         label = { Text(desktopText(preferences.language, "settings.base_url")) },
                                         singleLine = true
                                     )
+                                    SingleChoiceSegmentedButtonRow {
+                                        DesktopProviderProtocol.entries.forEachIndexed { index, protocol ->
+                                            SegmentedButton(
+                                                selected = draftProvider.config.protocol == protocol,
+                                                onClick = {
+                                                    draftProvider = draftProvider.copy(
+                                                        config = draftProvider.config.copy(protocol = protocol)
+                                                    )
+                                                },
+                                                shape = SegmentedButtonDefaults.itemShape(
+                                                    index,
+                                                    DesktopProviderProtocol.entries.size
+                                                ),
+                                                label = {
+                                                    Text(
+                                                        when (protocol) {
+                                                            DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS ->
+                                                                "Chat Completions"
+
+                                                            DesktopProviderProtocol.OPENAI_RESPONSES -> "Responses"
+                                                            DesktopProviderProtocol.ANTHROPIC_MESSAGES -> "Anthropic"
+                                                            DesktopProviderProtocol.GEMINI_GENERATE_CONTENT -> "Gemini"
+                                                        }
+                                                    )
+                                                }
+                                            )
+                                        }
+                                    }
                                     OutlinedTextField(
                                         draftProvider.config.apiKey,
                                         { value ->
@@ -2572,6 +2622,113 @@ internal fun DesktopSettingsPane(
                                                             config = draftProvider.config.copy(model = model)
                                                         )
                                                     }
+                                                )
+                                            }
+                                        }
+                                    }
+                                    val currentModelCapabilities = draftProvider.config.modelCapabilities()
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        FilterChip(
+                                            selected = DesktopModality.IMAGE in currentModelCapabilities.inputModalities,
+                                            onClick = {
+                                                updateCurrentModelCapabilities { capabilities ->
+                                                    val modalities = capabilities.inputModalities.toMutableSet().apply {
+                                                        if (!add(DesktopModality.IMAGE)) remove(DesktopModality.IMAGE)
+                                                    }
+                                                    capabilities.copy(
+                                                        inputModalities = modalities,
+                                                        acceptedImageMimeTypes = if (DesktopModality.IMAGE in modalities) {
+                                                            setOf("image/png", "image/jpeg", "image/gif", "image/webp")
+                                                        } else {
+                                                            emptySet()
+                                                        }
+                                                    )
+                                                }
+                                            },
+                                            label = { Text(desktopText(preferences.language, "model_capability.vision")) }
+                                        )
+                                        FilterChip(
+                                            selected = DesktopModality.DOCUMENT in currentModelCapabilities.inputModalities,
+                                            onClick = {
+                                                updateCurrentModelCapabilities { capabilities ->
+                                                    val modalities = capabilities.inputModalities.toMutableSet().apply {
+                                                        if (!add(DesktopModality.DOCUMENT)) remove(DesktopModality.DOCUMENT)
+                                                    }
+                                                    capabilities.copy(
+                                                        inputModalities = modalities,
+                                                        acceptedDocumentMimeTypes =
+                                                            if (DesktopModality.DOCUMENT in modalities) {
+                                                                setOf(
+                                                                    "application/pdf",
+                                                                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                                                    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                                                                )
+                                                            } else {
+                                                                emptySet()
+                                                            }
+                                                    )
+                                                }
+                                            },
+                                            label = { Text(desktopText(preferences.language, "stats.attachments")) },
+                                            enabled = draftProvider.config.protocol !=
+                                                DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS
+                                        )
+                                        FilterChip(
+                                            selected = DesktopModality.AUDIO in currentModelCapabilities.inputModalities,
+                                            onClick = {
+                                                updateCurrentModelCapabilities { capabilities ->
+                                                    val modalities = capabilities.inputModalities.toMutableSet().apply {
+                                                        if (!add(DesktopModality.AUDIO)) remove(DesktopModality.AUDIO)
+                                                    }
+                                                    capabilities.copy(
+                                                        inputModalities = modalities,
+                                                        acceptedAudioFormats = if (DesktopModality.AUDIO in modalities) {
+                                                            if (draftProvider.config.protocol ==
+                                                                DesktopProviderProtocol.GEMINI_GENERATE_CONTENT
+                                                            ) {
+                                                                setOf("mp3", "wav", "m4a", "aac", "flac", "ogg", "opus")
+                                                            } else {
+                                                                setOf("mp3", "wav")
+                                                            }
+                                                        } else {
+                                                            emptySet()
+                                                        }
+                                                    )
+                                                }
+                                            },
+                                            label = { Text(desktopText(preferences.language, "attachment.audio")) },
+                                            enabled = draftProvider.config.protocol in setOf(
+                                                DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS,
+                                                DesktopProviderProtocol.GEMINI_GENERATE_CONTENT
+                                            )
+                                        )
+                                        FilterChip(
+                                            selected = currentModelCapabilities.supportsReasoning,
+                                            onClick = {
+                                                updateCurrentModelCapabilities { capabilities ->
+                                                    capabilities.copy(supportsReasoning = !capabilities.supportsReasoning)
+                                                }
+                                            },
+                                            label = { Text(desktopText(preferences.language, "model_capability.reasoning")) }
+                                        )
+                                        FilterChip(
+                                            selected = currentModelCapabilities.supportsTools,
+                                            onClick = {
+                                                updateCurrentModelCapabilities { capabilities ->
+                                                    capabilities.copy(supportsTools = !capabilities.supportsTools)
+                                                }
+                                            },
+                                            label = { Text(desktopText(preferences.language, "model_capability.tools")) }
+                                        )
+                                        if (draftProvider.config.model in draftProvider.config.modelCapabilityOverrides) {
+                                            IconButton(onClick = ::clearCurrentModelCapabilities, modifier = Modifier.size(40.dp)) {
+                                                Icon(
+                                                    Lucide.RotateCcw,
+                                                    desktopText(preferences.language, "model_picker.default"),
+                                                    Modifier.size(17.dp)
                                                 )
                                             }
                                         }

@@ -112,6 +112,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -657,7 +658,7 @@ private fun RikkaHubDesktop(
                 withContext(Dispatchers.IO) { files.map(::loadDesktopAttachment) }
             }.fold(
                 onSuccess = { attachments ->
-                    pendingAttachments = (pendingAttachments + attachments).distinctBy { it.name to it.data }
+                    pendingAttachments = deduplicateDesktopAttachments(pendingAttachments + attachments)
                     updateConversation(conversationId) { conversation ->
                         conversation.copy(
                             draftAttachments = pendingAttachments,
@@ -840,6 +841,10 @@ private fun RikkaHubDesktop(
                 .filter { it.isNotBlank() }
                 .joinToString("\n\n")
         )
+        generationConfig.validateAttachments(injected.messages).takeIf { it.isNotEmpty() }?.let { issues ->
+            generationErrors[conversationId] = issues.toUserMessage()
+            return
+        }
         val generationMessages = runCatching {
             requestAssistant.renderMessageTemplate(
                 requestAssistant.transformRequestMessages(
@@ -869,6 +874,7 @@ private fun RikkaHubDesktop(
                 while (true) {
                     val pendingContent = StringBuilder()
                     val pendingReasoning = StringBuilder()
+                    val pendingReasoningSignature = StringBuilder()
                     val pendingCitations = mutableListOf<DesktopCitation>()
                     val pendingToolCallDeltas = mutableListOf<DesktopToolCallDelta>()
                     var pendingModelId: String? = null
@@ -880,12 +886,14 @@ private fun RikkaHubDesktop(
 
                     fun flushPendingDelta() {
                         if (
-                            pendingContent.isEmpty() && pendingReasoning.isEmpty() && pendingModelId == null &&
+                            pendingContent.isEmpty() && pendingReasoning.isEmpty() &&
+                            pendingReasoningSignature.isEmpty() && pendingModelId == null &&
                             pendingPromptTokens == null && pendingCompletionTokens == null && pendingCachedTokens == null &&
                             pendingCitations.isEmpty() && pendingToolCallDeltas.isEmpty()
                         ) return
                         val content = pendingContent.toString()
                         val reasoning = pendingReasoning.toString()
+                        val reasoningSignature = pendingReasoningSignature.toString()
                         val citations = pendingCitations.toList()
                         val toolCallDeltas = pendingToolCallDeltas.toList()
                         val modelId = pendingModelId
@@ -894,6 +902,7 @@ private fun RikkaHubDesktop(
                         val cachedTokens = pendingCachedTokens
                         pendingContent.clear()
                         pendingReasoning.clear()
+                        pendingReasoningSignature.clear()
                         pendingCitations.clear()
                         pendingToolCallDeltas.clear()
                         pendingModelId = null
@@ -910,6 +919,7 @@ private fun RikkaHubDesktop(
                                 messages[messages.lastIndex] = last.copy(
                                     content = last.content + content,
                                     reasoning = last.reasoning + reasoning,
+                                    reasoningSignature = last.reasoningSignature + reasoningSignature,
                                     reasoningStartedAt = reasoningStartedAt,
                                     reasoningDurationMillis = if (reasoning.isNotBlank() && reasoningStartedAt != null) {
                                         (receivedAt - reasoningStartedAt).coerceAtLeast(0)
@@ -931,6 +941,7 @@ private fun RikkaHubDesktop(
                         client.stream(generationConfig, request).collect { delta ->
                             pendingContent.append(delta.content)
                             pendingReasoning.append(delta.reasoning)
+                            pendingReasoningSignature.append(delta.reasoningSignature)
                             accumulatedOutputLength += delta.content.length + delta.reasoning.length
                             pendingCitations += delta.citations
                             pendingToolCallDeltas += delta.toolCallDeltas
@@ -3561,6 +3572,7 @@ private fun ChatPane(
                     isGenerating = isGenerating,
                     onPromptChange = onPromptChange,
                     onAddAttachments = onAddAttachments,
+                    onPasteAttachments = onDropAttachments,
                     onRemoveAttachment = onRemoveAttachment,
                     onSend = onSend,
                     onAddWithoutResponse = onAddWithoutResponse,
@@ -4353,7 +4365,11 @@ private fun AttachmentPreview(attachment: DesktopAttachment, language: DesktopLa
                     .clip(RoundedCornerShape(8.dp)),
                 contentScale = ContentScale.Fit
             )
-            Text(attachment.name, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            Text(
+                desktopAttachmentLabel(attachment, language),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp
+            )
         }
     } else {
         Surface(
@@ -4366,15 +4382,32 @@ private fun AttachmentPreview(attachment: DesktopAttachment, language: DesktopLa
             ) {
                 Icon(Lucide.Paperclip, null, Modifier.size(14.dp))
                 Text(
-                    if (attachment.kind == DesktopAttachmentKind.AUDIO) {
-                        "${desktopText(language, "attachment.audio")} · ${attachment.name}"
-                    } else attachment.name,
+                    desktopAttachmentLabel(attachment, language),
                     Modifier.padding(start = 6.dp),
                     fontSize = 11.sp
                 )
             }
         }
     }
+}
+
+private fun desktopAttachmentLabel(attachment: DesktopAttachment, language: DesktopLanguage): String = when (
+    attachment.kind
+) {
+    DesktopAttachmentKind.IMAGE -> listOfNotNull(
+        attachment.name,
+        attachment.imageWidth?.let { width ->
+            attachment.imageHeight?.let { height -> "${width}x$height" }
+        }
+    ).joinToString(" · ")
+
+    DesktopAttachmentKind.AUDIO -> listOfNotNull(
+        desktopText(language, "attachment.audio"),
+        attachment.audioFormat?.uppercase(),
+        attachment.name
+    ).joinToString(" · ")
+
+    DesktopAttachmentKind.FILE -> attachment.name
 }
 
 @Composable
@@ -5058,7 +5091,7 @@ private fun ModelPickerMenu(
                                 )
                             }
                             Text(
-                                modelCapabilityLabels(availableModel, language).joinToString(" · "),
+                                modelCapabilityLabels(provider.config, availableModel, language).joinToString(" · "),
                                 fontSize = 10.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -5070,25 +5103,31 @@ private fun ModelPickerMenu(
     }
 }
 
-private fun modelCapabilityLabels(model: String, language: DesktopLanguage): List<String> {
-    val normalized = model.lowercase()
+private fun modelCapabilityLabels(
+    config: DesktopConfig,
+    model: String,
+    language: DesktopLanguage
+): List<String> {
+    val capabilities = config.modelCapabilities(model)
     return buildList {
-        add(desktopText(language, "model_capability.text"))
-        if (listOf("gpt-4o", "gpt-4.1", "gemini", "claude", "qwen-vl", "vision").any(normalized::contains)) add(
-            desktopText(language, "model_capability.vision")
-        )
-        if (listOf("o1", "o3", "r1", "reasoner", "thinking", "deepseek-r").any(normalized::contains)) add(
-            desktopText(
-                language,
-                "model_capability.reasoning"
-            )
-        )
-        if (!listOf("embedding", "image", "tts", "whisper").any(normalized::contains)) add(
-            desktopText(
-                language,
-                "model_capability.tools"
-            )
-        )
+        if (DesktopModality.TEXT in capabilities.inputModalities) {
+            add(desktopText(language, "model_capability.text"))
+        }
+        if (DesktopModality.IMAGE in capabilities.inputModalities) {
+            add(desktopText(language, "model_capability.vision"))
+        }
+        if (DesktopModality.AUDIO in capabilities.inputModalities) {
+            add(desktopText(language, "attachment.audio"))
+        }
+        if (DesktopModality.DOCUMENT in capabilities.inputModalities) {
+            add(desktopText(language, "stats.attachments"))
+        }
+        if (capabilities.supportsReasoning) {
+            add(desktopText(language, "model_capability.reasoning"))
+        }
+        if (capabilities.supportsTools) {
+            add(desktopText(language, "model_capability.tools"))
+        }
     }
 }
 
@@ -5101,6 +5140,7 @@ private fun Composer(
     isGenerating: Boolean,
     onPromptChange: (String) -> Unit,
     onAddAttachments: () -> Unit,
+    onPasteAttachments: (List<File>) -> Unit,
     onRemoveAttachment: (DesktopAttachment) -> Unit,
     onSend: () -> Unit,
     onAddWithoutResponse: () -> Unit,
@@ -5218,11 +5258,7 @@ private fun Composer(
                                     ) {
                                         Icon(Lucide.Paperclip, null, Modifier.size(14.dp))
                                         Text(
-                                            if (attachment.kind == DesktopAttachmentKind.AUDIO) {
-                                                "${desktopText(language, "attachment.audio")} · ${attachment.name}"
-                                            } else {
-                                                attachment.name
-                                            },
+                                            desktopAttachmentLabel(attachment, language),
                                             Modifier.padding(start = 5.dp),
                                             fontSize = 11.sp,
                                             maxLines = 1
@@ -5255,6 +5291,15 @@ private fun Composer(
                                 }
                             )
                             .onPreviewKeyEvent { event ->
+                                if (event.type == KeyEventType.KeyDown && event.key == Key.V &&
+                                    (event.isCtrlPressed || event.isMetaPressed)
+                                ) {
+                                    val files = readDesktopClipboardFiles()
+                                    if (files.isNotEmpty()) {
+                                        onPasteAttachments(files)
+                                        return@onPreviewKeyEvent true
+                                    }
+                                }
                                 if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isAltPressed) {
                                     onAddWithoutResponse()
                                     return@onPreviewKeyEvent true

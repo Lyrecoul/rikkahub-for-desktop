@@ -146,6 +146,12 @@ class DesktopStoreTest {
 
         assertEquals(DesktopAttachmentKind.IMAGE, attachment.kind)
         assertTrue(attachment.isImage)
+        assertEquals("AQID", attachment.data)
+        Files.list(directory.resolve("attachments")).use { files -> assertEquals(1, files.count()) }
+        val migratedConversation = Files.list(directory.resolve("conversations")).use { files ->
+            Files.readString(files.findFirst().orElseThrow())
+        }
+        assertFalse(migratedConversation.contains("AQID"))
     }
 
     @Test
@@ -194,7 +200,7 @@ class DesktopStoreTest {
 
         val loaded = DesktopStore(dataFile).load()
 
-        assertEquals(2, loaded.schemaVersion)
+        assertEquals(3, loaded.schemaVersion)
         assertFalse(Files.exists(dataFile))
         Files.list(directory).use { files ->
             assertTrue(files.anyMatch { it.fileName.toString().startsWith("desktop.json.corrupt-") })
@@ -344,21 +350,154 @@ class DesktopStoreTest {
     }
 
     @Test
-    fun preservesUnsentAttachmentsWithTheirConversationDraft() {
-        val directory = Files.createTempDirectory("rikkahub-desktop-draft-attachments")
+    fun storesBinaryAttachmentsOutsideConversationJsonAndRestoresThem() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-attachment-blobs")
+        val image = DesktopAttachment(
+            "photo.png",
+            "image/png",
+            "AQID",
+            isImage = true,
+            sizeBytes = 3
+        )
         val conversation = DesktopConversation(
-            draft = "Review this recording",
-            draftAttachments = listOf(
-                DesktopAttachment("voice.wav", "audio/wav", "BAUG", kind = DesktopAttachmentKind.AUDIO)
+            messages = listOf(
+                ChatMessage("user", "first", attachments = listOf(image)),
+                ChatMessage("user", "second", attachments = listOf(image))
             )
         )
         val store = DesktopStore(directory.resolve("desktop.json"), MemorySecrets())
 
         store.save(DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id))
 
+        val conversationJson = Files.list(directory.resolve("conversations")).use { files ->
+            Files.readString(files.findFirst().orElseThrow())
+        }
+        assertFalse(conversationJson.contains("AQID"))
+        assertTrue(conversationJson.contains("dataBlobId"))
+        Files.list(directory.resolve("attachments")).use { files -> assertEquals(1, files.count()) }
+        val restored = store.load().conversations.single().messages
+        assertEquals(listOf("AQID", "AQID"), restored.map { it.attachments.single().data })
+        assertEquals(restored[0].attachments.single().dataBlobId, restored[1].attachments.single().dataBlobId)
+    }
+
+    @Test
+    fun removesAttachmentBlobAfterItsLastReferenceIsDeleted() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-attachment-gc")
+        val image = DesktopAttachment("photo.png", "image/png", "AQID", isImage = true, sizeBytes = 3)
+        val conversation = DesktopConversation(
+            messages = listOf(ChatMessage("user", "inspect", attachments = listOf(image)))
+        )
+        val store = DesktopStore(directory.resolve("desktop.json"), MemorySecrets())
+        store.save(DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id))
+
+        store.save(
+            DesktopData(
+                conversations = listOf(conversation.copy(messages = emptyList())),
+                selectedConversationId = conversation.id
+            )
+        )
+
+        Files.list(directory.resolve("attachments")).use { files -> assertEquals(0, files.count()) }
+    }
+
+    @Test
+    fun keepsBlobReferencedOnlyByConversationBranch() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-branch-attachment")
+        val image = DesktopAttachment("photo.png", "image/png", "AQID", isImage = true, sizeBytes = 3)
+        val branch = DesktopConversationBranch(
+            messages = listOf(ChatMessage("user", "inspect", attachments = listOf(image)))
+        )
+        val conversation = DesktopConversation(messages = emptyList(), branches = listOf(branch))
+        val store = DesktopStore(directory.resolve("desktop.json"), MemorySecrets())
+
+        store.save(DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id))
+
+        Files.list(directory.resolve("attachments")).use { files -> assertEquals(1, files.count()) }
+        assertEquals(
+            "AQID",
+            store.load().conversations.single().branches.single().messages.single().attachments.single().data
+        )
+    }
+
+    @Test
+    fun exportedBackupInlinesAttachmentBlobsForPortableImport() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-portable-attachments")
+        val image = DesktopAttachment("photo.png", "image/png", "AQID", isImage = true, sizeBytes = 3)
+        val conversation = DesktopConversation(
+            messages = listOf(ChatMessage("user", "inspect", attachments = listOf(image)))
+        )
+        val store = DesktopStore(directory.resolve("desktop.json"), MemorySecrets())
+        val backup = directory.resolve("backup.json")
+        store.save(DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id))
+
+        store.exportData(backup, store.load())
+
+        val rawBackup = Files.readString(backup)
+        assertTrue(rawBackup.contains("AQID"))
+        val imported = store.importData(backup)
+        val importedAttachment = imported.conversations.single().messages.single().attachments.single()
+        assertEquals("AQID", importedAttachment.data)
+        assertEquals(null, importedAttachment.dataBlobId)
+    }
+
+    @Test
+    fun missingAttachmentBlobDoesNotHideConversationButBlocksExport() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-missing-attachment")
+        val image = DesktopAttachment("photo.png", "image/png", "AQID", isImage = true, sizeBytes = 3)
+        val conversation = DesktopConversation(
+            messages = listOf(ChatMessage("user", "inspect", attachments = listOf(image)))
+        )
+        val store = DesktopStore(directory.resolve("desktop.json"), MemorySecrets())
+        store.save(DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id))
+        Files.list(directory.resolve("attachments")).use { files ->
+            Files.delete(files.findFirst().orElseThrow())
+        }
+
+        val loaded = store.load()
+        val attachment = loaded.conversations.single().messages.single().attachments.single()
+
+        assertEquals("", attachment.data)
+        assertTrue(attachment.dataBlobId != null)
+        assertTrue(DesktopConfig(model = "gpt-4.1-mini").validateAttachments(
+            loaded.conversations.single().messages
+        ).single().reason.contains("unavailable"))
+        assertFails { store.exportData(directory.resolve("broken-backup.json"), loaded) }
+    }
+
+    @Test
+    fun preservesUnsentAttachmentsWithTheirConversationDraft() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-draft-attachments")
+        val conversation = DesktopConversation(
+            draft = "Review this recording",
+            draftAttachments = listOf(
+                DesktopAttachment("voice.wav", "audio/wav", "BAUG", kind = DesktopAttachmentKind.AUDIO),
+                DesktopAttachment(
+                    "report.pdf",
+                    "text/plain",
+                    "extracted",
+                    rawData = "JVBERg==",
+                    rawMimeType = "application/pdf",
+                    sizeBytes = 4
+                )
+            )
+        )
+        val store = DesktopStore(directory.resolve("desktop.json"), MemorySecrets())
+
+        store.save(DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id))
+
+        val storedConversation = Files.list(directory.resolve("conversations")).use { files ->
+            Files.readString(files.findFirst().orElseThrow())
+        }
+        assertFalse(storedConversation.contains("BAUG"))
+        assertFalse(storedConversation.contains("JVBERg=="))
+        assertTrue(storedConversation.contains("extracted"))
+        Files.list(directory.resolve("attachments")).use { files -> assertEquals(2, files.count()) }
         val restored = store.load().conversations.single()
         assertEquals("Review this recording", restored.draft)
-        assertEquals(DesktopAttachmentKind.AUDIO, restored.draftAttachments.single().kind)
+        assertEquals(DesktopAttachmentKind.AUDIO, restored.draftAttachments[0].kind)
+        assertEquals("JVBERg==", restored.draftAttachments[1].rawData)
+        assertEquals("application/pdf", restored.draftAttachments[1].rawMimeType)
+        assertEquals(4L, restored.draftAttachments[1].sizeBytes)
     }
 
     @Test

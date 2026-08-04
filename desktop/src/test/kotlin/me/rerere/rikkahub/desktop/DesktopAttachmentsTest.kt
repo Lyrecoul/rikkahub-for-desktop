@@ -6,11 +6,13 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream
 import org.apache.pdfbox.pdmodel.font.PDType1Font
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts
 import java.nio.file.Files
+import java.util.Base64
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class DesktopAttachmentsTest {
@@ -20,7 +22,7 @@ class DesktopAttachmentsTest {
         val text = directory.resolve("notes.md")
         val image = directory.resolve("photo.png")
         Files.writeString(text, "hello")
-        Files.write(image, byteArrayOf(1, 2, 3))
+        Files.write(image, Base64.getDecoder().decode(OnePixelPngBase64))
 
         val textAttachment = loadDesktopAttachment(text.toFile())
         val imageAttachment = loadDesktopAttachment(image.toFile())
@@ -29,25 +31,69 @@ class DesktopAttachmentsTest {
         assertEquals(false, textAttachment.isImage)
         assertEquals("image/png", imageAttachment.mimeType)
         assertTrue(imageAttachment.isImage)
-        assertEquals("AQID", imageAttachment.data)
+        assertEquals(OnePixelPngBase64, imageAttachment.data)
+        assertEquals(1, imageAttachment.imageWidth)
+        assertEquals(1, imageAttachment.imageHeight)
     }
 
     @Test
-    fun loadsMp3AndWavAttachmentsForMultimodalRequests() {
+    fun loadsSupportedAudioAttachmentsForMultimodalRequests() {
         val directory = Files.createTempDirectory("rikkahub-audio-attachments")
-        val mp3 = directory.resolve("voice.mp3")
-        val wav = directory.resolve("voice.wav")
-        Files.write(mp3, byteArrayOf(1, 2, 3))
-        Files.write(wav, byteArrayOf(4, 5, 6))
+        val expected = mapOf(
+            "mp3" to ("audio/mpeg" to "mp3"),
+            "wav" to ("audio/wav" to "wav"),
+            "m4a" to ("audio/mp4" to "m4a"),
+            "aac" to ("audio/aac" to "aac"),
+            "flac" to ("audio/flac" to "flac"),
+            "ogg" to ("audio/ogg" to "ogg"),
+            "opus" to ("audio/opus" to "opus")
+        )
 
-        val mp3Attachment = loadDesktopAttachment(mp3.toFile())
-        val wavAttachment = loadDesktopAttachment(wav.toFile())
+        expected.forEach { (extension, expectedType) ->
+            val file = directory.resolve("voice.$extension")
+            Files.write(file, byteArrayOf(1, 2, 3))
+            val attachment = loadDesktopAttachment(file.toFile())
 
-        assertEquals(DesktopAttachmentKind.AUDIO, mp3Attachment.kind)
-        assertEquals("audio/mpeg", mp3Attachment.mimeType)
-        assertEquals("AQID", mp3Attachment.data)
-        assertEquals(DesktopAttachmentKind.AUDIO, wavAttachment.kind)
-        assertEquals("audio/wav", wavAttachment.mimeType)
+            assertEquals(DesktopAttachmentKind.AUDIO, attachment.kind)
+            assertEquals(expectedType.first, attachment.mimeType)
+            assertEquals(expectedType.second, attachment.audioFormat)
+            assertEquals("AQID", attachment.data)
+            assertTrue(isDesktopAttachmentSupported(file.toFile()))
+        }
+    }
+
+    @Test
+    fun rejectsImageWhoseContentDoesNotMatchItsExtension() {
+        val image = Files.createTempFile("rikkahub-mismatched-image", ".jpg")
+        Files.write(image, Base64.getDecoder().decode(OnePixelPngBase64))
+
+        val error = assertFailsWith<IllegalArgumentException> { loadDesktopAttachment(image.toFile()) }
+
+        assertTrue(error.message.orEmpty().contains("does not match"))
+    }
+
+    @Test
+    fun rejectsCorruptImageAttachments() {
+        val image = Files.createTempFile("rikkahub-corrupt-image", ".png")
+        Files.write(image, byteArrayOf(1, 2, 3))
+
+        assertFailsWith<IllegalArgumentException> { loadDesktopAttachment(image.toFile()) }
+    }
+
+    @Test
+    fun deduplicatesExactAttachmentsWithoutMergingDifferentOriginalDocuments() {
+        val first = DesktopAttachment(
+            "report.pdf",
+            "text/plain",
+            "same extracted text",
+            rawData = "FIRST",
+            rawMimeType = "application/pdf"
+        )
+        val second = first.copy(rawData = "SECOND")
+
+        val result = deduplicateDesktopAttachments(listOf(first, first, second))
+
+        assertEquals(listOf(first, second), result)
     }
 
     @Test
@@ -69,9 +115,19 @@ class DesktopAttachmentsTest {
         writeZip(epub, "OEBPS/chapter.xhtml" to "<html><body><h1>Chapter</h1><p>EPUB text</p></body></html>")
 
         assertTrue(isDesktopAttachmentSupported(docx.toFile()))
-        assertTrue(loadDesktopAttachment(docx.toFile()).data.contains("DOCX text"))
-        assertTrue(loadDesktopAttachment(pptx.toFile()).data.contains("Slide text"))
-        assertTrue(loadDesktopAttachment(epub.toFile()).data.contains("EPUB text"))
+        val docxAttachment = loadDesktopAttachment(docx.toFile())
+        val pptxAttachment = loadDesktopAttachment(pptx.toFile())
+        val epubAttachment = loadDesktopAttachment(epub.toFile())
+        assertTrue(docxAttachment.data.contains("DOCX text"))
+        assertTrue(pptxAttachment.data.contains("Slide text"))
+        assertTrue(epubAttachment.data.contains("EPUB text"))
+        assertEquals(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            docxAttachment.rawMimeType
+        )
+        assertNotNull(docxAttachment.rawData)
+        assertNotNull(pptxAttachment.rawData)
+        assertNotNull(epubAttachment.rawData)
     }
 
     @Test
@@ -93,6 +149,9 @@ class DesktopAttachmentsTest {
         assertTrue(isDesktopAttachmentSupported(pdf.toFile()))
         val attachment = loadDesktopAttachment(pdf.toFile())
         assertEquals("text/plain", attachment.mimeType)
+        assertEquals("application/pdf", attachment.rawMimeType)
+        assertNotNull(attachment.rawData)
+        assertEquals(Files.size(pdf), attachment.sizeBytes)
         assertTrue(attachment.data.contains("PDF attachment text"))
     }
 
@@ -104,5 +163,10 @@ class DesktopAttachmentsTest {
                 output.closeEntry()
             }
         }
+    }
+
+    private companion object {
+        const val OnePixelPngBase64 =
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
     }
 }

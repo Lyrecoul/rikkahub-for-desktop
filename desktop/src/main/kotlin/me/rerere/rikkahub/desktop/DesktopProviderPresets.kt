@@ -3,12 +3,23 @@ package me.rerere.rikkahub.desktop
 internal data class DesktopProviderPreset(
     val name: String,
     val baseUrl: String,
-    val balanceOptions: DesktopBalanceOptions = DesktopBalanceOptions()
+    val balanceOptions: DesktopBalanceOptions = DesktopBalanceOptions(),
+    val protocol: DesktopProviderProtocol = DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS
 )
 
 internal val DesktopProviderPresets = listOf(
     DesktopProviderPreset("RikkaHub", "https://api.rikka-ai.com/v1"),
     DesktopProviderPreset("OpenAI", "https://api.openai.com/v1"),
+    DesktopProviderPreset(
+        "Google Gemini",
+        "https://generativelanguage.googleapis.com/v1beta",
+        protocol = DesktopProviderProtocol.GEMINI_GENERATE_CONTENT
+    ),
+    DesktopProviderPreset(
+        "Anthropic",
+        "https://api.anthropic.com/v1",
+        protocol = DesktopProviderProtocol.ANTHROPIC_MESSAGES
+    ),
     DesktopProviderPreset("AiHubMix", "https://aihubmix.com/v1"),
     DesktopProviderPreset(
         "硅基流动", "https://api.siliconflow.cn/v1",

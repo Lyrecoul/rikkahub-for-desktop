@@ -11,6 +11,7 @@ import java.net.SocketTimeoutException
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -303,6 +304,25 @@ class OpenAiClientTest {
         assertEquals("input_audio", audio.getValue("type").jsonPrimitive.content)
         assertEquals("BAUG", audio.getValue("input_audio").jsonObject.getValue("data").jsonPrimitive.content)
         assertEquals("wav", audio.getValue("input_audio").jsonObject.getValue("format").jsonPrimitive.content)
+    }
+
+    @Test
+    fun refusesToMislabelUnsupportedAudioAsMp3() {
+        val message = ChatMessage(
+            role = "user",
+            content = "",
+            attachments = listOf(
+                DesktopAttachment(
+                    "voice.m4a",
+                    "audio/mp4",
+                    "BAUG",
+                    kind = DesktopAttachmentKind.AUDIO,
+                    audioFormat = "m4a"
+                )
+            )
+        )
+
+        assertFails { client.buildRequestBody(DesktopConfig(model = "gpt-4o-audio-preview"), listOf(message)) }
     }
 
     @Test

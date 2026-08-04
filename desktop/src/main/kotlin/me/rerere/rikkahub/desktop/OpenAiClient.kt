@@ -40,6 +40,7 @@ import kotlin.coroutines.resumeWithException
 internal data class StreamDelta(
     val content: String = "",
     val reasoning: String = "",
+    val reasoningSignature: String = "",
     val modelId: String? = null,
     val promptTokens: Int? = null,
     val completionTokens: Int? = null,
@@ -58,15 +59,15 @@ class OpenAiClient(
         require(config.apiKey.isNotBlank()) { "Configure an API key first" }
         require(config.model.isNotBlank()) { "Configure a model first" }
 
-        val body = buildRequestBody(config, messages)
-        val endpoint = "${config.baseUrl.trimEnd('/')}/chat/completions"
+        val adapter = desktopChatProviderAdapter(config.protocol)
+        val body = adapter.buildRequestBody(config, messages)
         val requestBuilder = Request.Builder()
-            .url(endpoint)
-            .header("Authorization", "Bearer ${config.apiKey}")
+            .url(adapter.chatEndpoint(config))
             .header("Accept", if (config.streamOutput) "text/event-stream" else "application/json")
             .post(body.toRequestBody("application/json".toMediaType()))
+        adapter.configureRequest(requestBuilder, config)
         config.customHeaders.filter { it.name.isNotBlank() }.forEach { header ->
-            requestBuilder.addHeader(header.name, header.value)
+            requestBuilder.header(header.name, header.value)
         }
         val request = requestBuilder.build()
         // A long-running reasoning stream is valid as long as it continues to make progress.
@@ -83,19 +84,50 @@ class OpenAiClient(
                 error("Request failed (${response.code}): $detail")
             }
             if (!config.streamOutput) {
-                emit(parseCompleteResponse(response.body.string()))
+                val payload = response.body.string()
+                emit(
+                    when (config.protocol) {
+                        DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS -> parseCompleteResponse(payload)
+                        DesktopProviderProtocol.OPENAI_RESPONSES -> OpenAiResponsesAdapter.parseCompleteResponse(payload)
+                        DesktopProviderProtocol.ANTHROPIC_MESSAGES ->
+                            AnthropicMessagesAdapter.parseCompleteResponse(payload)
+
+                        DesktopProviderProtocol.GEMINI_GENERATE_CONTENT ->
+                            GeminiGenerateContentAdapter.parseResponse(payload)
+                    }
+                )
                 return@use
             }
             val source = response.body.source()
+            val providerToolIndexes = mutableMapOf<Int, Int>()
             while (!source.exhausted()) {
                 currentCoroutineContext().ensureActive()
                 val line = source.readUtf8Line() ?: break
                 val data = line.removePrefix("data:").trim()
                 if (!line.startsWith("data:") || data.isBlank()) continue
                 if (data == "[DONE]") break
-                parseError(data)?.let { error(it) }
-                parseDelta(data)?.takeUnless {
-                    it.content.isEmpty() && it.reasoning.isEmpty() &&
+                val responseError = when (config.protocol) {
+                    DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS -> parseError(data)
+                    DesktopProviderProtocol.OPENAI_RESPONSES -> OpenAiResponsesAdapter.parseError(data)
+                    DesktopProviderProtocol.ANTHROPIC_MESSAGES -> AnthropicMessagesAdapter.parseError(data)
+                    DesktopProviderProtocol.GEMINI_GENERATE_CONTENT -> GeminiGenerateContentAdapter.parseError(data)
+                }
+                responseError?.let { error(it) }
+                val parsedDelta = when (config.protocol) {
+                    DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS -> parseDelta(data)
+                    DesktopProviderProtocol.OPENAI_RESPONSES -> OpenAiResponsesAdapter.parseStreamEvent(data)
+                    DesktopProviderProtocol.ANTHROPIC_MESSAGES -> AnthropicMessagesAdapter.parseStreamEvent(data)
+                    DesktopProviderProtocol.GEMINI_GENERATE_CONTENT -> GeminiGenerateContentAdapter.parseResponse(data)
+                }
+                val delta = parsedDelta?.let { parsed ->
+                    if (config.protocol == DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS) {
+                        parsed
+                    } else {
+                        parsed.normalizeProviderToolCallIndexes(providerToolIndexes)
+                    }
+                }
+                delta?.takeUnless {
+                    it.content.isEmpty() && it.reasoning.isEmpty() && it.reasoningSignature.isEmpty() &&
                         it.promptTokens == null && it.completionTokens == null
                         && it.cachedTokens == null && it.modelId == null
                         && it.citations.isEmpty() && it.toolCallDeltas.isEmpty()
@@ -104,114 +136,11 @@ class OpenAiClient(
         }
     }.flowOn(Dispatchers.IO)
 
-    internal fun buildRequestBody(config: DesktopConfig, messages: List<ChatMessage>): String {
-        val requestMessages = buildList {
-            if (config.systemPrompt.isNotBlank()) add(ChatMessage("system", config.systemPrompt))
-            addAll(messages)
-        }
-        val base = buildJsonObject {
-            put("model", config.model)
-            put("stream", config.streamOutput)
-            put("temperature", config.temperature)
-            put("top_p", config.topP)
-            if (config.reasoningEffort.isNotBlank()) put("reasoning_effort", config.reasoningEffort)
-            if (config.maxTokens > 0) put("max_tokens", config.maxTokens)
-            if (config.requestTokenUsage && config.streamOutput) {
-                putJsonObject("stream_options") { put("include_usage", true) }
-            }
-            if (config.webSearchEnabled && !config.webSearchSettings.isConfigured) {
-                putJsonObject("web_search_options") {}
-            }
-            buildDesktopToolDefinitions(config).takeIf { it.isNotEmpty() }?.let { put("tools", it) }
-            putJsonArray("messages") {
-                requestMessages.forEach { message ->
-                    add(buildJsonObject {
-                        put("role", message.role)
-                        message.toolCallId?.let { put("tool_call_id", it) }
-                        if (message.toolCalls.isNotEmpty()) {
-                            putJsonArray("tool_calls") {
-                                message.toolCalls.forEach { toolCall ->
-                                    add(buildJsonObject {
-                                        put("id", toolCall.id)
-                                        put("type", "function")
-                                        putJsonObject("function") {
-                                            put("name", toolCall.name)
-                                            put("arguments", toolCall.arguments)
-                                        }
-                                    })
-                                }
-                            }
-                        }
-                        if (message.attachments.isEmpty() &&
-                            (message.toolCalls.isEmpty() || message.content.isNotBlank())
-                        ) {
-                            put("content", message.content)
-                        } else if (message.attachments.isNotEmpty()) {
-                            putJsonArray("content") {
-                                if (message.content.isNotBlank()) {
-                                    add(buildJsonObject {
-                                        put("type", "text")
-                                        put("text", message.content)
-                                    })
-                                }
-                                message.attachments.forEach { attachment ->
-                                    when (attachment.kind) {
-                                        DesktopAttachmentKind.IMAGE -> add(buildJsonObject {
-                                            put("type", "image_url")
-                                            putJsonObject("image_url") {
-                                                put("url", "data:${attachment.mimeType};base64,${attachment.data}")
-                                            }
-                                        })
+    internal fun buildRequestBody(config: DesktopConfig, messages: List<ChatMessage>): String =
+        desktopChatProviderAdapter(config.protocol).buildRequestBody(config, messages)
 
-                                        DesktopAttachmentKind.AUDIO -> add(buildJsonObject {
-                                            put("type", "input_audio")
-                                            putJsonObject("input_audio") {
-                                                put("data", attachment.data)
-                                                put("format", if (attachment.mimeType == "audio/wav") "wav" else "mp3")
-                                            }
-                                        })
-
-                                        DesktopAttachmentKind.FILE -> add(buildJsonObject {
-                                            put("type", "text")
-                                            put("text", "File: ${attachment.name}\n${attachment.data}")
-                                        })
-                                    }
-                                }
-                            }
-                        }
-                    })
-                }
-            }
-        }
-        return mergeCustomBodies(base, config.customBodies).toString()
-    }
-
-    internal fun mergeCustomBodies(base: JsonObject, bodies: List<DesktopCustomBody>): JsonObject {
-        val result = base.toMutableMap()
-        bodies.filter { it.key.isNotBlank() }.forEach { body ->
-            val value = json.parseToJsonElement(body.value)
-            val existing = result[body.key]
-            result[body.key] = if (existing is JsonObject && value is JsonObject) {
-                mergeJsonObjects(existing, value)
-            } else {
-                value
-            }
-        }
-        return JsonObject(result)
-    }
-
-    private fun mergeJsonObjects(base: JsonObject, overlay: JsonObject): JsonObject = JsonObject(
-        base.toMutableMap().apply {
-            overlay.forEach { (key, value) ->
-                val existing = this[key]
-                this[key] = if (existing is JsonObject && value is JsonObject) {
-                    mergeJsonObjects(existing, value)
-                } else {
-                    value
-                }
-            }
-        }
-    )
+    internal fun mergeCustomBodies(base: JsonObject, bodies: List<DesktopCustomBody>): JsonObject =
+        mergeDesktopCustomBodies(base, bodies, json)
 
     internal fun parseDelta(data: String): StreamDelta? = runCatching {
         val event = json.parseToJsonElement(data).jsonObject
@@ -329,13 +258,13 @@ class OpenAiClient(
 
     internal suspend fun listModels(config: DesktopConfig): List<String> = withContext(Dispatchers.IO) {
         require(config.apiKey.isNotBlank()) { "Configure an API key first" }
-        val endpoint = "${config.baseUrl.trimEnd('/')}/models"
+        val adapter = desktopChatProviderAdapter(config.protocol)
         val requestBuilder = Request.Builder()
-            .url(endpoint)
-            .header("Authorization", "Bearer ${config.apiKey}")
+            .url(adapter.modelsEndpoint(config))
             .get()
+        adapter.configureRequest(requestBuilder, config)
         config.customHeaders.filter { it.name.isNotBlank() }.forEach { header ->
-            requestBuilder.addHeader(header.name, header.value)
+            requestBuilder.header(header.name, header.value)
         }
         val request = requestBuilder.build()
         retryOnceOnNetworkFailure {
@@ -344,7 +273,12 @@ class OpenAiClient(
                     val detail = response.body.string().take(1000)
                     error("Connection failed (${response.code}): $detail")
                 }
-                parseModels(response.body.string())
+                val payload = response.body.string()
+                if (config.protocol == DesktopProviderProtocol.GEMINI_GENERATE_CONTENT) {
+                    GeminiGenerateContentAdapter.parseModels(payload)
+                } else {
+                    parseModels(payload)
+                }
             }
         }
     }
@@ -419,6 +353,13 @@ class OpenAiClient(
         searchWeb(httpClient, settings, query)
 }
 
+internal fun StreamDelta.normalizeProviderToolCallIndexes(indexes: MutableMap<Int, Int>): StreamDelta {
+    if (toolCallDeltas.isEmpty()) return this
+    return copy(toolCallDeltas = toolCallDeltas.map { delta ->
+        delta.copy(index = indexes.getOrPut(delta.index) { indexes.size })
+    })
+}
+
 private data class DesktopBalanceCacheEntry(val value: String, val fetchedAt: Long)
 
 private const val BalanceCacheTtlMillis = 2 * 60 * 1000L
@@ -461,7 +402,7 @@ internal const val DesktopWebSearchToolName = "web_search"
 internal const val DesktopCurrentTimeToolName = "current_time"
 internal const val DesktopAskUserToolName = "ask_user"
 
-private fun buildDesktopToolDefinitions(config: DesktopConfig) = buildJsonArray {
+internal fun buildDesktopToolDefinitions(config: DesktopConfig) = buildJsonArray {
     if (config.webSearchEnabled && config.webSearchSettings.isConfigured) {
         add(buildJsonObject {
             put("type", "function")

@@ -7,6 +7,7 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 import java.time.Instant
+import java.util.Base64
 
 internal class DesktopStore(
     private val dataFile: Path = defaultDataFile(),
@@ -27,14 +28,16 @@ internal class DesktopStore(
             }
         val data = hydrateSecrets(stored)
         if (stored.conversations.isNotEmpty()) {
-            val legacy = data.normalized()
+            val legacy = hydrateAttachments(data.normalized())
             runCatching { migrateLegacyData(legacy) }
             return legacy
         }
-        return data.copy(
-            conversations = orderConversations(loadConversations(), stored.conversationIds),
-            conversationIds = emptyList()
-        ).normalized()
+        return hydrateAttachments(
+            data.copy(
+                conversations = orderConversations(loadConversations(), stored.conversationIds),
+                conversationIds = emptyList()
+            ).normalized()
+        )
     }
 
     fun save(data: DesktopData) {
@@ -43,7 +46,8 @@ internal class DesktopStore(
 
     fun exportData(destination: Path, data: DesktopData) {
         destination.parent?.let(Files::createDirectories)
-        Files.writeString(destination, json.encodeToString(stripSecrets(data.normalized())))
+        val portable = inlineAttachments(stripSecrets(data.normalized()), strict = true)
+        Files.writeString(destination, json.encodeToString(portable))
     }
 
     fun deleteProviderSecret(providerId: String) {
@@ -60,7 +64,8 @@ internal class DesktopStore(
 
     fun importData(source: Path): DesktopData {
         require(Files.isRegularFile(source)) { "Backup file does not exist" }
-        return json.decodeFromString<DesktopData>(Files.readString(source)).normalized()
+        val imported = json.decodeFromString<DesktopData>(Files.readString(source)).normalized()
+        return inlineAttachments(imported, strict = true)
     }
 
     private fun saveSplitData(data: DesktopData) {
@@ -69,24 +74,103 @@ internal class DesktopStore(
         restrictPermissions(dataFile.parent, directory = true)
         Files.createDirectories(conversationsDirectory)
         restrictPermissions(conversationsDirectory, directory = true)
+        Files.createDirectories(attachmentsDirectory)
+        restrictPermissions(attachmentsDirectory, directory = true)
+        val persisted = externalizeAttachments(sanitized)
 
-        sanitized.conversations.forEach { conversation ->
+        persisted.conversations.forEach { conversation ->
             atomicWrite(conversationFile(conversation.id), json.encodeToString(conversation))
         }
 
         atomicWrite(
             dataFile,
             json.encodeToString(
-                sanitized.copy(
+                persisted.copy(
                     conversations = emptyList(),
-                    conversationIds = sanitized.conversations.map(DesktopConversation::id)
+                    conversationIds = persisted.conversations.map(DesktopConversation::id)
                 )
             )
         )
-        val currentFiles = sanitized.conversations.map { conversationFile(it.id).fileName.toString() }.toSet()
+        val currentFiles = persisted.conversations.map { conversationFile(it.id).fileName.toString() }.toSet()
         Files.list(conversationsDirectory).use { files ->
             files.filter { Files.isRegularFile(it) && it.fileName.toString().endsWith(".json") }
                 .filter { it.fileName.toString() !in currentFiles }
+                .forEach { Files.deleteIfExists(it) }
+        }
+        removeUnreferencedAttachmentBlobs(persisted.attachmentBlobIds())
+    }
+
+    private fun externalizeAttachments(data: DesktopData): DesktopData = data.mapDesktopAttachments { attachment ->
+        var persisted = attachment
+        if (attachment.kind in setOf(DesktopAttachmentKind.IMAGE, DesktopAttachmentKind.AUDIO) &&
+            attachment.data.isNotBlank()
+        ) {
+            val blobId = writeAttachmentBlob(attachment.data)
+            persisted = persisted.copy(data = "", dataBlobId = blobId)
+        }
+        if (!attachment.rawData.isNullOrBlank()) {
+            val blobId = writeAttachmentBlob(attachment.rawData)
+            persisted = persisted.copy(rawData = null, rawDataBlobId = blobId)
+        }
+        persisted
+    }
+
+    private fun hydrateAttachments(data: DesktopData, strict: Boolean = false): DesktopData =
+        data.mapDesktopAttachments { attachment ->
+            var hydrated = attachment
+            if (hydrated.data.isBlank() && hydrated.dataBlobId != null) {
+                readAttachmentBlob(hydrated.dataBlobId, strict)?.let { hydrated = hydrated.copy(data = it) }
+            }
+            if (hydrated.rawData == null && hydrated.rawDataBlobId != null) {
+                readAttachmentBlob(hydrated.rawDataBlobId, strict)?.let { hydrated = hydrated.copy(rawData = it) }
+            }
+            if (strict) {
+                require(hydrated.dataBlobId == null || hydrated.data.isNotBlank()) {
+                    "Attachment data is unavailable: ${hydrated.name}"
+                }
+                require(hydrated.rawDataBlobId == null || hydrated.rawData != null) {
+                    "Original attachment data is unavailable: ${hydrated.name}"
+                }
+            }
+            hydrated
+        }
+
+    private fun inlineAttachments(data: DesktopData, strict: Boolean): DesktopData =
+        hydrateAttachments(data, strict).mapDesktopAttachments { attachment ->
+            attachment.copy(dataBlobId = null, rawDataBlobId = null)
+        }
+
+    private fun writeAttachmentBlob(encoded: String): String {
+        val maxEncodedLength = ((MaxAttachmentBytes + 2) / 3 * 4).toInt()
+        require(encoded.length <= maxEncodedLength) { "Attachment exceeds the 10 MB storage limit" }
+        val bytes = Base64.getDecoder().decode(encoded)
+        require(bytes.size.toLong() <= MaxAttachmentBytes) { "Attachment exceeds the 10 MB storage limit" }
+        val id = sha256Hex(bytes)
+        val destination = attachmentBlobFile(id)
+        val validExisting = Files.isRegularFile(destination) && runCatching {
+            sha256Hex(Files.readAllBytes(destination)) == id
+        }.getOrDefault(false)
+        if (!validExisting) atomicWrite(destination, bytes)
+        return id
+    }
+
+    private fun readAttachmentBlob(id: String, strict: Boolean): String? {
+        val result = runCatching {
+            val file = attachmentBlobFile(id)
+            require(Files.isRegularFile(file)) { "Attachment blob is missing: $id" }
+            val bytes = Files.readAllBytes(file)
+            require(bytes.size.toLong() <= MaxAttachmentBytes) { "Attachment blob exceeds the storage limit: $id" }
+            require(sha256Hex(bytes) == id) { "Attachment blob checksum mismatch: $id" }
+            Base64.getEncoder().encodeToString(bytes)
+        }
+        if (strict) return result.getOrThrow()
+        return result.getOrNull()
+    }
+
+    private fun removeUnreferencedAttachmentBlobs(referencedIds: Set<String>) {
+        if (!Files.isDirectory(attachmentsDirectory)) return
+        Files.list(attachmentsDirectory).use { files ->
+            files.filter { Files.isRegularFile(it) && it.fileName.toString() !in referencedIds }
                 .forEach { Files.deleteIfExists(it) }
         }
     }
@@ -136,8 +220,12 @@ internal class DesktopStore(
     }
 
     private fun atomicWrite(file: Path, content: String) {
+        atomicWrite(file, content.toByteArray(Charsets.UTF_8))
+    }
+
+    private fun atomicWrite(file: Path, content: ByteArray) {
         val temporaryFile = file.resolveSibling("${file.fileName}.tmp")
-        Files.writeString(temporaryFile, content)
+        Files.write(temporaryFile, content)
         restrictPermissions(temporaryFile, directory = false)
         runCatching {
             Files.move(temporaryFile, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
@@ -150,11 +238,19 @@ internal class DesktopStore(
     private val conversationsDirectory: Path
         get() = dataFile.resolveSibling("conversations")
 
-    private fun conversationFile(id: String): Path {
-        val digest = MessageDigest.getInstance("SHA-256").digest(id.toByteArray(Charsets.UTF_8))
-        val name = digest.joinToString("") { byte -> "%02x".format(byte) }
-        return conversationsDirectory.resolve("$name.json")
+    private val attachmentsDirectory: Path
+        get() = dataFile.resolveSibling("attachments")
+
+    private fun conversationFile(id: String): Path =
+        conversationsDirectory.resolve("${sha256Hex(id.toByteArray(Charsets.UTF_8))}.json")
+
+    private fun attachmentBlobFile(id: String): Path {
+        require(id.matches(Regex("[a-f0-9]{64}"))) { "Invalid attachment blob id" }
+        return attachmentsDirectory.resolve(id)
     }
+
+    private fun sha256Hex(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { byte -> "%02x".format(byte) }
 
     private fun restrictPermissions(path: Path, directory: Boolean) {
         runCatching {
@@ -242,7 +338,7 @@ internal class DesktopStore(
 
     companion object {
         private const val legacySearchSecretId = "search:brave-api-key"
-        private const val CurrentSchemaVersion = 2
+        private const val CurrentSchemaVersion = 3
 
         fun defaultDataFile(): Path = DesktopPlatform.dataDirectory().resolve("desktop.json")
     }

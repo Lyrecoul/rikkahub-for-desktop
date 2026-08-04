@@ -22,6 +22,7 @@ internal const val DefaultDesktopTitlePrompt = """
 
 @Serializable
 data class DesktopConfig(
+    val protocol: DesktopProviderProtocol = DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS,
     val baseUrl: String = "https://api.openai.com/v1",
     val apiKey: String = "",
     val model: String = "gpt-4.1-mini",
@@ -43,7 +44,38 @@ data class DesktopConfig(
     val memoryEnabled: Boolean = false,
     val mcpServers: List<DesktopMcpServer> = emptyList(),
     val agent: DesktopAgentConfig? = null,
-    val balanceOptions: DesktopBalanceOptions = DesktopBalanceOptions()
+    val balanceOptions: DesktopBalanceOptions = DesktopBalanceOptions(),
+    val modelCapabilityOverrides: Map<String, DesktopModelCapabilities> = emptyMap()
+)
+
+@Serializable
+enum class DesktopProviderProtocol {
+    OPENAI_CHAT_COMPLETIONS,
+    OPENAI_RESPONSES,
+    ANTHROPIC_MESSAGES,
+    GEMINI_GENERATE_CONTENT
+}
+
+@Serializable
+enum class DesktopModality {
+    TEXT,
+    IMAGE,
+    AUDIO,
+    DOCUMENT,
+    VIDEO
+}
+
+@Serializable
+data class DesktopModelCapabilities(
+    val inputModalities: Set<DesktopModality> = setOf(DesktopModality.TEXT),
+    val outputModalities: Set<DesktopModality> = setOf(DesktopModality.TEXT),
+    val supportsReasoning: Boolean = false,
+    val supportsTools: Boolean = true,
+    val acceptedImageMimeTypes: Set<String> = emptySet(),
+    val acceptedAudioFormats: Set<String> = emptySet(),
+    val acceptedDocumentMimeTypes: Set<String> = emptySet(),
+    val maxAttachmentBytes: Long? = null,
+    val maxRequestBytes: Long? = null
 )
 
 @Serializable
@@ -318,6 +350,7 @@ data class ChatMessage(
     val role: String,
     val content: String,
     val reasoning: String = "",
+    val reasoningSignature: String = "",
     val reasoningStartedAt: Long? = null,
     val reasoningDurationMillis: Long? = null,
     val id: String = UUID.randomUUID().toString(),
@@ -372,7 +405,17 @@ data class DesktopAttachment(
     val data: String,
     /** Kept for compatibility with existing desktop backups. */
     val isImage: Boolean = false,
-    val kind: DesktopAttachmentKind = if (isImage) DesktopAttachmentKind.IMAGE else DesktopAttachmentKind.FILE
+    val kind: DesktopAttachmentKind = if (isImage) DesktopAttachmentKind.IMAGE else DesktopAttachmentKind.FILE,
+    /** Original document bytes for provider-native file input; absent in legacy backups. */
+    val rawData: String? = null,
+    val rawMimeType: String? = null,
+    val sizeBytes: Long? = null,
+    /** Content-addressed references used by the desktop store; backups inline the data again. */
+    val dataBlobId: String? = null,
+    val rawDataBlobId: String? = null,
+    val audioFormat: String? = null,
+    val imageWidth: Int? = null,
+    val imageHeight: Int? = null
 )
 
 @Serializable
@@ -380,6 +423,7 @@ data class DesktopMessageVariant(
     val id: String = UUID.randomUUID().toString(),
     val content: String,
     val reasoning: String = "",
+    val reasoningSignature: String = "",
     val reasoningStartedAt: Long? = null,
     val reasoningDurationMillis: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
@@ -399,6 +443,7 @@ fun ChatMessage.availableVariants(): List<DesktopMessageVariant> = variants.ifEm
             id = id,
             content = content,
             reasoning = reasoning,
+            reasoningSignature = reasoningSignature,
             reasoningStartedAt = reasoningStartedAt,
             reasoningDurationMillis = reasoningDurationMillis,
             createdAt = createdAt,
@@ -420,6 +465,7 @@ fun ChatMessage.addVariant(content: String): ChatMessage {
     return copy(
         content = content.trim(),
         reasoning = "",
+        reasoningSignature = "",
         promptTokens = null,
         completionTokens = null,
         citations = emptyList(),
@@ -434,6 +480,7 @@ fun ChatMessage.addVariant(content: String): ChatMessage {
 fun ChatMessage.beginAlternative(): ChatMessage = copy(
     content = "",
     reasoning = "",
+    reasoningSignature = "",
     reasoningStartedAt = null,
     reasoningDurationMillis = null,
     modelId = null,
@@ -454,6 +501,7 @@ fun ChatMessage.completeAlternative(): ChatMessage {
     val completed = DesktopMessageVariant(
         content = content,
         reasoning = reasoning,
+        reasoningSignature = reasoningSignature,
         reasoningStartedAt = reasoningStartedAt,
         reasoningDurationMillis = reasoningDurationMillis,
         createdAt = createdAt,
@@ -484,6 +532,7 @@ fun ChatMessage.selectVariant(index: Int): ChatMessage {
     return copy(
         content = selected.content,
         reasoning = selected.reasoning,
+        reasoningSignature = selected.reasoningSignature,
         reasoningStartedAt = selected.reasoningStartedAt,
         reasoningDurationMillis = selected.reasoningDurationMillis,
         createdAt = selected.createdAt,
@@ -883,7 +932,7 @@ internal fun DesktopConversation.usesPromptInjections(assistant: DesktopAssistan
 
 @Serializable
 data class DesktopData(
-    val schemaVersion: Int = 2,
+    val schemaVersion: Int = 3,
     val config: DesktopConfig = DesktopConfig(),
     val preferences: DesktopPreferences = DesktopPreferences(),
     val globalMemories: List<DesktopMemory> = emptyList(),
