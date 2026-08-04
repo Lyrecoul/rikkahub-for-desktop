@@ -4189,8 +4189,7 @@ private fun DesktopImagePreviewButton(
 ) {
     IconButton(
         onClick = onClick,
-        modifier = Modifier.size(34.dp).clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+        modifier = Modifier.size(34.dp)
     ) {
         Icon(icon, description, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.onSurface)
     }
