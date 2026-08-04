@@ -16,14 +16,23 @@ private fun DesktopConversation.mapDesktopAttachments(
 
 private fun ChatMessage.mapDesktopAttachments(
     transform: (DesktopAttachment) -> DesktopAttachment
-): ChatMessage = copy(attachments = attachments.map(transform))
+): ChatMessage = copy(
+    attachments = attachments.map(transform),
+    variants = variants.map { variant -> variant.copy(attachments = variant.attachments.map(transform)) }
+)
 
 internal fun DesktopData.attachmentBlobIds(): Set<String> = buildSet {
     conversations.forEach { conversation ->
-        conversation.messages.forEach { message -> addAttachmentIds(message.attachments) }
+        conversation.messages.forEach { message ->
+            addAttachmentIds(message.attachments)
+            message.variants.forEach { variant -> addAttachmentIds(variant.attachments) }
+        }
         addAttachmentIds(conversation.draftAttachments)
         conversation.branches.forEach { branch ->
-            branch.messages.forEach { message -> addAttachmentIds(message.attachments) }
+            branch.messages.forEach { message ->
+                addAttachmentIds(message.attachments)
+                message.variants.forEach { variant -> addAttachmentIds(variant.attachments) }
+            }
         }
     }
 }

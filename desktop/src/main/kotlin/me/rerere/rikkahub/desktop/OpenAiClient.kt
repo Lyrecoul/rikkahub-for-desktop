@@ -35,6 +35,7 @@ import java.net.UnknownHostException
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.Locale
+import java.util.Base64
 import kotlin.coroutines.resumeWithException
 
 internal data class StreamDelta(
@@ -46,6 +47,7 @@ internal data class StreamDelta(
     val completionTokens: Int? = null,
     val cachedTokens: Int? = null,
     val citations: List<DesktopCitation> = emptyList(),
+    val attachments: List<DesktopAttachment> = emptyList(),
     val toolCallDeltas: List<DesktopToolCallDelta> = emptyList()
 )
 
@@ -130,7 +132,7 @@ class OpenAiClient(
                     it.content.isEmpty() && it.reasoning.isEmpty() && it.reasoningSignature.isEmpty() &&
                         it.promptTokens == null && it.completionTokens == null
                         && it.cachedTokens == null && it.modelId == null
-                        && it.citations.isEmpty() && it.toolCallDeltas.isEmpty()
+                        && it.citations.isEmpty() && it.attachments.isEmpty() && it.toolCallDeltas.isEmpty()
                 }?.let { emit(it) }
             }
         }
@@ -184,6 +186,7 @@ class OpenAiClient(
             completionTokens = usage?.get("completion_tokens")?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
             cachedTokens = usage?.cachedTokens(),
             citations = citations,
+            attachments = delta?.get("content").desktopImageAttachments(),
             toolCallDeltas = toolCalls
         )
     }.getOrNull()
@@ -222,6 +225,7 @@ class OpenAiClient(
             completionTokens = usage?.get("completion_tokens")?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
             cachedTokens = usage?.cachedTokens(),
             citations = citations,
+            attachments = message["content"].desktopImageAttachments(),
             toolCallDeltas = toolCalls.mapIndexed { index, call ->
                 DesktopToolCallDelta(index, call.id, call.name, call.arguments)
             }
@@ -351,6 +355,61 @@ class OpenAiClient(
 
     internal suspend fun testWebSearch(settings: DesktopWebSearchSettings, query: String): ChatMessage =
         searchWeb(httpClient, settings, query)
+}
+
+internal fun JsonElement?.desktopImageAttachments(): List<DesktopAttachment> = when (this) {
+    is JsonArray -> mapIndexedNotNull { index, part ->
+        (part as? JsonObject)?.desktopImageAttachment(index)
+    }
+
+    is JsonObject -> listOfNotNull(desktopImageAttachment(0))
+    else -> emptyList()
+}
+
+internal fun JsonObject.desktopImageAttachment(index: Int = 0): DesktopAttachment? {
+    val inlineData = this["inlineData"] as? JsonObject
+    val image = this["image"] as? JsonObject
+    val source = this["source"] as? JsonObject
+    val imageUrl = (this["image_url"] as? JsonPrimitive)?.contentOrNull
+        ?: ((this["image_url"] as? JsonObject)?.get("url") as? JsonPrimitive)?.contentOrNull
+    val dataUrl = imageUrl?.desktopImageDataUrl()
+    val encoded = this["b64_json"]?.jsonPrimitive?.contentOrNull
+        ?: image?.get("b64_json")?.jsonPrimitive?.contentOrNull
+        ?: inlineData?.get("data")?.jsonPrimitive?.contentOrNull
+        ?: this["result"]?.jsonPrimitive?.contentOrNull
+        ?: dataUrl?.second
+        ?: return null
+    val mimeType = inlineData?.get("mimeType")?.jsonPrimitive?.contentOrNull
+        ?: image?.get("mime_type")?.jsonPrimitive?.contentOrNull
+        ?: source?.get("media_type")?.jsonPrimitive?.contentOrNull
+        ?: this["mime_type"]?.jsonPrimitive?.contentOrNull
+        ?: dataUrl?.first
+        ?: "image/png"
+    if (!mimeType.startsWith("image/", ignoreCase = true)) return null
+    val bytes = runCatching { Base64.getDecoder().decode(encoded) }.getOrNull() ?: return null
+    val extension = when (mimeType.lowercase()) {
+        "image/jpeg" -> "jpg"
+        "image/webp" -> "webp"
+        "image/gif" -> "gif"
+        else -> "png"
+    }
+    return DesktopAttachment(
+        name = "generated-image-${index + 1}.$extension",
+        mimeType = mimeType.lowercase(),
+        data = encoded,
+        isImage = true,
+        sizeBytes = bytes.size.toLong()
+    )
+}
+
+private fun String.desktopImageDataUrl(): Pair<String, String>? {
+    if (!startsWith("data:", ignoreCase = true)) return null
+    val comma = indexOf(',')
+    if (comma <= 5) return null
+    val header = substring(5, comma)
+    if (!header.endsWith(";base64", ignoreCase = true)) return null
+    val mimeType = header.substringBefore(';').lowercase()
+    return mimeType to substring(comma + 1)
 }
 
 internal fun StreamDelta.normalizeProviderToolCallIndexes(indexes: MutableMap<Int, Int>): StreamDelta {

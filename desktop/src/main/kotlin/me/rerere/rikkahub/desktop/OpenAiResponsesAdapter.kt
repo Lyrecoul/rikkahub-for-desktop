@@ -153,7 +153,18 @@ internal object OpenAiResponsesAdapter : DesktopChatProviderAdapter {
                 )
             )
 
-            "response.completed" -> event["response"]?.jsonObject?.usageDelta()
+            "response.image_generation_call.completed", "response.output_item.done" -> {
+                val item = event["item"] as? JsonObject ?: event
+                item.takeIf {
+                    it["type"]?.jsonPrimitive?.contentOrNull == "image_generation_call"
+                }?.desktopImageAttachment()?.let { attachment ->
+                    StreamDelta(attachments = listOf(attachment))
+                }
+            }
+
+            "response.completed" -> event["response"]?.jsonObject?.let { response ->
+                response.usageDelta().copy(attachments = response.responseImageAttachments())
+            }
             else -> null
         }
     }.getOrNull()
@@ -190,6 +201,7 @@ internal object OpenAiResponsesAdapter : DesktopChatProviderAdapter {
             content = content,
             reasoning = reasoning,
             modelId = response["model"]?.jsonPrimitive?.contentOrNull,
+            attachments = response.responseImageAttachments(),
             toolCallDeltas = toolCalls.mapIndexed { index, call ->
                 DesktopToolCallDelta(index, call.id, call.name, call.arguments)
             }
@@ -207,6 +219,16 @@ internal object OpenAiResponsesAdapter : DesktopChatProviderAdapter {
                 ?.get("incomplete_details")?.jsonObject?.get("reason")?.jsonPrimitive?.contentOrNull
                 ?.let { "Response incomplete: $it" }
     }.getOrNull()
+
+    private fun JsonObject.responseImageAttachments(): List<DesktopAttachment> = buildList {
+        this@responseImageAttachments["output"]?.jsonArray.orEmpty().forEachIndexed { outputIndex, element ->
+            val item = element.jsonObject
+            if (item["type"]?.jsonPrimitive?.contentOrNull == "image_generation_call") {
+                item.desktopImageAttachment(outputIndex)?.let(::add)
+            }
+            item["content"].desktopImageAttachments().forEach(::add)
+        }
+    }.distinctBy(DesktopAttachment::data)
 
     private fun JsonObject.usageDelta(): StreamDelta {
         val usage = this["usage"]?.jsonObject

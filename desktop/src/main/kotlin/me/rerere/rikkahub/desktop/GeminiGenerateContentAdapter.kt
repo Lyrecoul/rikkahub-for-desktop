@@ -180,6 +180,7 @@ internal object GeminiGenerateContentAdapter : DesktopChatProviderAdapter {
         val reasoning = StringBuilder()
         val signature = StringBuilder()
         val calls = mutableListOf<DesktopToolCallDelta>()
+        val attachments = mutableListOf<DesktopAttachment>()
         parts.forEachIndexed { partIndex, element ->
             val part = element.jsonObject
             val text = part["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
@@ -189,6 +190,7 @@ internal object GeminiGenerateContentAdapter : DesktopChatProviderAdapter {
                 content.append(text)
             }
             signature.append(part["thoughtSignature"]?.jsonPrimitive?.contentOrNull.orEmpty())
+            part.desktopImageAttachment(partIndex)?.let(attachments::add)
             part["functionCall"]?.jsonObject?.let { call ->
                 calls += DesktopToolCallDelta(
                     index = partIndex,
@@ -208,6 +210,7 @@ internal object GeminiGenerateContentAdapter : DesktopChatProviderAdapter {
             completionTokens = usage?.get("candidatesTokenCount")?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
             cachedTokens = usage?.get("cachedContentTokenCount")?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
             citations = parseGroundingCitations(candidate),
+            attachments = attachments.distinctBy(DesktopAttachment::data),
             toolCallDeltas = calls
         )
     }

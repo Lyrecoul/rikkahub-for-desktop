@@ -93,6 +93,19 @@ class DesktopMessageBranchTest {
     }
 
     @Test
+    fun switchingResponseVariantRestoresItsGeneratedImage() {
+        val firstImage = DesktopAttachment("first.png", "image/png", "AQID", isImage = true)
+        val secondImage = DesktopAttachment("second.png", "image/png", "BAUG", isImage = true)
+        val branched = ChatMessage(role = "assistant", content = "First", attachments = listOf(firstImage))
+            .beginAlternative()
+            .copy(content = "Second", attachments = listOf(secondImage))
+            .completeAlternative()
+
+        assertEquals(listOf(firstImage), branched.selectVariant(0).attachments)
+        assertEquals(listOf(secondImage), branched.selectVariant(1).attachments)
+    }
+
+    @Test
     fun switchingResponseVariantRestoresItsTranslation() {
         val branched = ChatMessage(role = "assistant", content = "First", translation = "翻译")
             .beginAlternative()
@@ -421,6 +434,19 @@ class DesktopMessageBranchTest {
 
         assertEquals(listOf("Legacy response"), legacy.availableVariants().map { it.content })
         assertEquals("Legacy response", legacy.selectVariant(0).content)
+    }
+
+    @Test
+    fun legacyVariantsRetainSharedAttachments() {
+        val image = DesktopAttachment("legacy.png", "image/png", "AQID", isImage = true)
+        val legacy = ChatMessage(
+            role = "assistant",
+            content = "Legacy response",
+            attachments = listOf(image),
+            variants = listOf(DesktopMessageVariant(content = "Legacy response"))
+        )
+
+        assertEquals(listOf(image), legacy.selectVariant(0).attachments)
     }
 
     @Test

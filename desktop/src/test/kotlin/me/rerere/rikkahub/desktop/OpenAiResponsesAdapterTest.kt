@@ -213,6 +213,28 @@ class OpenAiResponsesAdapterTest {
     }
 
     @Test
+    fun parsesImageGenerationResultsFromCompletedResponses() {
+        val payload = """
+            {
+              "output":[
+                {"type":"image_generation_call","id":"ig_1","result":"AQID"},
+                {"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}
+              ]
+            }
+        """.trimIndent()
+
+        val result = OpenAiResponsesAdapter.parseCompleteResponse(payload)
+        val completed = OpenAiResponsesAdapter.parseStreamEvent(
+            """{"type":"response.image_generation_call.completed","item":{"type":"image_generation_call","result":"AQID"}}"""
+        )
+
+        assertEquals("done", result.content)
+        assertEquals("AQID", result.attachments.single().data)
+        assertEquals("image/png", result.attachments.single().mimeType)
+        assertEquals("AQID", completed?.attachments?.single()?.data)
+    }
+
+    @Test
     fun parsesRefusalAndIncompleteResponses() {
         val refusal = OpenAiResponsesAdapter.parseStreamEvent(
             """{"type":"response.refusal.delta","delta":"cannot comply"}"""

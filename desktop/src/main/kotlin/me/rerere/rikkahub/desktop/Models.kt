@@ -422,6 +422,7 @@ data class DesktopAttachment(
 data class DesktopMessageVariant(
     val id: String = UUID.randomUUID().toString(),
     val content: String,
+    val attachments: List<DesktopAttachment> = emptyList(),
     val reasoning: String = "",
     val reasoningSignature: String = "",
     val reasoningStartedAt: Long? = null,
@@ -437,31 +438,40 @@ data class DesktopMessageVariant(
     val translationTargetLanguage: String = ""
 )
 
-fun ChatMessage.availableVariants(): List<DesktopMessageVariant> = variants.ifEmpty {
-    listOf(
-        DesktopMessageVariant(
-            id = id,
-            content = content,
-            reasoning = reasoning,
-            reasoningSignature = reasoningSignature,
-            reasoningStartedAt = reasoningStartedAt,
-            reasoningDurationMillis = reasoningDurationMillis,
-            createdAt = createdAt,
-            modelId = modelId,
-            promptTokens = promptTokens,
-            completionTokens = completionTokens,
-            cachedTokens = cachedTokens,
-            citations = citations,
-            toolCalls = toolCalls,
-            translation = translation,
-            translationTargetLanguage = translationTargetLanguage
+fun ChatMessage.availableVariants(): List<DesktopMessageVariant> {
+    val choices = variants.ifEmpty {
+        listOf(
+            DesktopMessageVariant(
+                id = id,
+                content = content,
+                attachments = attachments,
+                reasoning = reasoning,
+                reasoningSignature = reasoningSignature,
+                reasoningStartedAt = reasoningStartedAt,
+                reasoningDurationMillis = reasoningDurationMillis,
+                createdAt = createdAt,
+                modelId = modelId,
+                promptTokens = promptTokens,
+                completionTokens = completionTokens,
+                cachedTokens = cachedTokens,
+                citations = citations,
+                toolCalls = toolCalls,
+                translation = translation,
+                translationTargetLanguage = translationTargetLanguage
+            )
         )
-    )
+    }
+    // Variants saved before attachments became variant-specific shared the message attachments.
+    return if (attachments.isNotEmpty() && choices.all { it.attachments.isEmpty() }) {
+        choices.map { it.copy(attachments = attachments) }
+    } else {
+        choices
+    }
 }
 
 /** Adds a selectable revision while keeping the message node and its shared metadata intact. */
 fun ChatMessage.addVariant(content: String): ChatMessage {
-    val choices = availableVariants() + DesktopMessageVariant(content = content.trim())
+    val choices = availableVariants() + DesktopMessageVariant(content = content.trim(), attachments = attachments)
     return copy(
         content = content.trim(),
         reasoning = "",
@@ -479,6 +489,7 @@ fun ChatMessage.addVariant(content: String): ChatMessage {
 
 fun ChatMessage.beginAlternative(): ChatMessage = copy(
     content = "",
+    attachments = emptyList(),
     reasoning = "",
     reasoningSignature = "",
     reasoningStartedAt = null,
@@ -500,6 +511,7 @@ fun ChatMessage.beginAlternative(): ChatMessage = copy(
 fun ChatMessage.completeAlternative(): ChatMessage {
     val completed = DesktopMessageVariant(
         content = content,
+        attachments = attachments,
         reasoning = reasoning,
         reasoningSignature = reasoningSignature,
         reasoningStartedAt = reasoningStartedAt,
@@ -531,6 +543,7 @@ fun ChatMessage.selectVariant(index: Int): ChatMessage {
     val selected = choices.getOrNull(index) ?: return this
     return copy(
         content = selected.content,
+        attachments = selected.attachments,
         reasoning = selected.reasoning,
         reasoningSignature = selected.reasoningSignature,
         reasoningStartedAt = selected.reasoningStartedAt,

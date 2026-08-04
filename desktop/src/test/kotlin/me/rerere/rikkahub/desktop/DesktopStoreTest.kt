@@ -381,6 +381,26 @@ class DesktopStoreTest {
     }
 
     @Test
+    fun preservesGeneratedImagesForEveryMessageVariant() {
+        val directory = Files.createTempDirectory("rikkahub-desktop-variant-images")
+        val firstImage = DesktopAttachment("first.png", "image/png", "AQID", isImage = true)
+        val secondImage = DesktopAttachment("second.png", "image/png", "BAUG", isImage = true)
+        val response = ChatMessage("assistant", "first", attachments = listOf(firstImage))
+            .beginAlternative()
+            .copy(content = "second", attachments = listOf(secondImage))
+            .completeAlternative()
+        val conversation = DesktopConversation(messages = listOf(response))
+        val store = DesktopStore(directory.resolve("desktop.json"), MemorySecrets())
+
+        store.save(DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id))
+
+        val restored = store.load().conversations.single().messages.single()
+        assertEquals("AQID", restored.selectVariant(0).attachments.single().data)
+        assertEquals("BAUG", restored.selectVariant(1).attachments.single().data)
+        Files.list(directory.resolve("attachments")).use { files -> assertEquals(2, files.count()) }
+    }
+
+    @Test
     fun removesAttachmentBlobAfterItsLastReferenceIsDeleted() {
         val directory = Files.createTempDirectory("rikkahub-desktop-attachment-gc")
         val image = DesktopAttachment("photo.png", "image/png", "AQID", isImage = true, sizeBytes = 3)

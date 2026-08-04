@@ -181,6 +181,23 @@ class OpenAiClientTest {
     }
 
     @Test
+    fun parsesGeneratedImageContentPartsFromNonStreamingResponse() {
+        val payload = """
+            {"choices":[{"message":{"content":[
+              {"type":"text","text":"Here it is"},
+              {"type":"image_url","image_url":{"url":"data:image/png;base64,AQID"}}
+            ]}}]}
+        """.trimIndent()
+
+        val result = client.parseCompleteResponse(payload)
+
+        assertEquals("Here it is", result.content)
+        assertEquals(1, result.attachments.size)
+        assertEquals("image/png", result.attachments.single().mimeType)
+        assertEquals("AQID", result.attachments.single().data)
+    }
+
+    @Test
     fun parsesLegacyChoiceTextFromNonStreamingResponse() {
         val payload = """{"choices":[{"message":{"content":null},"text":"Conversation title"}]}"""
 

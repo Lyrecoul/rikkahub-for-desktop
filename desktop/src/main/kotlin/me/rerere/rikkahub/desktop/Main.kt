@@ -25,7 +25,9 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -96,17 +98,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.DragData
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draganddrop.dragData
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -133,8 +139,10 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogWindow
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowState
+import androidx.compose.ui.window.rememberDialogState
 import androidx.compose.ui.window.application
 import com.composables.icons.lucide.ArrowDown
 import com.composables.icons.lucide.ArrowDownToLine
@@ -177,6 +185,8 @@ import com.composables.icons.lucide.Trash2
 import com.composables.icons.lucide.Upload
 import com.composables.icons.lucide.UserRound
 import com.composables.icons.lucide.Wrench
+import com.composables.icons.lucide.ZoomIn
+import com.composables.icons.lucide.ZoomOut
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeColorEffect
 import dev.chrisbanes.haze.blur.blurEffect
@@ -876,6 +886,7 @@ private fun RikkaHubDesktop(
                     val pendingReasoning = StringBuilder()
                     val pendingReasoningSignature = StringBuilder()
                     val pendingCitations = mutableListOf<DesktopCitation>()
+                    val pendingAttachments = mutableListOf<DesktopAttachment>()
                     val pendingToolCallDeltas = mutableListOf<DesktopToolCallDelta>()
                     var pendingModelId: String? = null
                     var pendingPromptTokens: Int? = null
@@ -889,12 +900,13 @@ private fun RikkaHubDesktop(
                             pendingContent.isEmpty() && pendingReasoning.isEmpty() &&
                             pendingReasoningSignature.isEmpty() && pendingModelId == null &&
                             pendingPromptTokens == null && pendingCompletionTokens == null && pendingCachedTokens == null &&
-                            pendingCitations.isEmpty() && pendingToolCallDeltas.isEmpty()
+                            pendingCitations.isEmpty() && pendingAttachments.isEmpty() && pendingToolCallDeltas.isEmpty()
                         ) return
                         val content = pendingContent.toString()
                         val reasoning = pendingReasoning.toString()
                         val reasoningSignature = pendingReasoningSignature.toString()
                         val citations = pendingCitations.toList()
+                        val attachments = pendingAttachments.toList()
                         val toolCallDeltas = pendingToolCallDeltas.toList()
                         val modelId = pendingModelId
                         val promptTokens = pendingPromptTokens
@@ -904,6 +916,7 @@ private fun RikkaHubDesktop(
                         pendingReasoning.clear()
                         pendingReasoningSignature.clear()
                         pendingCitations.clear()
+                        pendingAttachments.clear()
                         pendingToolCallDeltas.clear()
                         pendingModelId = null
                         pendingPromptTokens = null
@@ -931,6 +944,7 @@ private fun RikkaHubDesktop(
                                     completionTokens = completionTokens ?: last.completionTokens,
                                     cachedTokens = cachedTokens ?: last.cachedTokens,
                                     citations = (last.citations + citations).distinctBy { it.url },
+                                    attachments = (last.attachments + attachments).distinctBy { it.data },
                                     toolCalls = last.toolCalls.merge(toolCallDeltas)
                                 )
                             }
@@ -944,6 +958,7 @@ private fun RikkaHubDesktop(
                             pendingReasoningSignature.append(delta.reasoningSignature)
                             accumulatedOutputLength += delta.content.length + delta.reasoning.length
                             pendingCitations += delta.citations
+                            pendingAttachments += delta.attachments
                             pendingToolCallDeltas += delta.toolCallDeltas
                             pendingModelId = delta.modelId ?: pendingModelId
                             pendingPromptTokens = delta.promptTokens ?: pendingPromptTokens
@@ -4357,19 +4372,29 @@ private fun AttachmentPreview(attachment: DesktopAttachment, language: DesktopLa
                 .toComposeImageBitmap()
         }.getOrNull()
     }
+    var previewOpen by remember(attachment.data) { mutableStateOf(false) }
     if (bitmap != null) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Image(
                 bitmap = bitmap,
                 contentDescription = attachment.name,
                 modifier = Modifier.widthIn(max = 360.dp).heightIn(max = 240.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { previewOpen = true },
                 contentScale = ContentScale.Fit
             )
             Text(
                 desktopAttachmentLabel(attachment, language),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp
+            )
+        }
+        if (previewOpen) {
+            DesktopImagePreviewWindow(
+                attachment = attachment,
+                bitmap = bitmap,
+                language = language,
+                onDismiss = { previewOpen = false }
             )
         }
     } else {
@@ -4389,6 +4414,243 @@ private fun AttachmentPreview(attachment: DesktopAttachment, language: DesktopLa
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun DesktopImagePreviewWindow(
+    attachment: DesktopAttachment,
+    bitmap: androidx.compose.ui.graphics.ImageBitmap,
+    language: DesktopLanguage,
+    onDismiss: () -> Unit
+) {
+    var scale by remember(attachment.data) { mutableFloatStateOf(1f) }
+    var translation by remember(attachment.data) { mutableStateOf(Offset.Zero) }
+    var saveRequested by remember(attachment.data) { mutableStateOf(false) }
+    var saveError by remember(attachment.data) { mutableStateOf<String?>(null) }
+    val extension = attachment.name.substringAfterLast('.', "png").lowercase()
+        .takeIf { it in setOf("png", "jpg", "jpeg", "gif", "webp") } ?: "png"
+
+    DialogWindow(
+        onCloseRequest = onDismiss,
+        title = attachment.name,
+        state = rememberDialogState(size = DpSize(1_280.dp, 820.dp))
+    ) {
+        Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+            BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                DesktopImageViewport(
+                    bitmap = bitmap,
+                    scale = scale,
+                    translation = translation,
+                    onScaleChange = { scale = it },
+                    onTranslationChange = { translation = it }
+                )
+                Surface(
+                    modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shadowElevation = 4.dp
+                ) {
+                    Row(
+                        Modifier.padding(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        DesktopImagePreviewButton(Lucide.ZoomOut, "Zoom out") {
+                            scale = (scale / 1.25f).coerceAtLeast(1f)
+                            if (scale == 1f) translation = Offset.Zero
+                        }
+                        DesktopImagePreviewButton(Lucide.ZoomIn, "Zoom in") {
+                            scale = (scale * 1.25f).coerceAtMost(4f)
+                        }
+                        DesktopImagePreviewButton(Lucide.RotateCcw, "Reset view") {
+                            scale = 1f
+                            translation = Offset.Zero
+                        }
+                        DesktopImagePreviewButton(Lucide.Download, desktopText(language, "mermaid.save_image")) {
+                            saveRequested = true
+                        }
+                        DesktopImagePreviewButton(Lucide.Minimize2, desktopText(language, "mermaid.exit_fullscreen")) {
+                            onDismiss()
+                        }
+                    }
+                }
+                saveError?.let { error ->
+                    Text(
+                        error,
+                        Modifier.align(Alignment.BottomCenter).padding(12.dp),
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp
+                    )
+                }
+                AnimatedVisibility(
+                    visible = saveRequested,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(14.dp),
+                    enter = fadeIn(tween(160)) + scaleIn(initialScale = 0.94f, animationSpec = tween(160)),
+                    exit = fadeOut(tween(120)) + scaleOut(targetScale = 0.94f, animationSpec = tween(120))
+                ) {
+                    DesktopImageSavePanel(
+                        language = language,
+                        suggestedName = attachment.name,
+                        extension = extension,
+                        onDismiss = { saveRequested = false },
+                        onSave = { destination ->
+                            saveRequested = false
+                            runCatching {
+                                destination.writeBytes(Base64.getDecoder().decode(attachment.data))
+                            }.onFailure { error ->
+                                saveError = error.message ?: "Unable to save image"
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopImageSavePanel(
+    language: DesktopLanguage,
+    suggestedName: String,
+    extension: String,
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit,
+    onSave: (File) -> Unit
+) {
+    var directory by remember { mutableStateOf(File(System.getProperty("user.home"))) }
+    var fileName by remember(suggestedName) { mutableStateOf(suggestedName) }
+    val entries = remember(directory) {
+        directory.listFiles().orEmpty()
+            .filter { it.isDirectory || it.isFile }
+            .sortedWith(compareByDescending<File> { it.isDirectory }.thenBy { it.name.lowercase() })
+    }
+    val normalizedName = fileName.trim().let { name ->
+        if (File(name).extension.equals(extension, ignoreCase = true)) name else "$name.$extension"
+    }
+    val validName = fileName.trim().isNotBlank() && File(normalizedName).name == normalizedName
+
+    Surface(
+        modifier = modifier.widthIn(min = 320.dp, max = 440.dp),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shadowElevation = 8.dp
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = { directory.parentFile?.let { directory = it } },
+                    enabled = directory.parentFile != null,
+                    modifier = Modifier.size(30.dp)
+                ) {
+                    Icon(Lucide.ChevronLeft, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurface)
+                }
+                Text(
+                    directory.path,
+                    Modifier.padding(start = 4.dp).weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 12.sp
+                )
+            }
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 220.dp)) {
+                items(entries, key = { it.absolutePath }) { entry ->
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).clickable {
+                            if (entry.isDirectory) directory = entry else fileName = entry.name
+                        }.padding(horizontal = 7.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (entry.isDirectory) Lucide.Folder else Lucide.Paperclip,
+                            null,
+                            Modifier.size(15.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            entry.name,
+                            Modifier.padding(start = 7.dp).weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = fileName,
+                onValueChange = { fileName = it },
+                modifier = Modifier.fillMaxWidth(),
+                isError = fileName.isNotBlank() && !validName,
+                singleLine = true
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text(desktopText(language, "common.cancel")) }
+                Button(onClick = { onSave(File(directory, normalizedName)) }, enabled = validName) {
+                    Text(desktopText(language, "common.save"))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalComposeUiApi::class)
+private fun DesktopImageViewport(
+    bitmap: androidx.compose.ui.graphics.ImageBitmap,
+    scale: Float,
+    translation: Offset,
+    onScaleChange: (Float) -> Unit,
+    onTranslationChange: (Offset) -> Unit
+) {
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val updatedScale = (scale * zoomChange).coerceIn(1f, 4f)
+        onScaleChange(updatedScale)
+        onTranslationChange(if (updatedScale > 1f || scale > 1f) translation + panChange else Offset.Zero)
+    }
+    Box(
+        Modifier.fillMaxSize().clipToBounds()
+            .onPointerEvent(PointerEventType.Scroll, PointerEventPass.Initial) { event ->
+                val delta = event.changes.firstOrNull()?.scrollDelta?.y ?: return@onPointerEvent
+                if (delta != 0f) {
+                    val updatedScale = (scale * if (delta < 0f) 1.15f else 0.87f).coerceIn(1f, 4f)
+                    onScaleChange(updatedScale)
+                    if (updatedScale == 1f) onTranslationChange(Offset.Zero)
+                    event.changes.forEach { it.consume() }
+                }
+            }
+            .transformable(transformState),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize().graphicsLayer {
+                transformOrigin = TransformOrigin.Center
+                scaleX = scale
+                scaleY = scale
+                translationX = translation.x
+                translationY = translation.y
+            },
+            contentScale = ContentScale.Fit,
+            filterQuality = FilterQuality.High
+        )
+    }
+}
+
+@Composable
+private fun DesktopImagePreviewButton(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.size(34.dp).clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+    ) {
+        Icon(icon, description, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -5197,18 +5459,19 @@ private fun Composer(
         Box(
             modifier = Modifier.fillMaxWidth()
                 .then(if (composerExpanded) Modifier.fillMaxHeight() else Modifier.widthIn(max = 920.dp))
+                // Clip before expanding the blur layer so its sampled backdrop follows the rounded composer edge.
+                .clip(composerShape)
                 .hazeEffect(hazeState) {
                     blurEffect {
                         blurRadius = 40.dp
                         noiseFactor = 0.04f
-                        backgroundColor = glassSurface.copy(alpha = 0.16f)
+                        backgroundColor = glassSurface.copy(alpha = 0.68f)
                         colorEffects = listOf(
-                            HazeColorEffect.tint(glassSurface.copy(alpha = 0.32f))
+                            HazeColorEffect.tint(glassSurface.copy(alpha = 0.80f))
                         )
-                        fallbackTint = HazeColorEffect.tint(glassSurface.copy(alpha = 0.72f))
+                        fallbackTint = HazeColorEffect.tint(glassSurface.copy(alpha = 0.92f))
                     }
                 }
-                .clip(composerShape)
                 .border(
                     width = 1.dp,
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f),

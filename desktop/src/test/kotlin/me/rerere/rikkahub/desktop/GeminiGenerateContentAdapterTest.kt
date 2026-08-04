@@ -191,6 +191,20 @@ class GeminiGenerateContentAdapterTest {
     }
 
     @Test
+    fun parsesGeminiInlineGeneratedImages() {
+        val result = GeminiGenerateContentAdapter.parseResponse(
+            """{"candidates":[{"content":{"parts":[
+                {"text":"done"},
+                {"inlineData":{"mimeType":"image/webp","data":"AQID"}}
+            ]}}]}"""
+        )
+
+        assertEquals("done", result.content)
+        assertEquals("image/webp", result.attachments.single().mimeType)
+        assertEquals("AQID", result.attachments.single().data)
+    }
+
+    @Test
     fun createsStableToolIdWhenGeminiOmitsFunctionCallId() {
         val result = GeminiGenerateContentAdapter.parseResponse(
             """{"candidates":[{"content":{"parts":[{"text":"before"},{"functionCall":{"name":"current_time","args":{}}}]}}]}"""
