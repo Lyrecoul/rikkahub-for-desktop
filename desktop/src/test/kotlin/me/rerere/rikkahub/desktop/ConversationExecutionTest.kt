@@ -30,6 +30,35 @@ class ConversationExecutionTest {
     }
 
     @Test
+    fun removesUnresolvedToolCallWhenToolExecutionFails() = runBlocking {
+        val conversation = DesktopConversation(id = "conversation", messages = listOf(ChatMessage("user", "Search")))
+        var data = DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id)
+        val errors = mutableListOf<String>()
+        val execution = ConversationExecution(
+            adapter = object : ConversationExecutionAdapter {
+                override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> =
+                    flowOf(StreamDelta(toolCallDeltas = listOf(DesktopToolCallDelta(0, "call-1", "search"))))
+
+                override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = true
+                override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = emptyList()
+                override suspend fun executeToolCalls(
+                    config: DesktopConfig,
+                    calls: List<DesktopToolCall>
+                ): List<ChatMessage> = error("tool failed")
+            },
+            currentData = { data },
+            updateData = { data = it },
+            reportError = { _, message -> errors += message }
+        )
+
+        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
+
+        assertTrue(!result.completed)
+        assertEquals(listOf("user"), data.conversations.single().messages.map(ChatMessage::role))
+        assertEquals("tool failed", errors.single())
+    }
+
+    @Test
     fun removesEmptyAssistantMessageWhenModelStreamFails() = runBlocking {
         val conversation = DesktopConversation(id = "conversation", messages = listOf(ChatMessage("user", "Hello")))
         var data = DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id)
