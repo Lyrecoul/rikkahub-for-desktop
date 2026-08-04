@@ -448,7 +448,7 @@ private fun RikkaHubDesktop(
         val committed = pendingSettingsExitLanguage?.let { language ->
             session.update { current -> current.copy(preferences = current.preferences.copy(language = language)) }
         } ?: session
-        val commit = committed.commit()
+        val commit = committed.commitOrNull() ?: return
         commit.deletedProviderIds.forEach(store::deleteProviderSecret)
         val dataWithDeletedAssistants = commit.deletedAssistantIds.fold(data) { current, assistantId ->
             current.deleteAssistantProfile(assistantId)
@@ -1074,7 +1074,7 @@ private fun RikkaHubDesktop(
                             val modifiedAssistantIds = settingsData.assistants.filter { assistant ->
                                 data.assistants.firstOrNull { it.id == assistant.id } != assistant
                             }.mapTo(mutableSetOf(), DesktopAssistantProfile::id)
-                            val modifiedSections = activeSettingsSession.commit().modifiedSections
+                            val modifiedSections = activeSettingsSession.modifiedSections
                             DesktopSettingsPane(
                                 providers = settingsData.providers.ifEmpty { listOf(settingsData.activeProvider()) },
                                 selectedProviderId = settingsData.activeProvider().id,

@@ -14,13 +14,23 @@ internal data class SettingsEditSession(
     val hasChanges: Boolean
         get() = draft.settingsContentDiffersFrom(original)
 
+    val modifiedSections: Set<DesktopSettingsSection>
+        get() = draft.modifiedSettingsSectionsFrom(original)
+
     fun update(transform: (DesktopData) -> DesktopData): SettingsEditSession = copy(draft = transform(draft))
 
     fun discard(): SettingsEditSession = copy(draft = original)
 
-    fun commit(): SettingsEditCommit = SettingsEditCommit(
+    fun commitOrNull(): SettingsEditCommit? = if (isValid) commit() else null
+
+    private val isValid: Boolean
+        get() = draft.providers.all { provider ->
+            provider.name.isNotBlank() && provider.config.baseUrl.isNotBlank() && provider.config.model.isNotBlank()
+        } && draft.assistants.all { assistant -> assistant.name.isNotBlank() }
+
+    private fun commit(): SettingsEditCommit = SettingsEditCommit(
         data = draft,
-        modifiedSections = draft.modifiedSettingsSectionsFrom(original),
+        modifiedSections = modifiedSections,
         deletedProviderIds = original.providers.mapTo(mutableSetOf(), DesktopProviderProfile::id) -
             draft.providers.mapTo(mutableSetOf(), DesktopProviderProfile::id),
         deletedAssistantIds = original.assistants.mapTo(mutableSetOf(), DesktopAssistantProfile::id) -

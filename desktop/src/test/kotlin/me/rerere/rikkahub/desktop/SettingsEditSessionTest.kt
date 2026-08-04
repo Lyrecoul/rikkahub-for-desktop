@@ -24,10 +24,23 @@ class SettingsEditSessionTest {
             )
         }
 
-        val commit = session.commit()
+        val commit = requireNotNull(session.commitOrNull())
 
         assertTrue(DesktopSettingsSection.INTERACTION in commit.modifiedSections)
         assertEquals(setOf(provider.id), commit.deletedProviderIds)
+    }
+
+    @Test
+    fun invalidProviderOrAssistantCannotCommit() {
+        val invalidProvider = SettingsEditSession(DesktopData()).update { data ->
+            data.copy(providers = listOf(DesktopProviderProfile(name = "", config = DesktopConfig(model = ""))))
+        }
+        val invalidAssistant = SettingsEditSession(DesktopData()).update { data ->
+            data.copy(assistants = listOf(DesktopAssistantProfile(name = "")))
+        }
+
+        assertEquals(null, invalidProvider.commitOrNull())
+        assertEquals(null, invalidAssistant.commitOrNull())
     }
 
     @Test
