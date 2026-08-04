@@ -1068,12 +1068,8 @@ private fun RikkaHubDesktop(
                         if (showSettings) {
                             val activeSettingsSession = settingsSession ?: SettingsEditSession(data)
                             val settingsData = activeSettingsSession.draft
-                            val modifiedProviderIds = settingsData.providers.filter { provider ->
-                                data.providers.firstOrNull { it.id == provider.id } != provider
-                            }.mapTo(mutableSetOf(), DesktopProviderProfile::id)
-                            val modifiedAssistantIds = settingsData.assistants.filter { assistant ->
-                                data.assistants.firstOrNull { it.id == assistant.id } != assistant
-                            }.mapTo(mutableSetOf(), DesktopAssistantProfile::id)
+                            val modifiedProviderIds = activeSettingsSession.modifiedProviderIds
+                            val modifiedAssistantIds = activeSettingsSession.modifiedAssistantIds
                             val modifiedSections = activeSettingsSession.modifiedSections
                             DesktopSettingsPane(
                                 providers = settingsData.providers.ifEmpty { listOf(settingsData.activeProvider()) },

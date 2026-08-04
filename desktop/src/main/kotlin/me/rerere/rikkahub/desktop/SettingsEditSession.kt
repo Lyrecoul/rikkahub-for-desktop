@@ -19,6 +19,16 @@ internal data class SettingsEditSession(
     val modifiedSections: Set<DesktopSettingsSection>
         get() = draft.modifiedSettingsSectionsFrom(original)
 
+    val modifiedProviderIds: Set<String>
+        get() = draft.providers.filter { provider ->
+            original.providers.firstOrNull { it.id == provider.id } != provider
+        }.mapTo(mutableSetOf(), DesktopProviderProfile::id)
+
+    val modifiedAssistantIds: Set<String>
+        get() = draft.assistants.filter { assistant ->
+            original.assistants.firstOrNull { it.id == assistant.id } != assistant
+        }.mapTo(mutableSetOf(), DesktopAssistantProfile::id)
+
     fun update(transform: (DesktopData) -> DesktopData): SettingsEditSession = copy(draft = transform(draft))
 
     fun discard(): SettingsEditSession = copy(draft = original)

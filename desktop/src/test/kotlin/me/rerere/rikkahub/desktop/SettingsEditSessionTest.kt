@@ -31,6 +31,27 @@ class SettingsEditSessionTest {
     }
 
     @Test
+    fun exposesModifiedProfileIdsFromTheOriginalSnapshot() {
+        val provider = DesktopProviderProfile(id = "provider", name = "Original")
+        val assistant = DesktopAssistantProfile(id = "assistant", name = "Original")
+        val original = DesktopData(
+            providers = listOf(provider),
+            selectedProviderId = provider.id,
+            assistants = listOf(assistant),
+            selectedAssistantId = assistant.id
+        )
+        val session = SettingsEditSession(original).update { data ->
+            data.copy(
+                providers = listOf(provider.copy(name = "Changed")),
+                assistants = listOf(assistant.copy(name = "Changed"))
+            )
+        }
+
+        assertEquals(setOf(provider.id), session.modifiedProviderIds)
+        assertEquals(setOf(assistant.id), session.modifiedAssistantIds)
+    }
+
+    @Test
     fun invalidProviderOrAssistantCannotCommit() {
         val invalidProvider = SettingsEditSession(DesktopData()).update { data ->
             data.copy(providers = listOf(DesktopProviderProfile(name = "", config = DesktopConfig(model = ""))))
