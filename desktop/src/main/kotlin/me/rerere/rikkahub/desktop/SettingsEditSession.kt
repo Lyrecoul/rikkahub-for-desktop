@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.desktop
 
+import kotlinx.serialization.json.Json
+
 internal data class SettingsEditCommit(
     val data: DesktopData,
     val modifiedSections: Set<DesktopSettingsSection>,
@@ -25,8 +27,9 @@ internal data class SettingsEditSession(
 
     private val isValid: Boolean
         get() = draft.providers.all { provider ->
-            provider.name.isNotBlank() && provider.config.baseUrl.isNotBlank() && provider.config.model.isNotBlank()
-        } && draft.assistants.all { assistant -> assistant.name.isNotBlank() }
+            provider.name.isNotBlank() && provider.config.baseUrl.isNotBlank() && provider.config.model.isNotBlank() &&
+                provider.config.hasValidCustomFields()
+        } && draft.assistants.all(DesktopAssistantProfile::hasValidSettings)
 
     private fun commit(): SettingsEditCommit = SettingsEditCommit(
         data = draft,
@@ -37,6 +40,26 @@ internal data class SettingsEditSession(
             draft.assistants.mapTo(mutableSetOf(), DesktopAssistantProfile::id)
     )
 }
+
+private fun DesktopAssistantProfile.hasValidSettings(): Boolean =
+    name.isNotBlank() &&
+        presetMessages.all { it.content.isNotBlank() } &&
+        quickMessages.all { it.content.isNotBlank() } &&
+        validateMessageTemplate(messageTemplate).isSuccess &&
+        regexRules.all { rule -> rule.findRegex.isNotBlank() && runCatching { Regex(rule.findRegex) }.isSuccess } &&
+        memories.all { it.content.isNotBlank() } &&
+        promptInjections.all { injection ->
+            injection.content.isNotBlank() && (injection.constantActive || injection.keywords.isNotEmpty()) &&
+                (!injection.useRegex || injection.keywords.all { runCatching { Regex(it) }.isSuccess })
+        } &&
+        customHeaders.all { it.name.isNotBlank() } &&
+        hasValidCustomBodies(customBodies)
+
+private fun DesktopConfig.hasValidCustomFields(): Boolean =
+    customHeaders.all { it.name.isNotBlank() } && hasValidCustomBodies(customBodies)
+
+private fun hasValidCustomBodies(bodies: List<DesktopCustomBody>): Boolean =
+    bodies.all { body -> body.key.isNotBlank() && runCatching { Json.parseToJsonElement(body.value) }.isSuccess }
 
 internal fun DesktopData.settingsContentDiffersFrom(other: DesktopData): Boolean =
     config != other.config ||

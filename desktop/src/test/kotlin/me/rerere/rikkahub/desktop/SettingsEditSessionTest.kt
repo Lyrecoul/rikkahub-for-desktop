@@ -44,6 +44,23 @@ class SettingsEditSessionTest {
     }
 
     @Test
+    fun invalidAssistantDetailsCannotCommit() {
+        val invalidTemplate = SettingsEditSession(DesktopData()).update { data ->
+            data.copy(assistants = listOf(DesktopAssistantProfile(messageTemplate = "no message placeholder")))
+        }
+        val invalidRegex = SettingsEditSession(DesktopData()).update { data ->
+            data.copy(assistants = listOf(DesktopAssistantProfile(regexRules = listOf(DesktopRegexRule(findRegex = "[")))))
+        }
+        val invalidBody = SettingsEditSession(DesktopData()).update { data ->
+            data.copy(assistants = listOf(DesktopAssistantProfile(customBodies = listOf(DesktopCustomBody("x", "not json")))))
+        }
+
+        assertEquals(null, invalidTemplate.commitOrNull())
+        assertEquals(null, invalidRegex.commitOrNull())
+        assertEquals(null, invalidBody.commitOrNull())
+    }
+
+    @Test
     fun discardRestoresTheOriginalData() {
         val original = DesktopData(preferences = DesktopPreferences(userNickname = "Original"))
         var session = SettingsEditSession(original)
