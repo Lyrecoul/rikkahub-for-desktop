@@ -357,7 +357,6 @@ private fun RikkaHubDesktop(
     var settingsSession by remember { mutableStateOf<SettingsEditSession?>(null) }
     var settingsExitConfirmationOpen by remember { mutableStateOf(false) }
     var pendingSettingsExit by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var pendingSettingsExitLanguage by remember { mutableStateOf<DesktopLanguage?>(null) }
     var showSidebar by remember { mutableStateOf(true) }
     var sidebarPreferredWidth by remember { mutableStateOf(292.dp) }
     var sidebarResizeHovered by remember { mutableStateOf(false) }
@@ -444,11 +443,7 @@ private fun RikkaHubDesktop(
     }
 
     fun saveSettingsDraft() {
-        val session = settingsSession ?: SettingsEditSession(data)
-        val committed = pendingSettingsExitLanguage?.let { language ->
-            session.update { current -> current.copy(preferences = current.preferences.copy(language = language)) }
-        } ?: session
-        val commit = committed.commitOrNull() ?: return
+        val commit = (settingsSession ?: SettingsEditSession(data)).commitOrNull() ?: return
         commit.deletedProviderIds.forEach(store::deleteProviderSecret)
         val dataWithDeletedAssistants = commit.deletedAssistantIds.fold(data) { current, assistantId ->
             current.deleteAssistantProfile(assistantId)
@@ -470,15 +465,16 @@ private fun RikkaHubDesktop(
     }
 
     fun requestSettingsExit(afterExit: () -> Unit = {}, language: DesktopLanguage? = null) {
-        val session = settingsSession
-        val changedLanguage = language?.takeIf { it != data.preferences.language }
-        if ((session?.hasChanges == true) || changedLanguage != null) {
+        language?.takeIf { it != data.preferences.language }?.let { selectedLanguage ->
+            settingsSession = (settingsSession ?: SettingsEditSession(data)).update { current ->
+                current.copy(preferences = current.preferences.copy(language = selectedLanguage))
+            }
+        }
+        if (settingsSession?.hasChanges == true) {
             pendingSettingsExit = afterExit
-            pendingSettingsExitLanguage = changedLanguage
             settingsExitConfirmationOpen = true
         } else {
             settingsSession = null
-            pendingSettingsExitLanguage = null
             showSettings = false
             afterExit()
         }
@@ -1440,7 +1436,6 @@ private fun RikkaHubDesktop(
                 onDismissRequest = {
                     settingsExitConfirmationOpen = false
                     pendingSettingsExit = null
-                    pendingSettingsExitLanguage = null
                 },
                 title = { Text(desktopText(data.preferences.language, "settings.unsaved_changes_title")) },
                 text = { Text(desktopText(data.preferences.language, "settings.unsaved_changes_description")) },
@@ -1448,7 +1443,6 @@ private fun RikkaHubDesktop(
                     Button(onClick = {
                         saveSettingsDraft()
                         settingsSession = null
-                        pendingSettingsExitLanguage = null
                         showSettings = false
                         settingsExitConfirmationOpen = false
                         pendingSettingsExit?.invoke()
@@ -1460,11 +1454,9 @@ private fun RikkaHubDesktop(
                         TextButton(onClick = {
                             settingsExitConfirmationOpen = false
                             pendingSettingsExit = null
-                            pendingSettingsExitLanguage = null
                         }) { Text(desktopText(data.preferences.language, "common.cancel")) }
                         TextButton(onClick = {
                             settingsSession = null
-                            pendingSettingsExitLanguage = null
                             showSettings = false
                             settingsExitConfirmationOpen = false
                             pendingSettingsExit?.invoke()
