@@ -30,6 +30,49 @@ class ConversationExecutionTest {
     }
 
     @Test
+    fun synchronizesStaleMcpToolsBeforeStartingTheModelRequest() = runBlocking {
+        val server = DesktopMcpServer(id = "server", name = "Search", enabled = true)
+        val assistant = DesktopAssistantProfile(id = "assistant", mcpServerIds = setOf(server.id))
+        val conversation = DesktopConversation(
+            id = "conversation",
+            assistantId = assistant.id,
+            messages = listOf(ChatMessage("user", "Search"))
+        )
+        var data = DesktopData(
+            assistants = listOf(assistant),
+            selectedAssistantId = assistant.id,
+            mcpServers = listOf(server),
+            conversations = listOf(conversation),
+            selectedConversationId = conversation.id
+        )
+        val synchronizedTool = DesktopMcpTool(name = "search", description = "Search")
+        val execution = ConversationExecution(
+            adapter = object : ConversationExecutionAdapter {
+                override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> =
+                    flowOf(StreamDelta(content = "Done"))
+
+                override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = false
+
+                override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = listOf(synchronizedTool)
+
+                override suspend fun executeToolCalls(
+                    config: DesktopConfig,
+                    calls: List<DesktopToolCall>
+                ): List<ChatMessage> = emptyList()
+            },
+            currentData = { data },
+            updateData = { data = it },
+            reportError = { _, message -> error(message) }
+        )
+
+        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
+
+        assertTrue(result.completed)
+        assertEquals(listOf(synchronizedTool), data.mcpServers.single().tools)
+        assertTrue(data.mcpServers.single().hasCurrentTools())
+    }
+
+    @Test
     fun cancellationDuringMcpSyncDoesNotPublishAnError() = runBlocking {
         val server = DesktopMcpServer(id = "server", name = "Search", enabled = true)
         val assistant = DesktopAssistantProfile(id = "assistant", mcpServerIds = setOf(server.id))
