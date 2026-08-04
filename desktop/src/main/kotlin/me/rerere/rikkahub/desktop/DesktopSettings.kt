@@ -162,6 +162,7 @@ internal fun DesktopSettingsPane(
         mutableStateOf<ConnectionState>(ConnectionState.Idle)
     }
     var modelMenuOpen by remember(selectedProvider.id) { mutableStateOf(false) }
+    var protocolMenuOpen by remember(selectedProvider.id) { mutableStateOf(false) }
     var providerPresetMenuOpen by remember(selectedProvider.id) { mutableStateOf(false) }
     var assistantProviderMenuOpen by remember(selectedAssistant.id) { mutableStateOf(false) }
     var assistantModelMenuOpen by remember(selectedAssistant.id) { mutableStateOf(false) }
@@ -888,6 +889,19 @@ internal fun DesktopSettingsPane(
                                         }
                                     }
                                 }
+                                SettingsDivider()
+                                GlobalMemorySettings(
+                                    language = preferences.language,
+                                    memories = globalMemories,
+                                    onMemoriesChange = onGlobalMemoriesChange
+                                )
+                                SettingsDivider()
+                                DesktopMcpSettings(
+                                    language = preferences.language,
+                                    servers = mcpServers,
+                                    mcpClient = mcpClient,
+                                    onServersChange = onMcpServersChange
+                                )
                             }
                         }
 
@@ -1325,62 +1339,6 @@ internal fun DesktopSettingsPane(
                                         ) {
                                             draftAssistant = draftAssistant.copy(useGlobalMemory = it)
                                         }
-                                        if (draftAssistant.useGlobalMemory) {
-                                            Row(
-                                                Modifier.fillMaxWidth(),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    desktopText(preferences.language, "assistant.global_memory"),
-                                                    Modifier.weight(1f),
-                                                    fontWeight = FontWeight.Medium
-                                                )
-                                                IconButton(onClick = { onGlobalMemoriesChange(globalMemories + DesktopMemory()) }) {
-                                                    Icon(
-                                                        Lucide.Plus,
-                                                        desktopText(
-                                                            preferences.language,
-                                                            "assistant.add_global_memory"
-                                                        ),
-                                                        Modifier.size(18.dp)
-                                                    )
-                                                }
-                                            }
-                                            globalMemories.forEachIndexed { index, memory ->
-                                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                                                    OutlinedTextField(
-                                                        memory.content,
-                                                        { value ->
-                                                            onGlobalMemoriesChange(globalMemories.mapIndexed { i, item ->
-                                                                if (i == index) item.copy(
-                                                                    content = value
-                                                                ) else item
-                                                            })
-                                                        },
-                                                        Modifier.weight(1f),
-                                                        label = {
-                                                            Text(
-                                                                desktopText(
-                                                                    preferences.language,
-                                                                    "assistant.shared_memory_content"
-                                                                )
-                                                            )
-                                                        },
-                                                        minLines = 2
-                                                    )
-                                                    IconButton(onClick = { onGlobalMemoriesChange(globalMemories.filterIndexed { i, _ -> i != index }) }) {
-                                                        Icon(
-                                                            Lucide.Trash2,
-                                                            desktopText(
-                                                                preferences.language,
-                                                                "assistant.delete_global_memory"
-                                                            ),
-                                                            Modifier.size(18.dp)
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
                                         if (!draftAssistant.useGlobalMemory) {
                                             Row(
                                                 Modifier.fillMaxWidth(),
@@ -1457,12 +1415,10 @@ internal fun DesktopSettingsPane(
                                         }
                                     }
                                     SettingsDivider()
-                                    DesktopMcpSettings(
+                                    AssistantMcpServerSelector(
                                         language = preferences.language,
                                         servers = mcpServers,
                                         selectedServerIds = draftAssistant.mcpServerIds,
-                                        mcpClient = mcpClient,
-                                        onServersChange = onMcpServersChange,
                                         onSelectedServerIdsChange = { ids ->
                                             draftAssistant = draftAssistant.copy(mcpServerIds = ids)
                                         }
@@ -2441,7 +2397,7 @@ internal fun DesktopSettingsPane(
                                                 }
                                             },
                                             leadingIcon = {
-                                                DesktopProviderIcon(provider.name, Modifier.size(16.dp))
+                                                DesktopProviderIcon(provider.name, iconSize = 16.dp)
                                             }
                                         )
                                     }
@@ -2487,6 +2443,9 @@ internal fun DesktopSettingsPane(
                                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
+                                    ProviderSettingsGroupTitle(
+                                        desktopText(preferences.language, "provider.group.connection")
+                                    )
                                     Row(
                                         Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically
@@ -2528,32 +2487,49 @@ internal fun DesktopSettingsPane(
                                         label = { Text(desktopText(preferences.language, "settings.base_url")) },
                                         singleLine = true
                                     )
-                                    SingleChoiceSegmentedButtonRow {
-                                        DesktopProviderProtocol.entries.forEachIndexed { index, protocol ->
-                                            SegmentedButton(
-                                                selected = draftProvider.config.protocol == protocol,
-                                                onClick = {
-                                                    draftProvider = draftProvider.copy(
-                                                        config = draftProvider.config.copy(protocol = protocol)
-                                                    )
-                                                },
-                                                shape = SegmentedButtonDefaults.itemShape(
-                                                    index,
-                                                    DesktopProviderProtocol.entries.size
-                                                ),
-                                                label = {
-                                                    Text(
-                                                        when (protocol) {
-                                                            DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS ->
-                                                                "Chat Completions"
-
-                                                            DesktopProviderProtocol.OPENAI_RESPONSES -> "Responses"
-                                                            DesktopProviderProtocol.ANTHROPIC_MESSAGES -> "Anthropic"
-                                                            DesktopProviderProtocol.GEMINI_GENERATE_CONTENT -> "Gemini"
-                                                        }
-                                                    )
-                                                }
+                                    Text(
+                                        desktopText(preferences.language, "provider.response_format"),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 12.sp
+                                    )
+                                    Box {
+                                        OutlinedButton(
+                                            onClick = { protocolMenuOpen = true },
+                                            modifier = Modifier.fillMaxWidth().height(48.dp)
+                                        ) {
+                                            Text(
+                                                draftProvider.config.protocol.displayName,
+                                                Modifier.weight(1f),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
+                                            Icon(
+                                                Lucide.ChevronDown,
+                                                null,
+                                                Modifier.padding(start = 8.dp).size(18.dp)
+                                            )
+                                        }
+                                        DropdownMenu(
+                                            expanded = protocolMenuOpen,
+                                            onDismissRequest = { protocolMenuOpen = false }
+                                        ) {
+                                            DesktopProviderProtocol.entries.forEach { protocol ->
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Text(
+                                                            protocol.displayName,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    },
+                                                    onClick = {
+                                                        protocolMenuOpen = false
+                                                        draftProvider = draftProvider.copy(
+                                                            config = draftProvider.config.copy(protocol = protocol)
+                                                        )
+                                                    }
+                                                )
+                                            }
                                         }
                                     }
                                     OutlinedTextField(
@@ -2582,6 +2558,10 @@ internal fun DesktopSettingsPane(
                                                 )
                                             }
                                         }
+                                    )
+                                    SettingsDivider()
+                                    ProviderSettingsGroupTitle(
+                                        desktopText(preferences.language, "provider.group.model")
                                     )
                                     Box {
                                         OutlinedTextField(
@@ -2733,6 +2713,10 @@ internal fun DesktopSettingsPane(
                                             }
                                         }
                                     }
+                                    SettingsDivider()
+                                    ProviderSettingsGroupTitle(
+                                        desktopText(preferences.language, "provider.group.automation")
+                                    )
                                     OutlinedTextField(
                                         draftProvider.config.titleModel,
                                         { value ->
@@ -2790,6 +2774,10 @@ internal fun DesktopSettingsPane(
                                         },
                                         minLines = 4,
                                         maxLines = 8
+                                    )
+                                    SettingsDivider()
+                                    ProviderSettingsGroupTitle(
+                                        desktopText(preferences.language, "provider.group.generation")
                                     )
                                     Text(
                                         "${desktopText(preferences.language, "assistant.temperature")}  ${
@@ -2901,6 +2889,9 @@ internal fun DesktopSettingsPane(
                                         maxLines = 7
                                     )
                                     SettingsDivider()
+                                    ProviderSettingsGroupTitle(
+                                        desktopText(preferences.language, "provider.group.advanced")
+                                    )
                                     PreferenceSwitch(
                                         desktopText(preferences.language, "provider.balance_query"),
                                         desktopText(preferences.language, "provider.balance_query_help"),
@@ -3288,6 +3279,14 @@ private val DesktopSearchProviderType.displayName: String
         DesktopSearchProviderType.RIKKAHUB -> "RikkaHub"
     }
 
+private val DesktopProviderProtocol.displayName: String
+    get() = when (this) {
+        DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS -> "Chat Completions"
+        DesktopProviderProtocol.OPENAI_RESPONSES -> "Responses"
+        DesktopProviderProtocol.ANTHROPIC_MESSAGES -> "Anthropic Messages"
+        DesktopProviderProtocol.GEMINI_GENERATE_CONTENT -> "Gemini Generate Content"
+    }
+
 @Composable
 private fun RequestOverridesEditor(
     language: DesktopLanguage,
@@ -3444,6 +3443,16 @@ private fun SettingsSection(title: String, icon: ImageVector, modified: Boolean,
 }
 
 @Composable
+private fun ProviderSettingsGroupTitle(title: String) {
+    Text(
+        title,
+        color = MaterialTheme.colorScheme.primary,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold
+    )
+}
+
+@Composable
 private fun DesktopSettingsNavigation(
     activeSection: DesktopSettingsSection,
     language: DesktopLanguage,
@@ -3551,13 +3560,133 @@ private fun SettingsDivider() {
 }
 
 @Composable
-private fun DesktopMcpSettings(
+private fun GlobalMemorySettings(
+    language: DesktopLanguage,
+    memories: List<DesktopMemory>,
+    onMemoriesChange: (List<DesktopMemory>) -> Unit
+) {
+    Column(Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    desktopText(language, "assistant.global_memory"),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    desktopText(language, "assistant.global_memory_help"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp
+                )
+            }
+            IconButton(onClick = { onMemoriesChange(memories + DesktopMemory()) }) {
+                Icon(
+                    Lucide.Plus,
+                    desktopText(language, "assistant.add_global_memory"),
+                    Modifier.size(18.dp)
+                )
+            }
+        }
+        memories.forEachIndexed { index, memory ->
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                OutlinedTextField(
+                    memory.content,
+                    { value ->
+                        onMemoriesChange(memories.mapIndexed { itemIndex, item ->
+                            if (itemIndex == index) item.copy(content = value) else item
+                        })
+                    },
+                    Modifier.weight(1f),
+                    label = { Text(desktopText(language, "assistant.shared_memory_content")) },
+                    minLines = 2
+                )
+                IconButton(onClick = {
+                    onMemoriesChange(memories.filterIndexed { itemIndex, _ -> itemIndex != index })
+                }) {
+                    Icon(
+                        Lucide.Trash2,
+                        desktopText(language, "assistant.delete_global_memory"),
+                        Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AssistantMcpServerSelector(
     language: DesktopLanguage,
     servers: List<DesktopMcpServer>,
     selectedServerIds: Set<String>,
-    mcpClient: DesktopMcpClient,
-    onServersChange: (List<DesktopMcpServer>) -> Unit,
     onSelectedServerIdsChange: (Set<String>) -> Unit
+) {
+    Column(Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text(desktopText(language, "mcp_settings.title"), fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    desktopText(language, "mcp_settings.assistant_description"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp
+                )
+            }
+        }
+        if (servers.isEmpty()) {
+            Text(
+                desktopText(language, "mcp_settings.no_servers"),
+                Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
+        } else {
+            servers.forEach { server ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(server.name.ifBlank { desktopText(language, "mcp_settings.unnamed_server") })
+                        Text(
+                            if (server.enabled) {
+                                desktopText(language, "mcp_settings.sync_tools")
+                            } else {
+                                desktopText(language, "mcp_settings.enable_server_help")
+                            },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
+                        )
+                    }
+                    Switch(
+                        checked = server.id in selectedServerIds,
+                        onCheckedChange = if (server.enabled) {
+                            { selected ->
+                                onSelectedServerIdsChange(
+                                    if (selected) selectedServerIds + server.id else selectedServerIds - server.id
+                                )
+                            }
+                        } else {
+                            null
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopMcpSettings(
+    language: DesktopLanguage,
+    servers: List<DesktopMcpServer>,
+    mcpClient: DesktopMcpClient,
+    onServersChange: (List<DesktopMcpServer>) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     var syncingServerId by remember { mutableStateOf<String?>(null) }
@@ -3589,15 +3718,9 @@ private fun DesktopMcpSettings(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Switch(
-                        checked = server.id in selectedServerIds,
-                        onCheckedChange = { selected ->
-                            onSelectedServerIdsChange(if (selected) selectedServerIds + server.id else selectedServerIds - server.id)
-                        }
-                    )
                     Text(
                         server.name.ifBlank { desktopText(language, "mcp_settings.unnamed_server") },
-                        Modifier.padding(start = 10.dp).weight(1f)
+                        Modifier.weight(1f)
                     )
                     IconButton(onClick = { onServersChange(servers.filterNot { it.id == server.id }) }) {
                         Icon(Lucide.Trash2, desktopText(language, "mcp_settings.delete_server"), Modifier.size(18.dp))

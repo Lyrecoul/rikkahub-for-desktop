@@ -4029,12 +4029,13 @@ private fun MessageBlock(
         if (isUser || preferences.showModelIcon || preferences.showModelName || preferences.showMessageTimestamp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (!isUser) {
+                    val messageModel = message.modelId ?: model
                     if (preferences.showModelIcon) {
-                        DesktopProviderIcon(providerName)
+                        DesktopProviderIcon(message.modelId ?: providerName)
                     }
                     if (preferences.showModelName) {
                         Text(
-                            message.modelId ?: model,
+                            messageModel,
                             Modifier.padding(start = if (preferences.showModelIcon) 9.dp else 0.dp),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold
@@ -5037,7 +5038,7 @@ private fun ModelPickerMenu(
                     Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    DesktopProviderIcon(provider.name, Modifier.size(16.dp))
+                    DesktopProviderIcon(provider.name, iconSize = 16.dp)
                     Text(
                         provider.name,
                         Modifier.padding(start = 6.dp).weight(1f),
