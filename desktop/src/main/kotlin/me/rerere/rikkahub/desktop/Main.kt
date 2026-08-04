@@ -1063,131 +1063,31 @@ private fun RikkaHubDesktop(
                     if (!compact || !showSidebar) {
                         if (showSettings) {
                             val activeSettingsSession = settingsSession ?: SettingsEditSession(data)
-                            val settingsData = activeSettingsSession.draft
-                            val modifiedProviderIds = activeSettingsSession.modifiedProviderIds
-                            val modifiedAssistantIds = activeSettingsSession.modifiedAssistantIds
-                            val modifiedSections = activeSettingsSession.modifiedSections
                             DesktopSettingsPane(
-                                providers = settingsData.providers.ifEmpty { listOf(settingsData.activeProvider()) },
-                                selectedProviderId = settingsData.activeProvider().id,
-                                assistants = settingsData.assistants.ifEmpty { listOf(settingsData.activeAssistant()) },
-                                selectedAssistantId = settingsData.activeAssistant().id,
-                                preferences = settingsData.preferences,
-                                globalMemories = settingsData.globalMemories,
-                                webSearchSettings = settingsData.webSearchSettings,
+                                session = activeSettingsSession,
+                                onSessionChange = ::updateSettingsDraft,
                                 client = client,
-                                mcpServers = settingsData.mcpServers,
                                 mcpClient = mcpClient,
                                 initialSection = settingsSection,
                                 showMenu = compact,
                                 showSidebarToggle = !compact && !showSidebar,
                                 onMenu = { showSidebar = true },
                                 onBack = { language -> requestSettingsExit(language = language) },
-                                modifiedProviderIds = modifiedProviderIds,
-                                modifiedAssistantIds = modifiedAssistantIds,
-                                modifiedSections = modifiedSections,
-                                hasUnsavedChanges = activeSettingsSession.hasChanges,
                                 onSaveAll = {
                                     saveSettingsDraft()
                                     settingsSession = null
                                 },
-                                onProviderSelect = { providerId ->
-                                    updateSettingsDraft {
-                                        it.selectProviderConfig(
-                                            providerId
-                                        )
-                                    }
-                                },
-                                onProviderSave = { profile -> updateSettingsDraft { it.saveProviderProfile(profile) } },
-                                onProviderAdd = {
-                                    val profile = DesktopProviderProfile(
-                                        name = desktopText(settingsData.preferences.language, "defaults.new_provider"),
-                                        config = DesktopConfig(
-                                            model = "",
-                                            systemPrompt = settingsData.config.systemPrompt
-                                        )
-                                    )
-                                    updateSettingsDraft {
-                                        it.copy(
-                                            config = profile.config,
-                                            providers = it.providers.ifEmpty { listOf(it.activeProvider()) } + profile,
-                                            selectedProviderId = profile.id
-                                        )
-                                    }
-                                },
-                                onProviderDelete = { providerId ->
-                                    updateSettingsDraft {
-                                        it.deleteProviderProfile(
-                                            providerId
-                                        )
-                                    }
-                                },
-                                onAssistantSelect = { assistantId ->
-                                    updateSettingsDraft {
-                                        if (it.assistants.any { assistant -> assistant.id == assistantId }) {
-                                            it.copy(selectedAssistantId = assistantId)
-                                        } else {
-                                            it
-                                        }
-                                    }
-                                },
-                                onAssistantSave = { profile -> updateSettingsDraft { it.saveAssistantProfile(profile) } },
-                                onAssistantAdd = {
-                                    val assistant = DesktopAssistantProfile(
-                                        name = desktopText(
-                                            settingsData.preferences.language,
-                                            "defaults.new_assistant"
-                                        )
-                                    )
-                                    updateSettingsDraft {
-                                        it.copy(
-                                            assistants = it.assistants + assistant,
-                                            selectedAssistantId = assistant.id
-                                        )
-                                    }
-                                },
-                                onAssistantCopy = { assistantId ->
-                                    val source = (settingsSession?.draft ?: data).assistants.firstOrNull { it.id == assistantId }
-                                        ?: return@DesktopSettingsPane
-                                    val copy =
-                                        source.copy(id = UUID.randomUUID().toString(), name = "${source.name} copy")
-                                    updateSettingsDraft {
-                                        it.copy(
-                                            assistants = it.assistants + copy,
-                                            selectedAssistantId = copy.id
-                                        )
-                                    }
-                                },
-                                onAssistantDelete = { assistantId ->
-                                    updateSettingsDraft {
-                                        it.deleteAssistantProfile(
-                                            assistantId
-                                        )
-                                    }
-                                },
                                 onExportData = {
                                     runCatching { exportBackup() }.getOrElse {
-                                        desktopText(data.preferences.language, "runtime.export_failed").replace(
-                                            "%s",
-                                            it.message.orEmpty()
-                                        )
+                                        desktopText(data.preferences.language, "runtime.export_failed").replace("%s", it.message.orEmpty())
                                     }
                                 },
                                 onImportData = {
                                     runCatching { importBackup() }.getOrElse {
-                                        desktopText(data.preferences.language, "runtime.import_failed").replace(
-                                            "%s",
-                                            it.message.orEmpty()
-                                        )
+                                        desktopText(data.preferences.language, "runtime.import_failed").replace("%s", it.message.orEmpty())
                                     }
                                 },
-                                onResetData = ::resetDesktopData,
-                                onWebSearchSettingsChange = { value -> updateSettingsDraft { it.copy(webSearchSettings = value) } },
-                                onMcpServersChange = { servers -> updateSettingsDraft { it.copy(mcpServers = servers) } },
-                                onPreferencesChange = { value -> updateSettingsDraft { it.copy(preferences = value) } },
-                                onGlobalMemoriesChange = { memories ->
-                                    updateSettingsDraft { it.copy(globalMemories = memories.filter { memory -> memory.content.isNotBlank() }) }
-                                }
+                                onResetData = ::resetDesktopData
                             )
                         } else {
                             ChatPane(

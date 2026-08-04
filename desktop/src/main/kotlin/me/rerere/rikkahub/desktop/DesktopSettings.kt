@@ -114,43 +114,72 @@ internal enum class DesktopSettingsSection(
 
 @Composable
 internal fun DesktopSettingsPane(
-    providers: List<DesktopProviderProfile>,
-    selectedProviderId: String,
-    assistants: List<DesktopAssistantProfile>,
-    selectedAssistantId: String,
-    preferences: DesktopPreferences,
-    globalMemories: List<DesktopMemory>,
-    webSearchSettings: DesktopWebSearchSettings,
+    session: SettingsEditSession,
+    onSessionChange: ((DesktopData) -> DesktopData) -> Unit,
     client: OpenAiClient,
-    mcpServers: List<DesktopMcpServer>,
     mcpClient: DesktopMcpClient,
     initialSection: DesktopSettingsSection,
     showMenu: Boolean,
     showSidebarToggle: Boolean,
     onMenu: () -> Unit,
     onBack: (DesktopLanguage?) -> Unit,
-    modifiedProviderIds: Set<String>,
-    modifiedAssistantIds: Set<String>,
-    modifiedSections: Set<DesktopSettingsSection>,
-    hasUnsavedChanges: Boolean,
     onSaveAll: () -> Unit,
-    onProviderSelect: (String) -> Unit,
-    onProviderSave: (DesktopProviderProfile) -> Unit,
-    onProviderAdd: () -> Unit,
-    onProviderDelete: (String) -> Unit,
-    onAssistantSelect: (String) -> Unit,
-    onAssistantSave: (DesktopAssistantProfile) -> Unit,
-    onAssistantAdd: () -> Unit,
-    onAssistantCopy: (String) -> Unit,
-    onAssistantDelete: (String) -> Unit,
     onExportData: () -> String?,
     onImportData: () -> String?,
-    onResetData: () -> Unit,
-    onWebSearchSettingsChange: (DesktopWebSearchSettings) -> Unit,
-    onMcpServersChange: (List<DesktopMcpServer>) -> Unit,
-    onPreferencesChange: (DesktopPreferences) -> Unit,
-    onGlobalMemoriesChange: (List<DesktopMemory>) -> Unit
+    onResetData: () -> Unit
 ) {
+    val settingsData = session.draft
+    val providers = settingsData.providers.ifEmpty { listOf(settingsData.activeProvider()) }
+    val selectedProviderId = settingsData.activeProvider().id
+    val assistants = settingsData.assistants.ifEmpty { listOf(settingsData.activeAssistant()) }
+    val selectedAssistantId = settingsData.activeAssistant().id
+    val preferences = settingsData.preferences
+    val globalMemories = settingsData.globalMemories
+    val webSearchSettings = settingsData.webSearchSettings
+    val mcpServers = settingsData.mcpServers
+    val modifiedProviderIds = session.modifiedProviderIds
+    val modifiedAssistantIds = session.modifiedAssistantIds
+    val modifiedSections = session.modifiedSections
+    val hasUnsavedChanges = session.hasChanges
+    val onProviderSelect = { providerId: String -> onSessionChange { it.selectProviderConfig(providerId) } }
+    val onProviderSave = { profile: DesktopProviderProfile -> onSessionChange { it.saveProviderProfile(profile) } }
+    val onProviderAdd = {
+        val profile = DesktopProviderProfile(
+            name = desktopText(preferences.language, "defaults.new_provider"),
+            config = DesktopConfig(model = "", systemPrompt = settingsData.config.systemPrompt)
+        )
+        onSessionChange { data ->
+            data.copy(
+                config = profile.config,
+                providers = data.providers.ifEmpty { listOf(data.activeProvider()) } + profile,
+                selectedProviderId = profile.id
+            )
+        }
+    }
+    val onProviderDelete = { providerId: String -> onSessionChange { it.deleteProviderProfile(providerId) } }
+    val onAssistantSelect = { assistantId: String -> onSessionChange { data ->
+        if (data.assistants.any { it.id == assistantId }) data.copy(selectedAssistantId = assistantId) else data
+    } }
+    val onAssistantSave = { profile: DesktopAssistantProfile -> onSessionChange { it.saveAssistantProfile(profile) } }
+    val onAssistantAdd = {
+        val assistant = DesktopAssistantProfile(name = desktopText(preferences.language, "defaults.new_assistant"))
+        onSessionChange { data -> data.copy(assistants = data.assistants + assistant, selectedAssistantId = assistant.id) }
+    }
+    val onAssistantCopy = { assistantId: String ->
+        settingsData.assistants.firstOrNull { it.id == assistantId }?.let { source ->
+            val copy = source.copy(id = java.util.UUID.randomUUID().toString(), name = "${source.name} copy")
+            onSessionChange { data -> data.copy(assistants = data.assistants + copy, selectedAssistantId = copy.id) }
+        }
+    }
+    val onAssistantDelete = { assistantId: String -> onSessionChange { it.deleteAssistantProfile(assistantId) } }
+    val onWebSearchSettingsChange = { value: DesktopWebSearchSettings ->
+        onSessionChange { it.copy(webSearchSettings = value) }
+    }
+    val onMcpServersChange = { servers: List<DesktopMcpServer> -> onSessionChange { it.copy(mcpServers = servers) } }
+    val onPreferencesChange = { value: DesktopPreferences -> onSessionChange { it.copy(preferences = value) } }
+    val onGlobalMemoriesChange = { memories: List<DesktopMemory> ->
+        onSessionChange { it.copy(globalMemories = memories.filter { memory -> memory.content.isNotBlank() }) }
+    }
     val selectedProvider = providers.firstOrNull { it.id == selectedProviderId } ?: providers.first()
     val selectedAssistant = assistants.firstOrNull { it.id == selectedAssistantId } ?: assistants.first()
     var draftProvider by remember(selectedProvider) { mutableStateOf(selectedProvider) }
