@@ -57,6 +57,29 @@ class DesktopMarkdownParserTest {
     }
 
     @Test
+    fun parsesInlineCodeWithinChineseText() {
+        val paragraph = assertIs<MarkdownBlock.Paragraph>(
+            DesktopMarkdownParser.parse(
+                "为了摆脱\"int 到底多大\"的噩梦，`<cstdint>` 提供了固定宽度类型：" +
+                    "`int8_t / int16_t / int32_t / int64_t` 和对应的 `uint` 版。"
+            ).single()
+        )
+
+        assertEquals(
+            listOf(
+                MarkdownSpan("为了摆脱\"int 到底多大\"的噩梦，"),
+                MarkdownSpan("<cstdint>", code = true),
+                MarkdownSpan(" 提供了固定宽度类型："),
+                MarkdownSpan("int8_t / int16_t / int32_t / int64_t", code = true),
+                MarkdownSpan(" 和对应的 "),
+                MarkdownSpan("uint", code = true),
+                MarkdownSpan(" 版。")
+            ),
+            paragraph.spans
+        )
+    }
+
+    @Test
     fun preservesLiteralTildesWhileParsingStrikethrough() {
         val paragraph = assertIs<MarkdownBlock.Paragraph>(
             DesktopMarkdownParser.parse("Home: ~/projects; ~~obsolete~~").single()

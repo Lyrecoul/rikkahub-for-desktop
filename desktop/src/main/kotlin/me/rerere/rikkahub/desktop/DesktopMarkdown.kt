@@ -58,8 +58,11 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
@@ -78,6 +81,7 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.relocation.BringIntoViewModifierNode
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -525,51 +529,21 @@ private fun MarkdownText(
         }
         return
     }
-    if (displaySpans.any { it.code }) {
-        FlowRow(
-            modifier = if (fillWidth) modifier.fillMaxWidth() else modifier,
-            horizontalArrangement = Arrangement.spacedBy(0.dp),
-            verticalArrangement = Arrangement.Center
-        ) {
-            displaySpans.forEach { span ->
-                if (span.code) {
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest
-                    ) {
-                        Text(
-                            span.text,
-                            Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = fontSize,
-                            lineHeight = fontSize * 1.53f
-                        )
-                    }
-                } else {
-                    MarkdownText(
-                        spans = listOf(span),
-                        fontSize = fontSize,
-                        fillWidth = false,
-                        enableChineseTypography = false
-                    )
-                }
-            }
-        }
-        return
-    }
     val primary = MaterialTheme.colorScheme.primary
     val codeBackground = MaterialTheme.colorScheme.surfaceContainerHighest
-    val annotated = remember(displaySpans, primary, codeBackground) {
-        buildAnnotatedString {
+    val renderedText = remember(displaySpans, primary) {
+        val codeRanges = mutableListOf<IntRange>()
+        val annotated = buildAnnotatedString {
             displaySpans.forEach { span ->
                 val start = length
-                append(span.text)
+                // Spaces form selectable horizontal padding around the rounded code background.
+                append(if (span.code) " ${span.text} " else span.text)
+                val end = length
                 addStyle(
                     SpanStyle(
                         fontWeight = if (span.bold) FontWeight.Bold else null,
                         fontStyle = if (span.italic) FontStyle.Italic else null,
                         fontFamily = if (span.code) FontFamily.Monospace else null,
-                        background = if (span.code) codeBackground else Color.Unspecified,
                         color = if (span.link != null) primary else Color.Unspecified,
                         textDecoration = when {
                             span.strikethrough -> TextDecoration.LineThrough
@@ -578,16 +552,41 @@ private fun MarkdownText(
                         }
                     ),
                     start,
-                    length
+                    end
                 )
-                span.link?.let { addLink(LinkAnnotation.Url(it), start, length) }
+                if (span.code) codeRanges += start until end
+                span.link?.let { addLink(LinkAnnotation.Url(it), start, end) }
             }
         }
+        annotated to codeRanges
     }
+    var layoutResult by remember(renderedText) { mutableStateOf<TextLayoutResult?>(null) }
+    val codeCornerRadius = 4.dp
     Text(
-        text = annotated,
-        modifier = if (fillWidth) modifier.fillMaxWidth() else modifier,
-        style = MaterialTheme.typography.bodyLarge.copy(fontSize = fontSize, lineHeight = fontSize * 1.53f)
+        text = renderedText.first,
+        modifier = (if (fillWidth) modifier.fillMaxWidth() else modifier).drawBehind {
+            val layout = layoutResult ?: return@drawBehind
+            val radius = codeCornerRadius.toPx()
+            renderedText.second.forEach { range ->
+                val firstLine = layout.getLineForOffset(range.first)
+                val lastLine = layout.getLineForOffset(range.last)
+                for (line in firstLine..lastLine) {
+                    val start = maxOf(range.first, layout.getLineStart(line))
+                    val end = minOf(range.last + 1, layout.getLineEnd(line, visibleEnd = true))
+                    if (start >= end) continue
+                    val firstBox = layout.getBoundingBox(start)
+                    val lastBox = layout.getBoundingBox(end - 1)
+                    drawRoundRect(
+                        color = codeBackground,
+                        topLeft = Offset(firstBox.left, firstBox.top + 1.dp.toPx()),
+                        size = Size(lastBox.right - firstBox.left, firstBox.bottom - firstBox.top - 2.dp.toPx()),
+                        cornerRadius = CornerRadius(radius, radius)
+                    )
+                }
+            }
+        },
+        style = MaterialTheme.typography.bodyLarge.copy(fontSize = fontSize, lineHeight = fontSize * 1.53f),
+        onTextLayout = { layoutResult = it }
     )
 }
 
