@@ -9,8 +9,9 @@ class SettingsEditSessionTest {
     @Test
     fun commitReportsChangedSectionsAndDeletedProviderSecrets() {
         val provider = DesktopProviderProfile(id = "provider", name = "Provider")
+        val remainingProvider = DesktopProviderProfile(id = "remaining", name = "Remaining")
         val original = DesktopData(
-            providers = listOf(provider),
+            providers = listOf(provider, remainingProvider),
             selectedProviderId = provider.id,
             conversations = listOf(DesktopConversation(id = "conversation")),
             selectedConversationId = "conversation"
@@ -20,7 +21,7 @@ class SettingsEditSessionTest {
         session = session.update { data ->
             data.copy(
                 preferences = data.preferences.copy(sendOnEnter = false),
-                providers = emptyList()
+                providers = listOf(remainingProvider)
             )
         }
 
@@ -59,9 +60,13 @@ class SettingsEditSessionTest {
         val invalidAssistant = SettingsEditSession(DesktopData()).update { data ->
             data.copy(assistants = listOf(DesktopAssistantProfile(name = "")))
         }
+        val emptyProfiles = SettingsEditSession(DesktopData()).update { data ->
+            data.copy(providers = emptyList(), assistants = emptyList())
+        }
 
         assertEquals(null, invalidProvider.commitOrNull())
         assertEquals(null, invalidAssistant.commitOrNull())
+        assertEquals(null, emptyProfiles.commitOrNull())
     }
 
     @Test

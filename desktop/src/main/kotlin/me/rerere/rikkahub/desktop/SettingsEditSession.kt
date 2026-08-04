@@ -36,7 +36,8 @@ internal data class SettingsEditSession(
     fun commitOrNull(): SettingsEditCommit? = if (isValid) commit() else null
 
     private val isValid: Boolean
-        get() = draft.providers.all(DesktopProviderProfile::isValidSettingsDraft) &&
+        get() = draft.providers.isNotEmpty() && draft.assistants.isNotEmpty() &&
+            draft.providers.all(DesktopProviderProfile::isValidSettingsDraft) &&
             draft.assistants.all(DesktopAssistantProfile::isValidSettingsDraft)
 
     private fun commit(): SettingsEditCommit = SettingsEditCommit(
