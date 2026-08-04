@@ -233,48 +233,7 @@ private const val StreamUiUpdateIntervalMillis = 50L
 private const val LongStreamUiUpdateIntervalMillis = 200L
 private const val LongStreamContentThreshold = 6_000
 
-private fun DesktopData.settingsContentDiffersFrom(other: DesktopData): Boolean =
-    config != other.config ||
-        preferences != other.preferences ||
-        globalMemories != other.globalMemories ||
-        providers != other.providers ||
-        selectedProviderId != other.selectedProviderId ||
-        assistants != other.assistants ||
-        selectedAssistantId != other.selectedAssistantId ||
-        webSearchSettings != other.webSearchSettings ||
-        mcpServers != other.mcpServers
-
-private fun DesktopData.modifiedSettingsSectionsFrom(other: DesktopData): Set<DesktopSettingsSection> = buildSet {
-    val current = preferences
-    val saved = other.preferences
-    if (
-        current.colorMode != saved.colorMode || current.themeColor != saved.themeColor ||
-        current.fontFamily != saved.fontFamily || current.language != saved.language || current.fontScale != saved.fontScale
-    ) add(DesktopSettingsSection.GENERAL)
-    if (
-        current.showUserAvatar != saved.showUserAvatar || current.userNickname != saved.userNickname ||
-        current.showModelIcon != saved.showModelIcon || current.showModelName != saved.showModelName ||
-        current.showAssistantBubble != saved.showAssistantBubble || current.showMessageTimestamp != saved.showMessageTimestamp ||
-        current.showReasoning != saved.showReasoning || current.autoCollapseReasoning != saved.autoCollapseReasoning ||
-        current.codeBlockAutoWrap != saved.codeBlockAutoWrap || current.enableChineseTypography != saved.enableChineseTypography ||
-        current.enableMermaidRendering != saved.enableMermaidRendering || current.enableMermaidCli != saved.enableMermaidCli ||
-        current.mermaidCliPath != saved.mermaidCliPath || current.mermaidUseSystemBrowser != saved.mermaidUseSystemBrowser
-    ) add(DesktopSettingsSection.MESSAGE_DISPLAY)
-    if (
-        current.sendOnEnter != saved.sendOnEnter || current.enableAutoScroll != saved.enableAutoScroll ||
-        current.enableSmoothScroll != saved.enableSmoothScroll || current.showMessageJumper != saved.showMessageJumper ||
-        current.messageJumperOnLeft != saved.messageJumperOnLeft
-    ) add(DesktopSettingsSection.INTERACTION)
-    if (globalMemories != other.globalMemories || webSearchSettings != other.webSearchSettings || mcpServers != other.mcpServers) {
-        add(DesktopSettingsSection.DATA)
-    }
-    if (assistants != other.assistants || selectedAssistantId != other.selectedAssistantId) add(DesktopSettingsSection.ASSISTANTS)
-    if (providers != other.providers || selectedProviderId != other.selectedProviderId || config != other.config) {
-        add(DesktopSettingsSection.PROVIDERS)
-    }
-}
-
-private data class SmoothScrollImpulse(
+ private data class SmoothScrollImpulse(
     val distance: Float,
     val startTimeNanos: Long,
     var appliedDistance: Float = 0f
@@ -395,7 +354,7 @@ private fun RikkaHubDesktop(
     var pendingAttachments by remember { mutableStateOf<List<DesktopAttachment>>(emptyList()) }
     var showSettings by remember { mutableStateOf(false) }
     var settingsSection by remember { mutableStateOf(DesktopSettingsSection.GENERAL) }
-    var settingsDraft by remember { mutableStateOf<DesktopData?>(null) }
+    var settingsSession by remember { mutableStateOf<SettingsEditSession?>(null) }
     var settingsExitConfirmationOpen by remember { mutableStateOf(false) }
     var pendingSettingsExit by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingSettingsExitLanguage by remember { mutableStateOf<DesktopLanguage?>(null) }
@@ -476,28 +435,25 @@ private fun RikkaHubDesktop(
 
     fun openSettings(section: DesktopSettingsSection) {
         settingsSection = section
-        settingsDraft = data
+        settingsSession = SettingsEditSession(data)
         showSettings = true
     }
 
     fun updateSettingsDraft(transform: (DesktopData) -> DesktopData) {
-        settingsDraft = transform(settingsDraft ?: data)
+        settingsSession = (settingsSession ?: SettingsEditSession(data)).update(transform)
     }
 
     fun saveSettingsDraft() {
-        val draft = (settingsDraft ?: data).let { current ->
-            pendingSettingsExitLanguage?.let { language ->
-                current.copy(preferences = current.preferences.copy(language = language))
-            } ?: current
-        }
-        val deletedProviderIds =
-            data.providers.map(DesktopProviderProfile::id) - draft.providers.map(DesktopProviderProfile::id).toSet()
-        deletedProviderIds.forEach(store::deleteProviderSecret)
-        val deletedAssistantIds =
-            data.assistants.map(DesktopAssistantProfile::id) - draft.assistants.map(DesktopAssistantProfile::id).toSet()
-        val dataWithDeletedAssistants = deletedAssistantIds.fold(data) { current, assistantId ->
+        val session = settingsSession ?: SettingsEditSession(data)
+        val committed = pendingSettingsExitLanguage?.let { language ->
+            session.update { current -> current.copy(preferences = current.preferences.copy(language = language)) }
+        } ?: session
+        val commit = committed.commit()
+        commit.deletedProviderIds.forEach(store::deleteProviderSecret)
+        val dataWithDeletedAssistants = commit.deletedAssistantIds.fold(data) { current, assistantId ->
             current.deleteAssistantProfile(assistantId)
         }
+        val draft = commit.data
         update(
             dataWithDeletedAssistants.copy(
                 config = draft.config,
@@ -514,14 +470,14 @@ private fun RikkaHubDesktop(
     }
 
     fun requestSettingsExit(afterExit: () -> Unit = {}, language: DesktopLanguage? = null) {
-        val draft = settingsDraft
+        val session = settingsSession
         val changedLanguage = language?.takeIf { it != data.preferences.language }
-        if ((draft != null && draft.settingsContentDiffersFrom(data)) || changedLanguage != null) {
+        if ((session?.hasChanges == true) || changedLanguage != null) {
             pendingSettingsExit = afterExit
             pendingSettingsExitLanguage = changedLanguage
             settingsExitConfirmationOpen = true
         } else {
-            settingsDraft = null
+            settingsSession = null
             pendingSettingsExitLanguage = null
             showSettings = false
             afterExit()
@@ -635,7 +591,7 @@ private fun RikkaHubDesktop(
         prompt = ""
         pendingAttachments = emptyList()
         update(imported)
-        settingsDraft = imported
+        settingsSession = SettingsEditSession(imported)
         return desktopText(data.preferences.language, "file.imported_backup").replace("%s", source.toPath().toString())
     }
 
@@ -650,7 +606,7 @@ private fun RikkaHubDesktop(
         store.clearSecrets(data)
         val resetData = DesktopData()
         update(resetData)
-        settingsDraft = resetData
+        settingsSession = SettingsEditSession(resetData)
     }
 
     fun chooseAttachments(): List<DesktopAttachment>? {
@@ -1110,14 +1066,15 @@ private fun RikkaHubDesktop(
                     }
                     if (!compact || !showSidebar) {
                         if (showSettings) {
-                            val settingsData = settingsDraft ?: data
+                            val activeSettingsSession = settingsSession ?: SettingsEditSession(data)
+                            val settingsData = activeSettingsSession.draft
                             val modifiedProviderIds = settingsData.providers.filter { provider ->
                                 data.providers.firstOrNull { it.id == provider.id } != provider
                             }.mapTo(mutableSetOf(), DesktopProviderProfile::id)
                             val modifiedAssistantIds = settingsData.assistants.filter { assistant ->
                                 data.assistants.firstOrNull { it.id == assistant.id } != assistant
                             }.mapTo(mutableSetOf(), DesktopAssistantProfile::id)
-                            val modifiedSections = settingsData.modifiedSettingsSectionsFrom(data)
+                            val modifiedSections = activeSettingsSession.commit().modifiedSections
                             DesktopSettingsPane(
                                 providers = settingsData.providers.ifEmpty { listOf(settingsData.activeProvider()) },
                                 selectedProviderId = settingsData.activeProvider().id,
@@ -1137,10 +1094,10 @@ private fun RikkaHubDesktop(
                                 modifiedProviderIds = modifiedProviderIds,
                                 modifiedAssistantIds = modifiedAssistantIds,
                                 modifiedSections = modifiedSections,
-                                hasUnsavedChanges = settingsData.settingsContentDiffersFrom(data),
+                                hasUnsavedChanges = activeSettingsSession.hasChanges,
                                 onSaveAll = {
                                     saveSettingsDraft()
-                                    settingsDraft = null
+                                    settingsSession = null
                                 },
                                 onProviderSelect = { providerId ->
                                     updateSettingsDraft {
@@ -1198,7 +1155,7 @@ private fun RikkaHubDesktop(
                                     }
                                 },
                                 onAssistantCopy = { assistantId ->
-                                    val source = (settingsDraft ?: data).assistants.firstOrNull { it.id == assistantId }
+                                    val source = (settingsSession?.draft ?: data).assistants.firstOrNull { it.id == assistantId }
                                         ?: return@DesktopSettingsPane
                                     val copy =
                                         source.copy(id = UUID.randomUUID().toString(), name = "${source.name} copy")
@@ -1494,7 +1451,7 @@ private fun RikkaHubDesktop(
                 confirmButton = {
                     Button(onClick = {
                         saveSettingsDraft()
-                        settingsDraft = null
+                        settingsSession = null
                         pendingSettingsExitLanguage = null
                         showSettings = false
                         settingsExitConfirmationOpen = false
@@ -1510,7 +1467,7 @@ private fun RikkaHubDesktop(
                             pendingSettingsExitLanguage = null
                         }) { Text(desktopText(data.preferences.language, "common.cancel")) }
                         TextButton(onClick = {
-                            settingsDraft = null
+                            settingsSession = null
                             pendingSettingsExitLanguage = null
                             showSettings = false
                             settingsExitConfirmationOpen = false
