@@ -30,6 +30,36 @@ class ConversationExecutionTest {
     }
 
     @Test
+    fun stopsAtConfiguredToolRoundLimit() = runBlocking {
+        val assistant = DesktopAssistantProfile(id = "assistant", maxToolRounds = 1)
+        val conversation = DesktopConversation(
+            id = "conversation",
+            assistantId = assistant.id,
+            messages = listOf(ChatMessage("user", "Search"))
+        )
+        var data = DesktopData(
+            assistants = listOf(assistant),
+            selectedAssistantId = assistant.id,
+            conversations = listOf(conversation),
+            selectedConversationId = conversation.id
+        )
+        val adapter = FakeConversationExecutionAdapter(
+            flowOf(StreamDelta(toolCallDeltas = listOf(DesktopToolCallDelta(0, "call-1", "search")))),
+            flowOf(StreamDelta(toolCallDeltas = listOf(DesktopToolCallDelta(0, "call-2", "search")))),
+            toolResults = listOf(ChatMessage("tool", "first result", toolCallId = "call-1"))
+        )
+        val execution = ConversationExecution(adapter, { data }, { data = it }, { _, _ -> })
+
+        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
+
+        assertTrue(result.completed)
+        assertEquals(2, adapter.streamRequests.size)
+        val messages = data.conversations.single().messages
+        assertEquals("call-2", messages[messages.lastIndex - 1].toolCallId)
+        assertTrue(messages.last().content.isNotBlank())
+    }
+
+    @Test
     fun cancellationClearsUnresolvedToolCallAfterVisibleContent() = runBlocking {
         val conversation = DesktopConversation(id = "conversation", messages = listOf(ChatMessage("user", "Search")))
         var data = DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id)

@@ -58,7 +58,16 @@ internal class ConversationExecution(
             return fail(command.conversationId, initialData, "runtime.mcp_configuration_invalid")
         }
         try {
-            syncTools(command.conversationId, selectedServers)
+            try {
+                syncTools(selectedServers)
+            } catch (error: Throwable) {
+                reportError(
+                    command.conversationId,
+                    desktopText(currentData().preferences.language, "runtime.mcp_sync_failed")
+                        .replace("%s", error.userFacingMessage())
+                )
+                return ConversationExecutionResult(completed = false)
+            }
             val initialRequest = prepareRequest(command.conversationId, command.requestMessages, assistant)
                 ?: return ConversationExecutionResult(completed = false)
             updateConversation(command.conversationId) {
@@ -124,7 +133,7 @@ internal class ConversationExecution(
         }
     }
 
-    private suspend fun syncTools(conversationId: String, servers: List<DesktopMcpServer>) {
+    private suspend fun syncTools(servers: List<DesktopMcpServer>) {
         val stale = servers.filterNot(adapter::toolsAreCurrent)
         if (stale.isEmpty()) return
         val toolsByServer = stale.associate { server ->
