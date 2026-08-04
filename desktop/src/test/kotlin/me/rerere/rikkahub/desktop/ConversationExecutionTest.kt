@@ -30,6 +30,44 @@ class ConversationExecutionTest {
     }
 
     @Test
+    fun cancellationDuringMcpSyncDoesNotPublishAnError() = runBlocking {
+        val server = DesktopMcpServer(id = "server", name = "Search", enabled = true)
+        val assistant = DesktopAssistantProfile(id = "assistant", mcpServerIds = setOf(server.id))
+        val conversation = DesktopConversation(
+            id = "conversation",
+            assistantId = assistant.id,
+            messages = listOf(ChatMessage("user", "Search"))
+        )
+        var data = DesktopData(
+            assistants = listOf(assistant),
+            selectedAssistantId = assistant.id,
+            mcpServers = listOf(server),
+            conversations = listOf(conversation),
+            selectedConversationId = conversation.id
+        )
+        val errors = mutableListOf<String>()
+        val execution = ConversationExecution(
+            adapter = object : ConversationExecutionAdapter {
+                override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> = flowOf()
+                override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = false
+                override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = throw CancellationException()
+                override suspend fun executeToolCalls(
+                    config: DesktopConfig,
+                    calls: List<DesktopToolCall>
+                ): List<ChatMessage> = emptyList()
+            },
+            currentData = { data },
+            updateData = { data = it },
+            reportError = { _, message -> errors += message }
+        )
+
+        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
+
+        assertTrue(!result.completed)
+        assertTrue(errors.isEmpty())
+    }
+
+    @Test
     fun stopsAtConfiguredToolRoundLimit() = runBlocking {
         val assistant = DesktopAssistantProfile(id = "assistant", maxToolRounds = 1)
         val conversation = DesktopConversation(

@@ -60,6 +60,8 @@ internal class ConversationExecution(
         try {
             try {
                 syncTools(selectedServers)
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Throwable) {
                 reportError(
                     command.conversationId,
