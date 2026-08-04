@@ -139,7 +139,11 @@ internal class ConversationExecution(
         val stale = servers.filterNot(adapter::toolsAreCurrent)
         if (stale.isEmpty()) return
         val toolsByServer = stale.associate { server ->
-            server.id to adapter.syncTools(server).also { tools -> check(tools.isNotEmpty()) { "${server.name} has no tools" } }
+            server.id to adapter.syncTools(server).also { tools ->
+                check(tools.isNotEmpty()) {
+                    desktopText(currentData().preferences.language, "runtime.mcp_no_tools").replace("%s", server.name)
+                }
+            }
         }
         updateData(currentData().copy(mcpServers = currentData().mcpServers.map { server ->
             toolsByServer[server.id]?.let(server::withSyncedTools) ?: server
