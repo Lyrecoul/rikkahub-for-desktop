@@ -30,6 +30,50 @@ class ConversationExecutionTest {
     }
 
     @Test
+    fun identifiesTheServerWhenMcpSynchronizationReturnsNoTools() = runBlocking {
+        val server = DesktopMcpServer(id = "server", name = "Search", enabled = true)
+        val assistant = DesktopAssistantProfile(id = "assistant", mcpServerIds = setOf(server.id))
+        val conversation = DesktopConversation(
+            id = "conversation",
+            assistantId = assistant.id,
+            messages = listOf(ChatMessage("user", "Search"))
+        )
+        var data = DesktopData(
+            assistants = listOf(assistant),
+            selectedAssistantId = assistant.id,
+            mcpServers = listOf(server),
+            conversations = listOf(conversation),
+            selectedConversationId = conversation.id
+        )
+        val errors = mutableListOf<String>()
+        val execution = ConversationExecution(
+            adapter = object : ConversationExecutionAdapter {
+                override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> =
+                    error("The model request must not start")
+
+                override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = false
+                override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = emptyList()
+                override suspend fun executeToolCalls(
+                    config: DesktopConfig,
+                    calls: List<DesktopToolCall>
+                ): List<ChatMessage> = emptyList()
+            },
+            currentData = { data },
+            updateData = { data = it },
+            reportError = { _, message -> errors += message }
+        )
+
+        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
+
+        assertTrue(!result.completed)
+        val noTools = desktopText(data.preferences.language, "runtime.mcp_no_tools").replace("%s", server.name)
+        assertEquals(
+            desktopText(data.preferences.language, "runtime.mcp_sync_failed").replace("%s", noTools),
+            errors.single()
+        )
+    }
+
+    @Test
     fun rejectsMissingSelectedMcpServerBeforeStartingExecution() = runBlocking {
         val assistant = DesktopAssistantProfile(id = "assistant", mcpServerIds = setOf("missing"))
         val conversation = DesktopConversation(
