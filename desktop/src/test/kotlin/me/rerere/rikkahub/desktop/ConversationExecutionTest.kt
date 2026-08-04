@@ -48,6 +48,28 @@ class ConversationExecutionTest {
     }
 
     @Test
+    fun batchesRapidStreamDeltasBeforePublishingConversationState() = runBlocking {
+        val conversation = DesktopConversation(id = "conversation", messages = listOf(ChatMessage("user", "Hello")))
+        var data = DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id)
+        var updates = 0
+        val execution = ConversationExecution(
+            adapter = FakeConversationExecutionAdapter(
+                flowOf(StreamDelta(content = "one "), StreamDelta(content = "two "), StreamDelta(content = "three"))
+            ),
+            currentData = { data },
+            updateData = { data = it; updates++ },
+            reportError = { _, _ -> },
+            clock = { 0L }
+        )
+
+        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
+
+        assertTrue(result.completed)
+        assertEquals(3, updates)
+        assertEquals("one two three", data.conversations.single().messages.last().content)
+    }
+
+    @Test
     fun streamsResponseIntoAssistantMessage() = runBlocking {
         val conversation = DesktopConversation(id = "conversation", messages = listOf(ChatMessage("user", "Hello")))
         var data = DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id)

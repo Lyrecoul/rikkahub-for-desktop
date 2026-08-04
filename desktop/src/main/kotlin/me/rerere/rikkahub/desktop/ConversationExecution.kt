@@ -3,6 +3,10 @@ package me.rerere.rikkahub.desktop
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 
+private const val StreamUpdateIntervalMillis = 50L
+private const val LongStreamUpdateIntervalMillis = 200L
+private const val LongStreamOutputThreshold = 6_000
+
 internal data class ConversationExecutionCommand(
     val conversationId: String,
     val requestMessages: List<ChatMessage>,
@@ -41,7 +45,8 @@ internal class ConversationExecution(
     private val adapter: ConversationExecutionAdapter,
     private val currentData: () -> DesktopData,
     private val updateData: (DesktopData) -> Unit,
-    private val reportError: (String, String) -> Unit
+    private val reportError: (String, String) -> Unit,
+    private val clock: () -> Long = System::currentTimeMillis
 ) {
     suspend fun execute(command: ConversationExecutionCommand): ConversationExecutionResult {
         val initialData = currentData()
@@ -67,7 +72,7 @@ internal class ConversationExecution(
             var request = initialRequest.messages
             var toolRounds = 0
             while (true) {
-                adapter.stream(initialRequest.config, request).collect { delta -> appendDelta(command.conversationId, delta) }
+                collectStream(command.conversationId, initialRequest.config, request)
                 val toolCalls = conversation(command.conversationId)?.messages?.lastOrNull()?.toolCalls.orEmpty()
                 if (toolCalls.isEmpty()) break
                 finishReasoning(command.conversationId)
@@ -159,6 +164,82 @@ internal class ConversationExecution(
             return null
         }
         return PreparedRequest(config, messages)
+    }
+
+    private suspend fun collectStream(conversationId: String, config: DesktopConfig, request: List<ChatMessage>) {
+        val content = StringBuilder()
+        val reasoning = StringBuilder()
+        val reasoningSignature = StringBuilder()
+        val citations = mutableListOf<DesktopCitation>()
+        val attachments = mutableListOf<DesktopAttachment>()
+        val toolCalls = mutableListOf<DesktopToolCallDelta>()
+        var modelId: String? = null
+        var promptTokens: Int? = null
+        var completionTokens: Int? = null
+        var cachedTokens: Int? = null
+        var outputLength = 0
+        var lastUpdateAt = 0L
+
+        fun flush() {
+            if (
+                content.isEmpty() && reasoning.isEmpty() && reasoningSignature.isEmpty() && modelId == null &&
+                promptTokens == null && completionTokens == null && cachedTokens == null && citations.isEmpty() &&
+                attachments.isEmpty() && toolCalls.isEmpty()
+            ) return
+            appendDelta(
+                conversationId,
+                StreamDelta(
+                    content = content.toString(),
+                    reasoning = reasoning.toString(),
+                    reasoningSignature = reasoningSignature.toString(),
+                    modelId = modelId,
+                    promptTokens = promptTokens,
+                    completionTokens = completionTokens,
+                    cachedTokens = cachedTokens,
+                    citations = citations.toList(),
+                    attachments = attachments.toList(),
+                    toolCallDeltas = toolCalls.toList()
+                )
+            )
+            content.clear()
+            reasoning.clear()
+            reasoningSignature.clear()
+            citations.clear()
+            attachments.clear()
+            toolCalls.clear()
+            modelId = null
+            promptTokens = null
+            completionTokens = null
+            cachedTokens = null
+        }
+
+        try {
+            adapter.stream(config, request).collect { delta ->
+                content.append(delta.content)
+                reasoning.append(delta.reasoning)
+                reasoningSignature.append(delta.reasoningSignature)
+                citations += delta.citations
+                attachments += delta.attachments
+                toolCalls += delta.toolCallDeltas
+                modelId = delta.modelId ?: modelId
+                promptTokens = delta.promptTokens ?: promptTokens
+                completionTokens = delta.completionTokens ?: completionTokens
+                cachedTokens = delta.cachedTokens ?: cachedTokens
+                outputLength += delta.content.length + delta.reasoning.length
+                val interval = if (outputLength >= LongStreamOutputThreshold) {
+                    LongStreamUpdateIntervalMillis
+                } else {
+                    StreamUpdateIntervalMillis
+                }
+                val now = clock()
+                if (now - lastUpdateAt >= interval) {
+                    flush()
+                    lastUpdateAt = now
+                }
+            }
+        } finally {
+            flush()
+        }
     }
 
     private fun appendDelta(conversationId: String, delta: StreamDelta) {
