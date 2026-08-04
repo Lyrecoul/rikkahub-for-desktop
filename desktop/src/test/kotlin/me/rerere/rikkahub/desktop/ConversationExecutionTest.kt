@@ -30,6 +30,48 @@ class ConversationExecutionTest {
     }
 
     @Test
+    fun rejectsUnsupportedAttachmentsBeforeCreatingAssistantMessage() = runBlocking {
+        val conversation = DesktopConversation(
+            id = "conversation",
+            messages = listOf(
+                ChatMessage(
+                    "user",
+                    "Inspect",
+                    attachments = listOf(DesktopAttachment("photo.png", "image/png", "AQID", isImage = true))
+                )
+            )
+        )
+        var data = DesktopData(
+            config = DesktopConfig(model = "custom-text-model"),
+            conversations = listOf(conversation),
+            selectedConversationId = conversation.id
+        )
+        val errors = mutableListOf<String>()
+        val execution = ConversationExecution(
+            adapter = object : ConversationExecutionAdapter {
+                override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> =
+                    error("The model request must not start")
+
+                override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = true
+                override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = emptyList()
+                override suspend fun executeToolCalls(
+                    config: DesktopConfig,
+                    calls: List<DesktopToolCall>
+                ): List<ChatMessage> = emptyList()
+            },
+            currentData = { data },
+            updateData = { data = it },
+            reportError = { _, message -> errors += message }
+        )
+
+        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
+
+        assertTrue(!result.completed)
+        assertEquals(1, data.conversations.single().messages.size)
+        assertTrue(errors.single().contains("photo.png"))
+    }
+
+    @Test
     fun reportsLocalizedErrorWhenMcpToolSynchronizationFails() = runBlocking {
         val server = DesktopMcpServer(id = "server", name = "Search", enabled = true)
         val assistant = DesktopAssistantProfile(id = "assistant", mcpServerIds = setOf(server.id))
