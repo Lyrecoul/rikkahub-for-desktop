@@ -26,7 +26,11 @@ internal interface ConversationExecutionAdapter {
 internal class DesktopConversationExecutionAdapter(
     private val client: OpenAiClient,
     private val mcpClient: DesktopMcpClient,
-    private val executeTools: suspend (DesktopConfig, List<DesktopToolCall>) -> List<ChatMessage>
+    private val assistantId: String,
+    private val memoryToolHandler: (String) -> DesktopMemoryToolHandler,
+    private val askUserHandler: suspend (DesktopToolCall) -> String,
+    private val agentRuntime: DesktopAgentRuntime,
+    private val approvalHandler: suspend (DesktopToolCall, DesktopAgentApprovalRequest) -> Boolean
 ) : ConversationExecutionAdapter {
     override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> =
         client.stream(config, messages)
@@ -38,7 +42,15 @@ internal class DesktopConversationExecutionAdapter(
     override suspend fun executeToolCalls(
         config: DesktopConfig,
         calls: List<DesktopToolCall>
-    ): List<ChatMessage> = executeTools(config, calls)
+    ): List<ChatMessage> = client.executeToolCalls(
+        config,
+        calls,
+        memoryToolHandler(assistantId),
+        mcpClient,
+        askUserHandler,
+        agentRuntime,
+        approvalHandler
+    )
 }
 
 internal class ConversationExecution(

@@ -793,48 +793,46 @@ private fun RikkaHubDesktop(
         alternativeTarget: ChatMessage? = null
     ) {
         if (generationJobs.containsKey(conversationId)) return
+        val executionConversation = data.conversations.firstOrNull { it.id == conversationId } ?: return
+        val executionAssistant = data.assistantFor(executionConversation)
         val execution = ConversationExecution(
-            adapter = DesktopConversationExecutionAdapter(client, mcpClient) { generationConfig, toolCalls ->
-                client.executeToolCalls(
-                    generationConfig,
-                    toolCalls,
-                    memoryToolHandler(data.assistantFor(
-                        data.conversations.first { it.id == conversationId }
-                    ).id),
-                    mcpClient,
-                    askUserHandler = { call ->
-                        val answer = CompletableDeferred<String>()
-                        pendingAskUserAnswers[call.id] = answer
-                        try {
-                            answer.await()
-                        } finally {
-                            pendingAskUserAnswers.remove(call.id, answer)
+            adapter = DesktopConversationExecutionAdapter(
+                client = client,
+                mcpClient = mcpClient,
+                assistantId = executionAssistant.id,
+                memoryToolHandler = ::memoryToolHandler,
+                askUserHandler = { call ->
+                    val answer = CompletableDeferred<String>()
+                    pendingAskUserAnswers[call.id] = answer
+                    try {
+                        answer.await()
+                    } finally {
+                        pendingAskUserAnswers.remove(call.id, answer)
+                    }
+                },
+                agentRuntime = agentRuntime,
+                approvalHandler = { call, request ->
+                    withContext(Dispatchers.Main) {
+                        if (rememberedAgentApprovals[conversationId].orEmpty().approves(request)) {
+                            return@withContext true
                         }
-                    },
-                    agentRuntime = agentRuntime,
-                    approvalHandler = { call, request ->
-                        withContext(Dispatchers.Main) {
-                            if (rememberedAgentApprovals[conversationId].orEmpty().approves(request)) {
-                                return@withContext true
-                            }
-                            val answer = CompletableDeferred<DesktopAgentApprovalDecision>()
-                            pendingAgentApproval = PendingDesktopAgentApproval(call, request, answer)
-                            try {
-                                answer.await().also { decision ->
-                                    if (decision.approved && decision.autoApprove) {
-                                        request.rememberedGrant()?.let { grant ->
-                                            rememberedAgentApprovals[conversationId] =
-                                                rememberedAgentApprovals[conversationId].orEmpty() + grant
-                                        }
+                        val answer = CompletableDeferred<DesktopAgentApprovalDecision>()
+                        pendingAgentApproval = PendingDesktopAgentApproval(call, request, answer)
+                        try {
+                            answer.await().also { decision ->
+                                if (decision.approved && decision.autoApprove) {
+                                    request.rememberedGrant()?.let { grant ->
+                                        rememberedAgentApprovals[conversationId] =
+                                            rememberedAgentApprovals[conversationId].orEmpty() + grant
                                     }
-                                }.approved
-                            } finally {
-                                if (pendingAgentApproval?.answer === answer) pendingAgentApproval = null
-                            }
+                                }
+                            }.approved
+                        } finally {
+                            if (pendingAgentApproval?.answer === answer) pendingAgentApproval = null
                         }
                     }
-                )
-            },
+                }
+            ),
             currentData = { data },
             updateData = ::update,
             reportError = { id, message -> generationErrors[id] = message }
