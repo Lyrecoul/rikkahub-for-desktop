@@ -7,67 +7,97 @@ private const val StreamUpdateIntervalMillis = 50L
 private const val LongStreamUpdateIntervalMillis = 200L
 private const val LongStreamOutputThreshold = 6_000
 
-internal data class ConversationExecutionCommand(
+internal data class ConversationExecutionRequest(
     val conversationId: String,
     val requestMessages: List<ChatMessage>,
     val title: String? = null,
     val alternativeTarget: ChatMessage? = null
 )
 
-internal data class ConversationExecutionResult(val completed: Boolean)
-
-internal interface ConversationExecutionAdapter {
-    fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta>
-    fun toolsAreCurrent(server: DesktopMcpServer): Boolean
-    suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool>
-    suspend fun executeToolCalls(config: DesktopConfig, calls: List<DesktopToolCall>): List<ChatMessage>
+internal sealed interface ConversationExecutionOutcome {
+    data object Completed : ConversationExecutionOutcome
+    data object Cancelled : ConversationExecutionOutcome
+    data class Stopped(val reason: ConversationExecutionStopReason) : ConversationExecutionOutcome
+    data class Failed(val reason: ConversationExecutionFailure) : ConversationExecutionOutcome
 }
 
-internal class DesktopConversationExecutionAdapter(
+internal enum class ConversationExecutionStopReason { TOOL_ROUND_LIMIT, APPROVAL_DENIED }
+
+internal sealed interface ConversationExecutionFailure {
+    data object InvalidMcpConfiguration : ConversationExecutionFailure
+    data class McpSynchronization(val detail: String) : ConversationExecutionFailure
+    data class InvalidRequest(val detail: String) : ConversationExecutionFailure
+    data class Execution(val detail: String) : ConversationExecutionFailure
+}
+
+internal interface ConversationModelStreamAdapter {
+    fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta>
+}
+
+internal interface ConversationToolRuntimeAdapter {
+    fun toolsAreCurrent(server: DesktopMcpServer): Boolean
+    suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool>
+    suspend fun execute(config: DesktopConfig, calls: List<DesktopToolCall>): List<ChatMessage>
+}
+
+internal interface ConversationUserInteractionAdapter {
+    suspend fun askUser(call: DesktopToolCall): String
+    suspend fun requestApproval(call: DesktopToolCall, request: DesktopAgentApprovalRequest): Boolean
+}
+
+internal interface ConversationExecutionState {
+    fun current(): DesktopData
+    fun update(transform: (DesktopData) -> DesktopData)
+}
+
+internal interface ConversationExecutionText {
+    fun noMcpTools(server: DesktopMcpServer): String
+    fun invalidMessageTemplate(): String
+    fun toolRoundLimit(limit: Int): String
+}
+
+internal class DesktopConversationModelStreamAdapter(private val client: OpenAiClient) : ConversationModelStreamAdapter {
+    override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> = client.stream(config, messages)
+}
+
+internal class DesktopConversationToolRuntimeAdapter(
     private val client: OpenAiClient,
     private val mcpClient: DesktopMcpClient,
     private val assistantId: String,
     private val memoryToolHandler: (String) -> DesktopMemoryToolHandler,
-    private val askUserHandler: suspend (DesktopToolCall) -> String,
-    private val agentRuntime: DesktopAgentRuntime,
-    private val approvalHandler: suspend (DesktopToolCall, DesktopAgentApprovalRequest) -> Boolean
-) : ConversationExecutionAdapter {
-    override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> =
-        client.stream(config, messages)
-
+    private val interaction: ConversationUserInteractionAdapter,
+    private val agentRuntime: DesktopAgentRuntime
+) : ConversationToolRuntimeAdapter {
     override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = mcpClient.toolsAreCurrent(server)
 
     override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = mcpClient.syncTools(server)
 
-    override suspend fun executeToolCalls(
-        config: DesktopConfig,
-        calls: List<DesktopToolCall>
-    ): List<ChatMessage> = client.executeToolCalls(
+    override suspend fun execute(config: DesktopConfig, calls: List<DesktopToolCall>): List<ChatMessage> = client.executeToolCalls(
         config,
         calls,
         memoryToolHandler(assistantId),
         mcpClient,
-        askUserHandler,
+        interaction::askUser,
         agentRuntime,
-        approvalHandler
+        interaction::requestApproval
     )
 }
 
 internal class ConversationExecution(
-    private val adapter: ConversationExecutionAdapter,
-    private val currentData: () -> DesktopData,
-    private val updateData: (DesktopData) -> Unit,
-    private val reportError: (String, String) -> Unit,
+    private val model: ConversationModelStreamAdapter,
+    private val tools: ConversationToolRuntimeAdapter,
+    private val state: ConversationExecutionState,
+    private val text: ConversationExecutionText,
     private val clock: () -> Long = System::currentTimeMillis
 ) {
-    suspend fun execute(command: ConversationExecutionCommand): ConversationExecutionResult {
-        val initialData = currentData()
-        val conversation = initialData.conversations.firstOrNull { it.id == command.conversationId }
-            ?: return ConversationExecutionResult(completed = false)
+    suspend fun execute(request: ConversationExecutionRequest): ConversationExecutionOutcome {
+        val initialData = state.current()
+        val conversation = initialData.conversations.firstOrNull { it.id == request.conversationId }
+            ?: return ConversationExecutionOutcome.Failed(ConversationExecutionFailure.Execution("Conversation not found"))
         val assistant = initialData.assistantFor(conversation)
         val selectedServers = initialData.mcpServers.filter { it.enabled && it.id in assistant.mcpServerIds }
         if ((assistant.mcpServerIds - initialData.mcpServers.map(DesktopMcpServer::id).toSet()).isNotEmpty()) {
-            return fail(command.conversationId, initialData, "runtime.mcp_configuration_invalid")
+            return ConversationExecutionOutcome.Failed(ConversationExecutionFailure.InvalidMcpConfiguration)
         }
         try {
             try {
@@ -75,34 +105,35 @@ internal class ConversationExecution(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                reportError(
-                    command.conversationId,
-                    desktopText(currentData().preferences.language, "runtime.mcp_sync_failed")
-                        .replace("%s", error.userFacingMessage())
+                return ConversationExecutionOutcome.Failed(
+                    ConversationExecutionFailure.McpSynchronization(error.executionDetail())
                 )
-                return ConversationExecutionResult(completed = false)
             }
-            val initialRequest = prepareRequest(command.conversationId, command.requestMessages, assistant)
-                ?: return ConversationExecutionResult(completed = false)
-            updateConversation(command.conversationId) {
+            val initialRequest = prepareRequest(request.conversationId, request.requestMessages, assistant)
+                .getOrElse { error ->
+                    return ConversationExecutionOutcome.Failed(
+                        ConversationExecutionFailure.InvalidRequest(error.message.orEmpty())
+                    )
+                }
+            updateConversation(request.conversationId) {
                 it.prepareGeneration(
-                    requestMessages = command.requestMessages,
-                    alternativeTarget = command.alternativeTarget,
-                    title = command.title,
+                    requestMessages = request.requestMessages,
+                    alternativeTarget = request.alternativeTarget,
+                    title = request.title,
                     modelId = initialRequest.config.model
                 )
             }
-            var request = initialRequest.messages
+            var modelRequest = initialRequest.messages
             var toolRounds = 0
+            var stopReason: ConversationExecutionStopReason? = null
             while (true) {
-                collectStream(command.conversationId, initialRequest.config, request)
-                val toolCalls = conversation(command.conversationId)?.messages?.lastOrNull()?.toolCalls.orEmpty()
+                collectStream(request.conversationId, initialRequest.config, modelRequest)
+                val toolCalls = conversation(request.conversationId)?.messages?.lastOrNull()?.toolCalls.orEmpty()
                 if (toolCalls.isEmpty()) break
-                finishReasoning(command.conversationId)
+                finishReasoning(request.conversationId)
                 if (assistant.maxToolRounds > 0 && toolRounds >= assistant.maxToolRounds) {
-                    val limit = desktopText(currentData().preferences.language, "runtime.tool_round_limit")
-                        .replace("%d", assistant.maxToolRounds.toString())
-                    updateConversation(command.conversationId) { current ->
+                    val limit = text.toolRoundLimit(assistant.maxToolRounds)
+                    updateConversation(request.conversationId) { current ->
                         current.copy(
                             messages = current.messages + toolCalls.map { call ->
                                 ChatMessage(role = "tool", content = limit, toolCallId = call.id)
@@ -110,21 +141,29 @@ internal class ConversationExecution(
                             updatedAt = System.currentTimeMillis()
                         )
                     }
+                    stopReason = ConversationExecutionStopReason.TOOL_ROUND_LIMIT
                     break
                 }
                 toolRounds++
-                val toolResults = adapter.executeToolCalls(initialRequest.config, toolCalls)
-                updateConversation(command.conversationId) { current ->
+                val toolResults = tools.execute(initialRequest.config, toolCalls)
+                updateConversation(request.conversationId) { current ->
                     current.copy(messages = current.messages + toolResults, updatedAt = System.currentTimeMillis())
                 }
-                if (toolResults.any { it.content == DesktopAgentApprovalDeniedResult }) break
+                if (toolResults.any { it.content == DesktopAgentApprovalDeniedResult }) {
+                    stopReason = ConversationExecutionStopReason.APPROVAL_DENIED
+                    break
+                }
                 val nextRequest = prepareRequest(
-                    command.conversationId,
-                    requireNotNull(conversation(command.conversationId)).messages,
+                    request.conversationId,
+                    requireNotNull(conversation(request.conversationId)).messages,
                     assistant
-                ) ?: return ConversationExecutionResult(completed = false)
-                request = nextRequest.messages
-                updateConversation(command.conversationId) { current ->
+                ).getOrElse { error ->
+                    return ConversationExecutionOutcome.Failed(
+                        ConversationExecutionFailure.InvalidRequest(error.message.orEmpty())
+                    )
+                }
+                modelRequest = nextRequest.messages
+                updateConversation(request.conversationId) { current ->
                     current.copy(
                         messages = current.messages + ChatMessage(
                             role = "assistant",
@@ -135,42 +174,42 @@ internal class ConversationExecution(
                     )
                 }
             }
-            complete(command.conversationId, assistant)
-            return ConversationExecutionResult(completed = true)
+            complete(request.conversationId, assistant)
+            return stopReason?.let(ConversationExecutionOutcome::Stopped) ?: ConversationExecutionOutcome.Completed
         } catch (_: CancellationException) {
-            cancel(command, assistant)
-            return ConversationExecutionResult(completed = false)
+            cancel(request, assistant)
+            return ConversationExecutionOutcome.Cancelled
         } catch (error: Throwable) {
-            reportError(command.conversationId, error.userFacingMessage())
-            cancel(command, assistant)
-            return ConversationExecutionResult(completed = false)
+            cancel(request, assistant)
+            return ConversationExecutionOutcome.Failed(ConversationExecutionFailure.Execution(error.executionDetail()))
         }
     }
 
     private suspend fun syncTools(servers: List<DesktopMcpServer>) {
-        val stale = servers.filterNot(adapter::toolsAreCurrent)
+        val stale = servers.filterNot(tools::toolsAreCurrent)
         if (stale.isEmpty()) return
         val toolsByServer = stale.associate { server ->
-            server.id to adapter.syncTools(server).also { tools ->
-                check(tools.isNotEmpty()) {
-                    desktopText(currentData().preferences.language, "runtime.mcp_no_tools").replace("%s", server.name)
-                }
+            server.id to tools.syncTools(server).also { synchronizedTools ->
+                check(synchronizedTools.isNotEmpty()) { text.noMcpTools(server) }
             }
         }
-        updateData(currentData().copy(mcpServers = currentData().mcpServers.map { server ->
-            toolsByServer[server.id]?.let(server::withSyncedTools) ?: server
-        }))
+        state.update { data ->
+            data.copy(mcpServers = data.mcpServers.map { server ->
+                toolsByServer[server.id]?.let(server::withSyncedTools) ?: server
+            })
+        }
     }
 
     private fun prepareRequest(
         conversationId: String,
         requestMessages: List<ChatMessage>,
         assistant: DesktopAssistantProfile
-    ): PreparedRequest? {
-        val conversation = conversation(conversationId) ?: return null
+    ): Result<PreparedRequest> {
+        val conversation = conversation(conversationId)
+            ?: return Result.failure(ConversationExecutionPreparationException("Conversation not found"))
         val requestAssistant = if (conversation.usesPromptInjections(assistant)) assistant
         else assistant.copy(promptInjections = emptyList())
-        val baseConfig = currentData().configForConversation(conversation)
+        val baseConfig = state.current().configForConversation(conversation)
         val injected = requestAssistant.injectPromptMessages(requestAssistant.limitContext(requestMessages))
         val config = baseConfig.copy(
             systemPrompt = (injected.systemPrefix + baseConfig.systemPrompt + injected.systemSuffix)
@@ -178,19 +217,14 @@ internal class ConversationExecution(
                 .joinToString("\n\n")
         )
         config.validateAttachments(injected.messages).takeIf { it.isNotEmpty() }?.let { issues ->
-            reportError(conversationId, issues.toUserMessage())
-            return null
+            return Result.failure(ConversationExecutionPreparationException(issues.toUserMessage()))
         }
         val messages = runCatching {
             requestAssistant.renderMessageTemplate(requestAssistant.transformRequestMessages(injected.messages))
         }.getOrElse { error ->
-            reportError(
-                conversationId,
-                error.message ?: desktopText(currentData().preferences.language, "runtime.invalid_message_template")
-            )
-            return null
+            return Result.failure(ConversationExecutionPreparationException(error.message ?: text.invalidMessageTemplate()))
         }
-        return PreparedRequest(config, messages)
+        return Result.success(PreparedRequest(config, messages))
     }
 
     private suspend fun collectStream(conversationId: String, config: DesktopConfig, request: List<ChatMessage>) {
@@ -216,86 +250,51 @@ internal class ConversationExecution(
             appendDelta(
                 conversationId,
                 StreamDelta(
-                    content = content.toString(),
-                    reasoning = reasoning.toString(),
-                    reasoningSignature = reasoningSignature.toString(),
-                    modelId = modelId,
-                    promptTokens = promptTokens,
-                    completionTokens = completionTokens,
-                    cachedTokens = cachedTokens,
-                    citations = citations.toList(),
-                    attachments = attachments.toList(),
-                    toolCallDeltas = toolCalls.toList()
+                    content = content.toString(), reasoning = reasoning.toString(), reasoningSignature = reasoningSignature.toString(),
+                    modelId = modelId, promptTokens = promptTokens, completionTokens = completionTokens, cachedTokens = cachedTokens,
+                    citations = citations.toList(), attachments = attachments.toList(), toolCallDeltas = toolCalls.toList()
                 )
             )
-            content.clear()
-            reasoning.clear()
-            reasoningSignature.clear()
-            citations.clear()
-            attachments.clear()
-            toolCalls.clear()
-            modelId = null
-            promptTokens = null
-            completionTokens = null
-            cachedTokens = null
+            content.clear(); reasoning.clear(); reasoningSignature.clear(); citations.clear(); attachments.clear(); toolCalls.clear()
+            modelId = null; promptTokens = null; completionTokens = null; cachedTokens = null
         }
 
         try {
-            adapter.stream(config, request).collect { delta ->
-                content.append(delta.content)
-                reasoning.append(delta.reasoning)
-                reasoningSignature.append(delta.reasoningSignature)
-                citations += delta.citations
-                attachments += delta.attachments
-                toolCalls += delta.toolCallDeltas
-                modelId = delta.modelId ?: modelId
-                promptTokens = delta.promptTokens ?: promptTokens
-                completionTokens = delta.completionTokens ?: completionTokens
-                cachedTokens = delta.cachedTokens ?: cachedTokens
+            model.stream(config, request).collect { delta ->
+                content.append(delta.content); reasoning.append(delta.reasoning); reasoningSignature.append(delta.reasoningSignature)
+                citations += delta.citations; attachments += delta.attachments; toolCalls += delta.toolCallDeltas
+                modelId = delta.modelId ?: modelId; promptTokens = delta.promptTokens ?: promptTokens
+                completionTokens = delta.completionTokens ?: completionTokens; cachedTokens = delta.cachedTokens ?: cachedTokens
                 outputLength += delta.content.length + delta.reasoning.length
-                val interval = if (outputLength >= LongStreamOutputThreshold) {
-                    LongStreamUpdateIntervalMillis
-                } else {
-                    StreamUpdateIntervalMillis
-                }
+                val interval = if (outputLength >= LongStreamOutputThreshold) LongStreamUpdateIntervalMillis else StreamUpdateIntervalMillis
                 val now = clock()
-                if (now - lastUpdateAt >= interval) {
-                    flush()
-                    lastUpdateAt = now
-                }
+                if (now - lastUpdateAt >= interval) { flush(); lastUpdateAt = now }
             }
         } finally {
             flush()
         }
     }
 
-    private fun appendDelta(conversationId: String, delta: StreamDelta) {
-        updateConversation(conversationId) { current ->
-            val messages = current.messages.toMutableList()
-            val last = messages.lastOrNull()
-            if (last?.role == "assistant") {
-                val receivedAt = System.currentTimeMillis()
-                val reasoningStartedAt = last.reasoningStartedAt
-                    ?: delta.reasoning.takeIf(String::isNotBlank)?.let { receivedAt }
-                messages[messages.lastIndex] = last.copy(
-                    content = last.content + delta.content,
-                    reasoning = last.reasoning + delta.reasoning,
-                    reasoningSignature = last.reasoningSignature + delta.reasoningSignature,
-                    reasoningStartedAt = reasoningStartedAt,
-                    reasoningDurationMillis = if (delta.reasoning.isNotBlank() && reasoningStartedAt != null) {
-                        (receivedAt - reasoningStartedAt).coerceAtLeast(0)
-                    } else last.reasoningDurationMillis,
-                    modelId = delta.modelId ?: last.modelId,
-                    promptTokens = delta.promptTokens ?: last.promptTokens,
-                    completionTokens = delta.completionTokens ?: last.completionTokens,
-                    cachedTokens = delta.cachedTokens ?: last.cachedTokens,
-                    citations = (last.citations + delta.citations).distinctBy(DesktopCitation::url),
-                    attachments = (last.attachments + delta.attachments).distinctBy(DesktopAttachment::data),
-                    toolCalls = last.toolCalls.merge(delta.toolCallDeltas)
-                )
-            }
-            current.copy(messages = messages, updatedAt = System.currentTimeMillis())
+    private fun appendDelta(conversationId: String, delta: StreamDelta) = updateConversation(conversationId) { current ->
+        val messages = current.messages.toMutableList()
+        val last = messages.lastOrNull()
+        if (last?.role == "assistant") {
+            val receivedAt = System.currentTimeMillis()
+            val reasoningStartedAt = last.reasoningStartedAt ?: delta.reasoning.takeIf(String::isNotBlank)?.let { receivedAt }
+            messages[messages.lastIndex] = last.copy(
+                content = last.content + delta.content, reasoning = last.reasoning + delta.reasoning,
+                reasoningSignature = last.reasoningSignature + delta.reasoningSignature, reasoningStartedAt = reasoningStartedAt,
+                reasoningDurationMillis = if (delta.reasoning.isNotBlank() && reasoningStartedAt != null) {
+                    (receivedAt - reasoningStartedAt).coerceAtLeast(0)
+                } else last.reasoningDurationMillis,
+                modelId = delta.modelId ?: last.modelId, promptTokens = delta.promptTokens ?: last.promptTokens,
+                completionTokens = delta.completionTokens ?: last.completionTokens, cachedTokens = delta.cachedTokens ?: last.cachedTokens,
+                citations = (last.citations + delta.citations).distinctBy(DesktopCitation::url),
+                attachments = (last.attachments + delta.attachments).distinctBy(DesktopAttachment::data),
+                toolCalls = last.toolCalls.merge(delta.toolCallDeltas)
+            )
         }
+        current.copy(messages = messages, updatedAt = System.currentTimeMillis())
     }
 
     private fun finishReasoning(conversationId: String) = updateConversation(conversationId) { current ->
@@ -308,50 +307,41 @@ internal class ConversationExecution(
     private fun complete(conversationId: String, assistant: DesktopAssistantProfile) = updateConversation(conversationId) { current ->
         val messages = current.messages.toMutableList()
         val last = messages.lastOrNull()
-        if (last?.role == "assistant") {
-            messages[messages.lastIndex] = assistant.transformGeneratedMessage(last.completeReasoningDuration()).completeAlternative()
-        }
+        if (last?.role == "assistant") messages[messages.lastIndex] = assistant.transformGeneratedMessage(last.completeReasoningDuration()).completeAlternative()
         current.copy(messages = messages, updatedAt = System.currentTimeMillis())
     }
 
-    private fun cancel(command: ConversationExecutionCommand, assistant: DesktopAssistantProfile) = updateConversation(command.conversationId) { current ->
+    private fun cancel(request: ConversationExecutionRequest, assistant: DesktopAssistantProfile) = updateConversation(request.conversationId) { current ->
         val last = current.messages.lastOrNull()
         when {
             last?.role == "assistant" && last.toolCalls.isNotEmpty() -> {
                 val cleaned = last.copy(toolCalls = emptyList())
                 if (cleaned.content.isBlank() && cleaned.reasoning.isBlank()) {
                     val messages = current.messages.dropLast(1)
-                    current.copy(messages = if (command.alternativeTarget == null) messages else messages + command.alternativeTarget)
-                } else {
-                    current.copy(
-                        messages = current.messages.dropLast(1) +
-                            assistant.transformGeneratedMessage(cleaned.completeReasoningDuration()).completeAlternative()
-                    )
-                }
+                    current.copy(messages = if (request.alternativeTarget == null) messages else messages + request.alternativeTarget)
+                } else current.copy(messages = current.messages.dropLast(1) + assistant.transformGeneratedMessage(cleaned.completeReasoningDuration()).completeAlternative())
             }
             last?.role == "assistant" && last.content.isBlank() && last.reasoning.isBlank() -> {
                 val messages = current.messages.dropLast(1)
-                current.copy(messages = if (command.alternativeTarget == null) messages else messages + command.alternativeTarget)
+                current.copy(messages = if (request.alternativeTarget == null) messages else messages + request.alternativeTarget)
             }
             last?.role == "assistant" -> current.copy(
-                messages = current.messages.dropLast(1) + assistant.transformGeneratedMessage(last.completeReasoningDuration())
-                    .completeAlternative()
+                messages = current.messages.dropLast(1) + assistant.transformGeneratedMessage(last.completeReasoningDuration()).completeAlternative()
             )
             else -> current
         }.copy(updatedAt = System.currentTimeMillis())
     }
 
-    private fun fail(conversationId: String, data: DesktopData, textKey: String): ConversationExecutionResult {
-        reportError(conversationId, desktopText(data.preferences.language, textKey))
-        return ConversationExecutionResult(completed = false)
-    }
-
-    private fun conversation(id: String): DesktopConversation? = currentData().conversations.firstOrNull { it.id == id }
+    private fun conversation(id: String): DesktopConversation? = state.current().conversations.firstOrNull { it.id == id }
 
     private fun updateConversation(id: String, transform: (DesktopConversation) -> DesktopConversation) {
-        val data = currentData()
-        updateData(data.copy(conversations = data.conversations.map { if (it.id == id) transform(it) else it }))
+        state.update { data -> data.copy(conversations = data.conversations.map { if (it.id == id) transform(it) else it }) }
     }
 
     private data class PreparedRequest(val config: DesktopConfig, val messages: List<ChatMessage>)
+
+    private class ConversationExecutionPreparationException(message: String) : IllegalArgumentException(message)
 }
+
+private fun Throwable.executionDetail(): String =
+    message?.substringAfterLast(": ")?.takeIf(String::isNotBlank) ?: userFacingMessage()

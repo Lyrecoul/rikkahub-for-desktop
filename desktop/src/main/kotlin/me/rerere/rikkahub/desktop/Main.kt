@@ -329,6 +329,15 @@ private fun showOpenFileDialog(owner: Frame, title: String, multiple: Boolean): 
     return selected.ifEmpty { null }
 }
 
+private fun ConversationExecutionFailure.localized(language: DesktopLanguage): String = when (this) {
+    ConversationExecutionFailure.InvalidMcpConfiguration ->
+        desktopText(language, "runtime.mcp_configuration_invalid")
+    is ConversationExecutionFailure.McpSynchronization ->
+        desktopText(language, "runtime.mcp_sync_failed").replace("%s", detail)
+    is ConversationExecutionFailure.InvalidRequest -> detail
+    is ConversationExecutionFailure.Execution -> detail
+}
+
 fun main() = application {
     val appIcon = rememberDesktopResourcePainter("icon.png")
     Window(
@@ -747,61 +756,83 @@ private fun RikkaHubDesktop(
         if (generationJobs.containsKey(conversationId)) return
         val executionConversation = data.conversations.firstOrNull { it.id == conversationId } ?: return
         val executionAssistant = data.assistantFor(executionConversation)
+        val interaction = object : ConversationUserInteractionAdapter {
+            override suspend fun askUser(call: DesktopToolCall): String {
+                val answer = CompletableDeferred<String>()
+                pendingAskUserAnswers[call.id] = answer
+                try {
+                    return answer.await()
+                } finally {
+                    pendingAskUserAnswers.remove(call.id, answer)
+                }
+            }
+
+            override suspend fun requestApproval(
+                call: DesktopToolCall,
+                request: DesktopAgentApprovalRequest
+            ): Boolean = withContext(Dispatchers.Main) {
+                if (rememberedAgentApprovals[conversationId].orEmpty().approves(request)) return@withContext true
+                val answer = CompletableDeferred<DesktopAgentApprovalDecision>()
+                pendingAgentApproval = PendingDesktopAgentApproval(call, request, answer)
+                try {
+                    answer.await().also { decision ->
+                        if (decision.approved && decision.autoApprove) {
+                            request.rememberedGrant()?.let { grant ->
+                                rememberedAgentApprovals[conversationId] =
+                                    rememberedAgentApprovals[conversationId].orEmpty() + grant
+                            }
+                        }
+                    }.approved
+                } finally {
+                    if (pendingAgentApproval?.answer === answer) pendingAgentApproval = null
+                }
+            }
+        }
         val execution = ConversationExecution(
-            adapter = DesktopConversationExecutionAdapter(
+            model = DesktopConversationModelStreamAdapter(client),
+            tools = DesktopConversationToolRuntimeAdapter(
                 client = client,
                 mcpClient = mcpClient,
                 assistantId = executionAssistant.id,
                 memoryToolHandler = ::memoryToolHandler,
-                askUserHandler = { call ->
-                    val answer = CompletableDeferred<String>()
-                    pendingAskUserAnswers[call.id] = answer
-                    try {
-                        answer.await()
-                    } finally {
-                        pendingAskUserAnswers.remove(call.id, answer)
-                    }
-                },
-                agentRuntime = agentRuntime,
-                approvalHandler = { call, request ->
-                    withContext(Dispatchers.Main) {
-                        if (rememberedAgentApprovals[conversationId].orEmpty().approves(request)) {
-                            return@withContext true
-                        }
-                        val answer = CompletableDeferred<DesktopAgentApprovalDecision>()
-                        pendingAgentApproval = PendingDesktopAgentApproval(call, request, answer)
-                        try {
-                            answer.await().also { decision ->
-                                if (decision.approved && decision.autoApprove) {
-                                    request.rememberedGrant()?.let { grant ->
-                                        rememberedAgentApprovals[conversationId] =
-                                            rememberedAgentApprovals[conversationId].orEmpty() + grant
-                                    }
-                                }
-                            }.approved
-                        } finally {
-                            if (pendingAgentApproval?.answer === answer) pendingAgentApproval = null
-                        }
-                    }
-                }
+                interaction = interaction,
+                agentRuntime = agentRuntime
             ),
-            currentData = { data },
-            updateData = ::update,
-            reportError = { id, message -> generationErrors[id] = message }
+            state = object : ConversationExecutionState {
+                override fun current(): DesktopData = data
+                override fun update(transform: (DesktopData) -> DesktopData) = update(transform(data))
+            },
+            text = object : ConversationExecutionText {
+                override fun noMcpTools(server: DesktopMcpServer): String =
+                    desktopText(data.preferences.language, "runtime.mcp_no_tools").replace("%s", server.name)
+
+                override fun invalidMessageTemplate(): String =
+                    desktopText(data.preferences.language, "runtime.invalid_message_template")
+
+                override fun toolRoundLimit(limit: Int): String =
+                    desktopText(data.preferences.language, "runtime.tool_round_limit").replace("%d", limit.toString())
+            }
         )
         generationErrors.remove(conversationId)
         val executionJob = scope.launch(start = CoroutineStart.LAZY) {
-            val completed = execution.execute(
-                ConversationExecutionCommand(conversationId, requestMessages, title, alternativeTarget)
-            ).completed
-            generationJobs.remove(conversationId)
-            if (completed) {
-                val latest = data.conversations.firstOrNull { it.id == conversationId }
-                if (latest?.title == "新对话" && latest.messages.any { it.role == "assistant" }) {
-                    startTitleGeneration(conversationId, force = false)
+            val outcome = execution.execute(
+                ConversationExecutionRequest(conversationId, requestMessages, title, alternativeTarget)
+            )
+            when (outcome) {
+                ConversationExecutionOutcome.Completed -> {
+                    val latest = data.conversations.firstOrNull { it.id == conversationId }
+                    if (latest?.title == "新对话" && latest.messages.any { it.role == "assistant" }) {
+                        startTitleGeneration(conversationId, force = false)
+                    }
+                    startSuggestionGeneration(conversationId)
                 }
-                startSuggestionGeneration(conversationId)
+                is ConversationExecutionOutcome.Failed -> {
+                    generationErrors[conversationId] = outcome.reason.localized(data.preferences.language)
+                }
+                ConversationExecutionOutcome.Cancelled,
+                is ConversationExecutionOutcome.Stopped -> Unit
             }
+            generationJobs.remove(conversationId)
         }
         generationJobs[conversationId] = executionJob
         executionJob.start()

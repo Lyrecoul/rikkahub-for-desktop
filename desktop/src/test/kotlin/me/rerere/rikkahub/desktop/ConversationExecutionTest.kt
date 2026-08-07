@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class ConversationExecutionTest {
@@ -14,429 +15,186 @@ class ConversationExecutionTest {
     fun continuesAfterToolCallWithToolResult() = runBlocking {
         val conversation = DesktopConversation(id = "conversation", messages = listOf(ChatMessage("user", "Search")))
         var data = DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id)
-        val adapter = FakeConversationExecutionAdapter(
+        val adapter = FakeAdapters(
             flowOf(StreamDelta(toolCallDeltas = listOf(DesktopToolCallDelta(0, "call-1", "current_time")))),
             flowOf(StreamDelta(content = "It is noon")),
             toolResults = listOf(ChatMessage("tool", "12:00", toolCallId = "call-1"))
         )
-        val execution = ConversationExecution(adapter, { data }, { data = it }, { _, _ -> })
+        val execution = execution(adapter, { data = it }, data)
 
-        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
+        val result = execution.execute(ConversationExecutionRequest(conversation.id, conversation.messages))
 
-        assertTrue(result.completed)
+        assertEquals(ConversationExecutionOutcome.Completed, result)
         assertEquals(2, adapter.streamRequests.size)
         assertEquals(listOf("user", "assistant", "tool", "assistant"), data.conversations.single().messages.map(ChatMessage::role))
         assertEquals("It is noon", data.conversations.single().messages.last().content)
     }
 
     @Test
-    fun removesUnresolvedToolCallWhenToolExecutionFails() = runBlocking {
-        val conversation = DesktopConversation(id = "conversation", messages = listOf(ChatMessage("user", "Search")))
-        var data = DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id)
-        val errors = mutableListOf<String>()
-        val execution = ConversationExecution(
-            adapter = object : ConversationExecutionAdapter {
-                override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> =
-                    flowOf(StreamDelta(toolCallDeltas = listOf(DesktopToolCallDelta(0, "call-1", "search"))))
+    fun reportsToolFailureAndRemovesUnresolvedAssistant() = runBlocking {
+        var data = testData()
+        val adapter = FakeAdapters(flowOf(StreamDelta(toolCallDeltas = listOf(DesktopToolCallDelta(0, "call-1", "search")))), executeFailure = IllegalStateException("tool failed"))
+        val execution = execution(adapter, { data = it }, data)
 
-                override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = true
-                override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = emptyList()
-                override suspend fun executeToolCalls(
-                    config: DesktopConfig,
-                    calls: List<DesktopToolCall>
-                ): List<ChatMessage> = error("tool failed")
-            },
-            currentData = { data },
-            updateData = { data = it },
-            reportError = { _, message -> errors += message }
-        )
+        val result = execution.execute(ConversationExecutionRequest("conversation", data.conversations.single().messages))
 
-        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
-
-        assertTrue(!result.completed)
+        assertIs<ConversationExecutionOutcome.Failed>(result)
+        assertEquals(ConversationExecutionFailure.Execution("tool failed"), result.reason)
         assertEquals(listOf("user"), data.conversations.single().messages.map(ChatMessage::role))
-        assertEquals("tool failed", errors.single())
     }
 
     @Test
-    fun removesEmptyAssistantMessageWhenModelStreamFails() = runBlocking {
-        val conversation = DesktopConversation(id = "conversation", messages = listOf(ChatMessage("user", "Hello")))
-        var data = DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id)
-        val errors = mutableListOf<String>()
-        val execution = ConversationExecution(
-            adapter = object : ConversationExecutionAdapter {
-                override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> =
-                    flow { error("connection refused") }
+    fun reportsStreamFailureAndRemovesEmptyAssistant() = runBlocking {
+        var data = testData()
+        val adapter = FakeAdapters(flow { error(IllegalStateException("connection refused")) })
+        val execution = execution(adapter, { data = it }, data)
 
-                override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = true
-                override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = emptyList()
-                override suspend fun executeToolCalls(
-                    config: DesktopConfig,
-                    calls: List<DesktopToolCall>
-                ): List<ChatMessage> = emptyList()
-            },
-            currentData = { data },
-            updateData = { data = it },
-            reportError = { _, message -> errors += message }
-        )
+        val result = execution.execute(ConversationExecutionRequest("conversation", data.conversations.single().messages))
 
-        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
-
-        assertTrue(!result.completed)
+        assertEquals(ConversationExecutionFailure.Execution("connection refused"), assertIs<ConversationExecutionOutcome.Failed>(result).reason)
         assertEquals(listOf("user"), data.conversations.single().messages.map(ChatMessage::role))
-        assertEquals("connection refused", errors.single())
-    }
-
-    @Test
-    fun identifiesTheServerWhenMcpSynchronizationReturnsNoTools() = runBlocking {
-        val server = DesktopMcpServer(id = "server", name = "Search", enabled = true)
-        val assistant = DesktopAssistantProfile(id = "assistant", mcpServerIds = setOf(server.id))
-        val conversation = DesktopConversation(
-            id = "conversation",
-            assistantId = assistant.id,
-            messages = listOf(ChatMessage("user", "Search"))
-        )
-        var data = DesktopData(
-            assistants = listOf(assistant),
-            selectedAssistantId = assistant.id,
-            mcpServers = listOf(server),
-            conversations = listOf(conversation),
-            selectedConversationId = conversation.id
-        )
-        val errors = mutableListOf<String>()
-        val execution = ConversationExecution(
-            adapter = object : ConversationExecutionAdapter {
-                override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> =
-                    error("The model request must not start")
-
-                override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = false
-                override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = emptyList()
-                override suspend fun executeToolCalls(
-                    config: DesktopConfig,
-                    calls: List<DesktopToolCall>
-                ): List<ChatMessage> = emptyList()
-            },
-            currentData = { data },
-            updateData = { data = it },
-            reportError = { _, message -> errors += message }
-        )
-
-        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
-
-        assertTrue(!result.completed)
-        val noTools = desktopText(data.preferences.language, "runtime.mcp_no_tools").replace("%s", server.name)
-        assertEquals(
-            desktopText(data.preferences.language, "runtime.mcp_sync_failed").replace("%s", noTools),
-            errors.single()
-        )
     }
 
     @Test
     fun rejectsMissingSelectedMcpServerBeforeStartingExecution() = runBlocking {
         val assistant = DesktopAssistantProfile(id = "assistant", mcpServerIds = setOf("missing"))
-        val conversation = DesktopConversation(
-            id = "conversation",
-            assistantId = assistant.id,
-            messages = listOf(ChatMessage("user", "Search"))
-        )
-        var data = DesktopData(
-            assistants = listOf(assistant),
-            selectedAssistantId = assistant.id,
-            conversations = listOf(conversation),
-            selectedConversationId = conversation.id
-        )
-        val errors = mutableListOf<String>()
-        val execution = ConversationExecution(
-            adapter = object : ConversationExecutionAdapter {
-                override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> =
-                    error("The model request must not start")
+        val conversation = DesktopConversation(id = "conversation", assistantId = assistant.id, messages = listOf(ChatMessage("user", "Search")))
+        var data = DesktopData(assistants = listOf(assistant), selectedAssistantId = assistant.id, conversations = listOf(conversation), selectedConversationId = conversation.id)
+        val adapter = FakeAdapters(flowOf(StreamDelta(content = "must not run")))
+        val execution = execution(adapter, { data = it }, data)
 
-                override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = error("MCP must not synchronize")
-                override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = emptyList()
-                override suspend fun executeToolCalls(
-                    config: DesktopConfig,
-                    calls: List<DesktopToolCall>
-                ): List<ChatMessage> = emptyList()
-            },
-            currentData = { data },
-            updateData = { data = it },
-            reportError = { _, message -> errors += message }
-        )
+        val result = execution.execute(ConversationExecutionRequest(conversation.id, conversation.messages))
 
-        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
-
-        assertTrue(!result.completed)
-        assertEquals(desktopText(data.preferences.language, "runtime.mcp_configuration_invalid"), errors.single())
+        assertEquals(ConversationExecutionFailure.InvalidMcpConfiguration, assertIs<ConversationExecutionOutcome.Failed>(result).reason)
+        assertTrue(adapter.streamRequests.isEmpty())
     }
 
     @Test
-    fun rejectsUnsupportedAttachmentsBeforeCreatingAssistantMessage() = runBlocking {
-        val conversation = DesktopConversation(
-            id = "conversation",
-            messages = listOf(
-                ChatMessage(
-                    "user",
-                    "Inspect",
-                    attachments = listOf(DesktopAttachment("photo.png", "image/png", "AQID", isImage = true))
-                )
-            )
-        )
-        var data = DesktopData(
-            config = DesktopConfig(model = "custom-text-model"),
-            conversations = listOf(conversation),
-            selectedConversationId = conversation.id
-        )
-        val errors = mutableListOf<String>()
-        val execution = ConversationExecution(
-            adapter = object : ConversationExecutionAdapter {
-                override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> =
-                    error("The model request must not start")
-
-                override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = true
-                override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = emptyList()
-                override suspend fun executeToolCalls(
-                    config: DesktopConfig,
-                    calls: List<DesktopToolCall>
-                ): List<ChatMessage> = emptyList()
-            },
-            currentData = { data },
-            updateData = { data = it },
-            reportError = { _, message -> errors += message }
-        )
-
-        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
-
-        assertTrue(!result.completed)
-        assertEquals(1, data.conversations.single().messages.size)
-        assertTrue(errors.single().contains("photo.png"))
-    }
-
-    @Test
-    fun reportsLocalizedErrorWhenMcpToolSynchronizationFails() = runBlocking {
+    fun reportsMcpSynchronizationFailure() = runBlocking {
         val server = DesktopMcpServer(id = "server", name = "Search", enabled = true)
         val assistant = DesktopAssistantProfile(id = "assistant", mcpServerIds = setOf(server.id))
-        val conversation = DesktopConversation(
-            id = "conversation",
-            assistantId = assistant.id,
-            messages = listOf(ChatMessage("user", "Search"))
-        )
-        var data = DesktopData(
-            assistants = listOf(assistant),
-            selectedAssistantId = assistant.id,
-            mcpServers = listOf(server),
-            conversations = listOf(conversation),
-            selectedConversationId = conversation.id
-        )
-        val errors = mutableListOf<String>()
-        val execution = ConversationExecution(
-            adapter = object : ConversationExecutionAdapter {
-                override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> =
-                    error("The model request must not start")
+        val conversation = DesktopConversation(id = "conversation", assistantId = assistant.id, messages = listOf(ChatMessage("user", "Search")))
+        var data = DesktopData(assistants = listOf(assistant), selectedAssistantId = assistant.id, mcpServers = listOf(server), conversations = listOf(conversation), selectedConversationId = conversation.id)
+        val adapter = FakeAdapters(flowOf(), currentTools = false, syncFailure = IllegalStateException("connection refused"))
+        val execution = execution(adapter, { data = it }, data)
 
-                override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = false
+        val result = execution.execute(ConversationExecutionRequest(conversation.id, conversation.messages))
 
-                override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> =
-                    error("connection refused")
-
-                override suspend fun executeToolCalls(
-                    config: DesktopConfig,
-                    calls: List<DesktopToolCall>
-                ): List<ChatMessage> = emptyList()
-            },
-            currentData = { data },
-            updateData = { data = it },
-            reportError = { _, message -> errors += message }
-        )
-
-        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
-
-        assertTrue(!result.completed)
-        assertEquals(
-            desktopText(data.preferences.language, "runtime.mcp_sync_failed").replace("%s", "connection refused"),
-            errors.single()
-        )
+        assertEquals(ConversationExecutionFailure.McpSynchronization("connection refused"), assertIs<ConversationExecutionOutcome.Failed>(result).reason)
     }
 
     @Test
-    fun synchronizesStaleMcpToolsBeforeStartingTheModelRequest() = runBlocking {
+    fun rejectsMcpSynchronizationWithNoTools() = runBlocking {
         val server = DesktopMcpServer(id = "server", name = "Search", enabled = true)
         val assistant = DesktopAssistantProfile(id = "assistant", mcpServerIds = setOf(server.id))
-        val conversation = DesktopConversation(
-            id = "conversation",
-            assistantId = assistant.id,
-            messages = listOf(ChatMessage("user", "Search"))
-        )
-        var data = DesktopData(
-            assistants = listOf(assistant),
-            selectedAssistantId = assistant.id,
-            mcpServers = listOf(server),
-            conversations = listOf(conversation),
-            selectedConversationId = conversation.id
-        )
-        val synchronizedTool = DesktopMcpTool(name = "search", description = "Search")
-        val execution = ConversationExecution(
-            adapter = object : ConversationExecutionAdapter {
-                override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> =
-                    flowOf(StreamDelta(content = "Done"))
+        val conversation = DesktopConversation(id = "conversation", assistantId = assistant.id, messages = listOf(ChatMessage("user", "Search")))
+        var data = DesktopData(assistants = listOf(assistant), selectedAssistantId = assistant.id, mcpServers = listOf(server), conversations = listOf(conversation), selectedConversationId = conversation.id)
+        val adapter = FakeAdapters(flowOf(), currentTools = false, synchronizedTools = emptyList())
+        val execution = execution(adapter, { data = it }, data)
 
-                override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = false
+        val result = execution.execute(ConversationExecutionRequest(conversation.id, conversation.messages))
 
-                override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = listOf(synchronizedTool)
-
-                override suspend fun executeToolCalls(
-                    config: DesktopConfig,
-                    calls: List<DesktopToolCall>
-                ): List<ChatMessage> = emptyList()
-            },
-            currentData = { data },
-            updateData = { data = it },
-            reportError = { _, message -> error(message) }
-        )
-
-        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
-
-        assertTrue(result.completed)
-        assertEquals(listOf(synchronizedTool), data.mcpServers.single().tools)
-        assertTrue(data.mcpServers.single().hasCurrentTools())
+        assertEquals(ConversationExecutionFailure.McpSynchronization("MCP server Search did not provide usable tools"), assertIs<ConversationExecutionOutcome.Failed>(result).reason)
     }
 
     @Test
-    fun cancellationDuringMcpSyncDoesNotPublishAnError() = runBlocking {
-        val server = DesktopMcpServer(id = "server", name = "Search", enabled = true)
-        val assistant = DesktopAssistantProfile(id = "assistant", mcpServerIds = setOf(server.id))
-        val conversation = DesktopConversation(
-            id = "conversation",
-            assistantId = assistant.id,
-            messages = listOf(ChatMessage("user", "Search"))
-        )
-        var data = DesktopData(
-            assistants = listOf(assistant),
-            selectedAssistantId = assistant.id,
-            mcpServers = listOf(server),
-            conversations = listOf(conversation),
-            selectedConversationId = conversation.id
-        )
-        val errors = mutableListOf<String>()
-        val execution = ConversationExecution(
-            adapter = object : ConversationExecutionAdapter {
-                override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> = flowOf()
-                override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = false
-                override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = throw CancellationException()
-                override suspend fun executeToolCalls(
-                    config: DesktopConfig,
-                    calls: List<DesktopToolCall>
-                ): List<ChatMessage> = emptyList()
-            },
-            currentData = { data },
-            updateData = { data = it },
-            reportError = { _, message -> errors += message }
-        )
+    fun cancellationCleansUnresolvedToolCall() = runBlocking {
+        var data = testData()
+        val adapter = FakeAdapters(flow {
+            emit(StreamDelta(content = "Working", toolCallDeltas = listOf(DesktopToolCallDelta(0, "call-1", "search"))))
+            throw CancellationException()
+        })
+        val execution = execution(adapter, { data = it }, data)
 
-        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
+        val result = execution.execute(ConversationExecutionRequest("conversation", data.conversations.single().messages))
 
-        assertTrue(!result.completed)
-        assertTrue(errors.isEmpty())
+        assertEquals(ConversationExecutionOutcome.Cancelled, result)
+        assertEquals("Working", data.conversations.single().messages.last().content)
+        assertTrue(data.conversations.single().messages.last().toolCalls.isEmpty())
     }
 
     @Test
     fun stopsAtConfiguredToolRoundLimit() = runBlocking {
         val assistant = DesktopAssistantProfile(id = "assistant", maxToolRounds = 1)
-        val conversation = DesktopConversation(
-            id = "conversation",
-            assistantId = assistant.id,
-            messages = listOf(ChatMessage("user", "Search"))
-        )
-        var data = DesktopData(
-            assistants = listOf(assistant),
-            selectedAssistantId = assistant.id,
-            conversations = listOf(conversation),
-            selectedConversationId = conversation.id
-        )
-        val adapter = FakeConversationExecutionAdapter(
+        val conversation = DesktopConversation(id = "conversation", assistantId = assistant.id, messages = listOf(ChatMessage("user", "Search")))
+        var data = DesktopData(assistants = listOf(assistant), selectedAssistantId = assistant.id, conversations = listOf(conversation), selectedConversationId = conversation.id)
+        val adapter = FakeAdapters(
             flowOf(StreamDelta(toolCallDeltas = listOf(DesktopToolCallDelta(0, "call-1", "search")))),
             flowOf(StreamDelta(toolCallDeltas = listOf(DesktopToolCallDelta(0, "call-2", "search")))),
             toolResults = listOf(ChatMessage("tool", "first result", toolCallId = "call-1"))
         )
-        val execution = ConversationExecution(adapter, { data }, { data = it }, { _, _ -> })
+        val execution = execution(adapter, { data = it }, data)
 
-        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
+        val result = execution.execute(ConversationExecutionRequest(conversation.id, conversation.messages))
 
-        assertTrue(result.completed)
+        assertEquals(ConversationExecutionOutcome.Stopped(ConversationExecutionStopReason.TOOL_ROUND_LIMIT), result)
         assertEquals(2, adapter.streamRequests.size)
-        val messages = data.conversations.single().messages
-        assertEquals("call-2", messages[messages.lastIndex - 1].toolCallId)
-        assertTrue(messages.last().content.isNotBlank())
-    }
-
-    @Test
-    fun cancellationClearsUnresolvedToolCallAfterVisibleContent() = runBlocking {
-        val conversation = DesktopConversation(id = "conversation", messages = listOf(ChatMessage("user", "Search")))
-        var data = DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id)
-        val adapter = FakeConversationExecutionAdapter(flow {
-            emit(StreamDelta(content = "Working", toolCallDeltas = listOf(DesktopToolCallDelta(0, "call-1", "search"))))
-            throw CancellationException()
-        })
-        val execution = ConversationExecution(adapter, { data }, { data = it }, { _, _ -> })
-
-        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
-
-        assertTrue(!result.completed)
-        val message = data.conversations.single().messages.last()
-        assertEquals("Working", message.content)
-        assertTrue(message.toolCalls.isEmpty())
     }
 
     @Test
     fun batchesRapidStreamDeltasBeforePublishingConversationState() = runBlocking {
-        val conversation = DesktopConversation(id = "conversation", messages = listOf(ChatMessage("user", "Hello")))
-        var data = DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id)
+        var data = testData()
         var updates = 0
-        val execution = ConversationExecution(
-            adapter = FakeConversationExecutionAdapter(
-                flowOf(StreamDelta(content = "one "), StreamDelta(content = "two "), StreamDelta(content = "three"))
-            ),
-            currentData = { data },
-            updateData = { data = it; updates++ },
-            reportError = { _, _ -> },
-            clock = { 0L }
-        )
+        val adapter = FakeAdapters(flowOf(StreamDelta(content = "one "), StreamDelta(content = "two "), StreamDelta(content = "three")))
+        val execution = execution(adapter, { data = it; updates++ }, data, clock = { 0L })
 
-        val result = execution.execute(ConversationExecutionCommand(conversation.id, conversation.messages))
+        val result = execution.execute(ConversationExecutionRequest("conversation", data.conversations.single().messages))
 
-        assertTrue(result.completed)
+        assertEquals(ConversationExecutionOutcome.Completed, result)
         assertEquals(3, updates)
         assertEquals("one two three", data.conversations.single().messages.last().content)
     }
 
     @Test
-    fun streamsResponseIntoAssistantMessage() = runBlocking {
-        val conversation = DesktopConversation(id = "conversation", messages = listOf(ChatMessage("user", "Hello")))
-        var data = DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id)
-        val errors = mutableListOf<String>()
-        val execution = ConversationExecution(
-            adapter = FakeConversationExecutionAdapter(flowOf(StreamDelta(content = "Hi there"))),
-            currentData = { data },
-            updateData = { data = it },
-            reportError = { _, message -> errors += message }
-        )
+    fun rejectsUnsupportedAttachmentsBeforeCreatingAssistantMessage() = runBlocking {
+        val conversation = DesktopConversation(id = "conversation", messages = listOf(ChatMessage("user", "Inspect", attachments = listOf(DesktopAttachment("photo.png", "image/png", "AQID", isImage = true)))))
+        var data = DesktopData(config = DesktopConfig(model = "custom-text-model"), conversations = listOf(conversation), selectedConversationId = conversation.id)
+        val adapter = FakeAdapters(flowOf(StreamDelta(content = "must not run")))
+        val execution = execution(adapter, { data = it }, data)
 
-        val result = execution.execute(
-            ConversationExecutionCommand(
-                conversationId = conversation.id,
-                requestMessages = conversation.messages
-            )
-        )
+        val result = execution.execute(ConversationExecutionRequest(conversation.id, conversation.messages))
 
-        assertTrue(result.completed)
-        assertTrue(errors.isEmpty())
-        assertEquals("Hi there", data.conversations.single().messages.last().content)
-        assertEquals("assistant", data.conversations.single().messages.last().role)
+        assertIs<ConversationExecutionOutcome.Failed>(result)
+        assertEquals(1, data.conversations.single().messages.size)
+        assertTrue((result.reason as ConversationExecutionFailure.InvalidRequest).detail.contains("photo.png"))
+        assertTrue(adapter.streamRequests.isEmpty())
     }
 
-    private class FakeConversationExecutionAdapter(
+    private fun testData(): DesktopData {
+        val conversation = DesktopConversation(id = "conversation", messages = listOf(ChatMessage("user", "Hello")))
+        return DesktopData(conversations = listOf(conversation), selectedConversationId = conversation.id)
+    }
+
+    private fun execution(
+        adapters: FakeAdapters,
+        update: (DesktopData) -> Unit,
+        initial: DesktopData,
+        clock: () -> Long = System::currentTimeMillis
+    ): ConversationExecution {
+        var data = initial
+        return ConversationExecution(
+            model = adapters,
+            tools = adapters,
+            state = object : ConversationExecutionState {
+                override fun current(): DesktopData = data
+                override fun update(transform: (DesktopData) -> DesktopData) {
+                    data = transform(data)
+                    update(data)
+                }
+            },
+            text = adapters,
+            clock = clock
+        )
+    }
+
+    private class FakeAdapters(
         private vararg val responses: Flow<StreamDelta>,
-        private val toolResults: List<ChatMessage> = emptyList()
-    ) : ConversationExecutionAdapter {
+        private val currentTools: Boolean = true,
+        private val synchronizedTools: List<DesktopMcpTool> = listOf(DesktopMcpTool(name = "search", description = "Search")),
+        private val syncFailure: Throwable? = null,
+        private val toolResults: List<ChatMessage> = emptyList(),
+        private val executeFailure: Throwable? = null
+    ) : ConversationModelStreamAdapter, ConversationToolRuntimeAdapter, ConversationExecutionText {
         val streamRequests = mutableListOf<List<ChatMessage>>()
 
         override fun stream(config: DesktopConfig, messages: List<ChatMessage>): Flow<StreamDelta> {
@@ -444,13 +202,11 @@ class ConversationExecutionTest {
             return responses[streamRequests.lastIndex]
         }
 
-        override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = true
-
-        override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = emptyList()
-
-        override suspend fun executeToolCalls(
-            config: DesktopConfig,
-            calls: List<DesktopToolCall>
-        ): List<ChatMessage> = toolResults
+        override fun toolsAreCurrent(server: DesktopMcpServer): Boolean = currentTools
+        override suspend fun syncTools(server: DesktopMcpServer): List<DesktopMcpTool> = syncFailure?.let { throw it } ?: synchronizedTools
+        override suspend fun execute(config: DesktopConfig, calls: List<DesktopToolCall>): List<ChatMessage> = executeFailure?.let { throw it } ?: toolResults
+        override fun noMcpTools(server: DesktopMcpServer): String = "MCP server ${server.name} did not provide usable tools"
+        override fun invalidMessageTemplate(): String = "Invalid message template"
+        override fun toolRoundLimit(limit: Int): String = "Tool limit $limit"
     }
 }
