@@ -1113,6 +1113,22 @@ internal fun DesktopData.suggestionGenerationConfig(conversation: DesktopConvers
     )
 }
 
+/** Translation requests are deterministic one-shot calls and must not inherit chat reasoning limits. */
+internal fun DesktopConfig.translationRequestConfig(): DesktopConfig {
+    val backgroundConfig = backgroundRequestConfig()
+    return backgroundConfig.copy(
+        systemPrompt = DesktopTranslationSystemPrompt,
+        temperature = 0.0,
+        reasoningEffort = "",
+        customBodies = backgroundConfig.customBodies.filterNot { body ->
+            body.key in setOf(
+                "temperature", "reasoning_effort", "reasoning",
+                "max_tokens", "max_completion_tokens", "max_output_tokens"
+            )
+        }
+    )
+}
+
 /** Background one-shot tasks do not execute chat tools or inherit chat transport overrides. */
 internal fun DesktopConfig.backgroundRequestConfig(maxTokens: Int = this.maxTokens): DesktopConfig = copy(
     systemPrompt = "",

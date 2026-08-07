@@ -1,5 +1,17 @@
 package me.rerere.rikkahub.desktop
 
+internal fun shouldAutoScrollChat(
+    enabled: Boolean,
+    hasMessages: Boolean,
+    isResponseGenerating: Boolean,
+): Boolean = enabled && hasMessages && isResponseGenerating
+
+internal fun isChatMessageGenerating(
+    isResponseGenerating: Boolean,
+    messageIndex: Int,
+    lastMessageIndex: Int,
+): Boolean = isResponseGenerating && messageIndex == lastMessageIndex
+
 /**
  * Presentation-only grouping for an assistant tool loop. The persisted message
  * sequence remains unchanged because it is also used as the provider context.

@@ -388,6 +388,7 @@ private fun RikkaHubDesktop(
     val rememberedAgentApprovals = remember { mutableStateMapOf<String, Set<DesktopAgentApprovalGrant>>() }
     val agentRuntime = remember { DesktopAgentRuntime() }
     val generationJobs = remember { mutableStateMapOf<String, Job>() }
+    val responseGenerationConversationIds = remember { mutableStateMapOf<String, Unit>() }
     val suggestionJobs = remember { mutableStateMapOf<String, Job>() }
     val generationErrors = remember { mutableStateMapOf<String, String>() }
     var saveJob by remember { mutableStateOf<Job?>(null) }
@@ -596,6 +597,7 @@ private fun RikkaHubDesktop(
         val imported = store.importData(source.toPath())
         generationJobs.values.forEach { it.cancel() }
         generationJobs.clear()
+        responseGenerationConversationIds.clear()
         suggestionJobs.values.forEach { it.cancel() }
         suggestionJobs.clear()
         generationErrors.clear()
@@ -609,6 +611,7 @@ private fun RikkaHubDesktop(
     fun resetDesktopData() {
         generationJobs.values.forEach { it.cancel() }
         generationJobs.clear()
+        responseGenerationConversationIds.clear()
         suggestionJobs.values.forEach { it.cancel() }
         suggestionJobs.clear()
         generationErrors.clear()
@@ -705,7 +708,7 @@ private fun RikkaHubDesktop(
                 generationErrors[conversationId] =
                     error.userFacingMessage()
             } finally {
-                generationJobs.remove(conversationId)
+                finishDesktopGeneration(conversationId, generationJobs, responseGenerationConversationIds)
             }
         }
         generationJobs[conversationId] = job
@@ -821,10 +824,13 @@ private fun RikkaHubDesktop(
         )
         generationErrors.remove(conversationId)
         val executionJob = scope.launch(start = CoroutineStart.LAZY) {
-            val outcome = execution.execute(
-                ConversationExecutionRequest(conversationId, requestMessages, title, alternativeTarget)
-            )
-            generationJobs.remove(conversationId)
+            val outcome = try {
+                execution.execute(
+                    ConversationExecutionRequest(conversationId, requestMessages, title, alternativeTarget)
+                )
+            } finally {
+                finishDesktopGeneration(conversationId, generationJobs, responseGenerationConversationIds)
+            }
             when (outcome) {
                 ConversationExecutionOutcome.Completed -> {
                     val latest = data.conversations.firstOrNull { it.id == conversationId }
@@ -841,6 +847,7 @@ private fun RikkaHubDesktop(
             }
         }
         generationJobs[conversationId] = executionJob
+        responseGenerationConversationIds[conversationId] = Unit
         executionJob.start()
         return
     }
@@ -897,7 +904,7 @@ private fun RikkaHubDesktop(
                 generationErrors[conversationId] =
                     error.userFacingMessage()
             } finally {
-                generationJobs.remove(conversationId)
+                finishDesktopGeneration(conversationId, generationJobs, responseGenerationConversationIds)
             }
         }
         generationJobs[conversationId] = job
@@ -908,24 +915,21 @@ private fun RikkaHubDesktop(
         if (generationJobs.containsKey(target.conversationId)) return
         val conversation = data.conversations.firstOrNull { it.id == target.conversationId } ?: return
         val message = conversation.messages.getOrNull(target.messageIndex) ?: return
-        val config = data.configForConversation(conversation).backgroundRequestConfig()
-        val request = """
-            Translate the text in <source_text> into ${language.trim()}.
-            Return only the translation, without explanations.
-
-            <source_text>
-            ${message.content}
-            </source_text>
-        """.trimIndent()
+        val config = data.configForConversation(conversation).translationRequestConfig()
         generationErrors.remove(target.conversationId)
         val job = scope.launch(start = CoroutineStart.LAZY) {
-            var translatedMessageId: String? = null
             try {
-                var result = ""
-                client.stream(config, listOf(ChatMessage(role = "user", content = request))).collect { delta ->
-                    result += delta.content
+                val result = translateMessageWithRetry(message.content, language) { request ->
+                    var response = ""
+                    client.stream(config, listOf(ChatMessage(role = "user", content = request))).collect { delta ->
+                        response += delta.content
+                    }
+                    response
                 }
                 check(result.isNotBlank()) { desktopText(data.preferences.language, "runtime.translation_empty") }
+                check(!isTranslationUnchanged(message.content, result)) {
+                    desktopText(data.preferences.language, "runtime.translation_failed")
+                }
                 updateConversation(target.conversationId) { current ->
                     current.copy(
                         messages = current.messages.mapIndexed { index, item ->
@@ -936,18 +940,17 @@ private fun RikkaHubDesktop(
                         updatedAt = System.currentTimeMillis()
                     )
                 }
-                translatedMessageId = message.id
             } catch (_: CancellationException) {
                 // Cancellation leaves the original message untouched.
             } catch (error: Throwable) {
                 generationErrors[target.conversationId] =
                     error.userFacingMessage()
             } finally {
-                generationJobs.remove(target.conversationId)
-                translatedMessageId?.let { messageId ->
-                    jumpToMessageId = messageId
-                    jumpToMessageRequest++
-                }
+                finishDesktopGeneration(
+                    target.conversationId,
+                    generationJobs,
+                    responseGenerationConversationIds,
+                )
             }
         }
         generationJobs[target.conversationId] = job
@@ -1038,7 +1041,7 @@ private fun RikkaHubDesktop(
                                     })
                                 },
                                 onDelete = { id ->
-                                    generationJobs.remove(id)?.cancel()
+                                    cancelDesktopGeneration(id, generationJobs, responseGenerationConversationIds)
                                     suggestionJobs.remove(id)?.cancel()
                                     generationErrors.remove(id)
                                     update(data.deleteConversation(id))
@@ -1133,6 +1136,7 @@ private fun RikkaHubDesktop(
                                 conversation = selected,
                                 prompt = prompt,
                                 isGenerating = generationJobs.containsKey(selected.id),
+                                isResponseGenerating = responseGenerationConversationIds.containsKey(selected.id),
                                 errorMessage = generationErrors[selected.id],
                                 model = effectiveConfig.model,
                                 assistant = selectedAssistant,
@@ -1209,7 +1213,13 @@ private fun RikkaHubDesktop(
                                     }
                                 },
                                 onDismissError = { generationErrors.remove(selected.id) },
-                                onCancel = { generationJobs[selected.id]?.cancel() },
+                                onCancel = {
+                                    cancelDesktopGeneration(
+                                        selected.id,
+                                        generationJobs,
+                                        responseGenerationConversationIds,
+                                    )
+                                },
                                 onRename = { renameTarget = ConversationRenameTarget(selected.id, selected.title) },
                                 onExportConversation = { requestConversationExport(selected) },
                                 onMoveToFolder = { folderId ->
@@ -2647,6 +2657,7 @@ private fun ChatPane(
     prompt: String,
     pendingAttachments: List<DesktopAttachment>,
     isGenerating: Boolean,
+    isResponseGenerating: Boolean,
     errorMessage: String?,
     model: String,
     assistant: DesktopAssistantProfile,
@@ -2772,8 +2783,13 @@ private fun ChatPane(
             savedPosition.second
         )
     }
-    LaunchedEffect(conversation.messages.size, lastContent, lastReasoning, isGenerating) {
-        if (preferences.enableAutoScroll && isGenerating && conversation.messages.isNotEmpty()) {
+    LaunchedEffect(conversation.messages.size, lastContent, lastReasoning, isResponseGenerating) {
+        if (shouldAutoScrollChat(
+                enabled = preferences.enableAutoScroll,
+                hasMessages = conversation.messages.isNotEmpty(),
+                isResponseGenerating = isResponseGenerating,
+            )
+        ) {
             val targetIndex = displayItems.size
             if (lastContent.orEmpty().length + lastReasoning.orEmpty().length < LongStreamContentThreshold) {
                 listState.animateScrollToItem(targetIndex)
@@ -3137,7 +3153,11 @@ private fun ChatPane(
                                                 preferences = preferences,
                                                 executionSteps = renderedItem.executionSteps,
                                                 timelineAfterContent = renderedItem.timelineAfterContent,
-                                                generating = isGenerating && renderedItem.messageIndex == conversation.messages.lastIndex,
+                                                generating = isChatMessageGenerating(
+                                                    isResponseGenerating = isResponseGenerating,
+                                                    messageIndex = renderedItem.messageIndex,
+                                                    lastMessageIndex = conversation.messages.lastIndex,
+                                                ),
                                                 actionsEnabled = !isGenerating,
                                                 editing = editingMessageIndex == renderedItem.messageIndex,
                                                 onEdit = { editingMessageIndex = renderedItem.messageIndex },

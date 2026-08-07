@@ -2,11 +2,51 @@ package me.rerere.rikkahub.desktop
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class DesktopChatTimelineTest {
+    @Test
+    fun translatingExistingMessageDoesNotRequestAutoScroll() {
+        assertFalse(
+            shouldAutoScrollChat(
+                enabled = true,
+                hasMessages = true,
+                isResponseGenerating = false,
+            )
+        )
+    }
+
+    @Test
+    fun streamedResponseRequestsAutoScroll() {
+        assertTrue(
+            shouldAutoScrollChat(
+                enabled = true,
+                hasMessages = true,
+                isResponseGenerating = true,
+            )
+        )
+    }
+
+    @Test
+    fun backgroundTranslationDoesNotMarkLastMessageAsGenerating() {
+        assertFalse(
+            isChatMessageGenerating(
+                isResponseGenerating = false,
+                messageIndex = 2,
+                lastMessageIndex = 2,
+            )
+        )
+    }
+
+    @Test
+    fun responseGenerationMarksOnlyLastMessageAsGenerating() {
+        assertFalse(isChatMessageGenerating(true, messageIndex = 1, lastMessageIndex = 2))
+        assertTrue(isChatMessageGenerating(true, messageIndex = 2, lastMessageIndex = 2))
+    }
+
     @Test
     fun mergesMultipleToolRoundsBeforeTheFinalAnswer() {
         val firstCall = DesktopToolCall("call_1", "search", "{\"query\":\"one\"}")
