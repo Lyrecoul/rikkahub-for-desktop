@@ -3677,7 +3677,7 @@ private fun MessageBlock(
                     }
                     if (preferences.showModelName) {
                         Text(
-                            messageModel,
+                            displayModelName(messageModel),
                             Modifier.padding(start = if (preferences.showModelIcon) 9.dp else 0.dp),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold
@@ -4838,7 +4838,12 @@ private fun ModelPickerMenu(
     val scope = rememberCoroutineScope()
     val filteredProviders = providers.mapNotNull { provider ->
         val models = (provider.discoveredModels + provider.config.model)
-            .filter { it.isNotBlank() && it.contains(query.trim(), ignoreCase = true) }
+            .filter { model ->
+                model.isNotBlank() && (
+                    model.contains(query.trim(), ignoreCase = true) ||
+                        provider.modelNameForDisplay(model).contains(query.trim(), ignoreCase = true)
+                    )
+            }
             .distinct()
         models.takeIf { it.isNotEmpty() }?.let { provider to it }
     }
@@ -4978,7 +4983,7 @@ private fun ModelPickerMenu(
                             Column(Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        availableModel,
+                                        provider.modelNameForDisplay(availableModel),
                                         Modifier.weight(1f),
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Medium
@@ -4991,7 +4996,8 @@ private fun ModelPickerMenu(
                                     )
                                 }
                                 Text(
-                                    modelCapabilityLabels(provider.config, availableModel, language).joinToString(" · "),
+                                    "$availableModel · " +
+                                        modelCapabilityLabels(provider.config, availableModel, language).joinToString(" · "),
                                     fontSize = 10.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -5393,7 +5399,12 @@ private fun Composer(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(Lucide.Bot, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary)
-                                Text(model, Modifier.padding(horizontal = 7.dp), fontSize = 12.sp, maxLines = 1)
+                                Text(
+                                    displayModelName(model),
+                                    Modifier.padding(horizontal = 7.dp),
+                                    fontSize = 12.sp,
+                                    maxLines = 1
+                                )
                                 Icon(Lucide.ChevronDown, null, Modifier.size(14.dp))
                             }
                             DropdownMenu(

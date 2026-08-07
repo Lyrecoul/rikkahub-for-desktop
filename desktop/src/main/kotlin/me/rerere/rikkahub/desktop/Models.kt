@@ -158,8 +158,18 @@ data class DesktopProviderProfile(
     val id: String = UUID.randomUUID().toString(),
     val name: String = "OpenAI 兼容服务",
     val config: DesktopConfig = DesktopConfig(),
-    val discoveredModels: List<String> = emptyList()
+    val discoveredModels: List<String> = emptyList(),
+    /** Official names returned alongside model IDs by the provider's live Models API. */
+    val discoveredModelNames: Map<String, String> = emptyMap()
 )
+
+internal data class DesktopModelListing(
+    val ids: List<String>,
+    val displayNames: Map<String, String> = emptyMap()
+)
+
+internal fun DesktopProviderProfile.modelNameForDisplay(modelId: String): String =
+    discoveredModelNames[modelId]?.takeIf(String::isNotBlank) ?: displayModelName(modelId)
 
 @Serializable
 data class DesktopQuickMessage(

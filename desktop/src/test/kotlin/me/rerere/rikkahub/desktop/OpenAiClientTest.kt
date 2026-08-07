@@ -285,6 +285,17 @@ class OpenAiClientTest {
     }
 
     @Test
+    fun retainsOfficialProviderModelNames() {
+        val listing = client.parseModelListing(
+            """{"data":[{"id":"gpt-5-1","display_name":"GPT-5.1"},{"id":"custom","name":"Custom Model"}]}"""
+        )
+
+        assertEquals(listOf("custom", "gpt-5-1"), listing.ids)
+        assertEquals("GPT-5.1", listing.displayNames["gpt-5-1"])
+        assertEquals("Custom Model", listing.displayNames["custom"])
+    }
+
+    @Test
     fun rejectsMalformedProviderModelResponses() {
         assertFails { client.parseModels("""{"models":[]}""") }
         assertFails { client.parseModels("""{"data":[{}]}""") }

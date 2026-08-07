@@ -265,7 +265,7 @@ class OpenAiClient(
             ?.contentOrNull
     }.getOrNull()
 
-    internal suspend fun listModels(config: DesktopConfig): List<String> = withContext(Dispatchers.IO) {
+    internal suspend fun listModels(config: DesktopConfig): DesktopModelListing = withContext(Dispatchers.IO) {
         require(config.apiKey.isNotBlank()) { "Configure an API key first" }
         val adapter = desktopChatProviderAdapter(config.protocol)
         val requestBuilder = Request.Builder()
@@ -284,9 +284,9 @@ class OpenAiClient(
                 }
                 val payload = response.body.string()
                 if (config.protocol == DesktopProviderProtocol.GEMINI_GENERATE_CONTENT) {
-                    GeminiGenerateContentAdapter.parseModels(payload)
+                    GeminiGenerateContentAdapter.parseModelListing(payload)
                 } else {
-                    parseModels(payload)
+                    parseModelListing(payload)
                 }
             }
         }
@@ -332,14 +332,26 @@ class OpenAiClient(
         return value
     }
 
-    internal fun parseModels(payload: String): List<String> {
+    internal fun parseModels(payload: String): List<String> = parseModelListing(payload).ids
+
+    internal fun parseModelListing(payload: String): DesktopModelListing {
         val body = json.parseToJsonElement(payload).jsonObject
         val models = body["data"]?.jsonArray ?: error("Model response did not contain a data array")
-        return models.map { model ->
-            model.jsonObject["id"]?.jsonPrimitive?.contentOrNull
+        val displayNames = mutableMapOf<String, String>()
+        val ids = models.map { model ->
+            val item = model.jsonObject
+            val id = item["id"]?.jsonPrimitive?.contentOrNull
                 ?: error("Model response contained an item without an id")
+            item.firstDisplayName()?.takeIf { it != id }?.let { displayNames[id] = it }
+            id
         }.distinct().sorted()
+        return DesktopModelListing(ids, displayNames)
     }
+
+    private fun JsonObject.firstDisplayName(): String? = sequenceOf(
+        this["display_name"], this["displayName"], this["name"]
+    ).mapNotNull { it?.jsonPrimitive?.contentOrNull }
+        .firstOrNull { it.isNotBlank() }
 
     internal suspend fun executeToolCalls(
         config: DesktopConfig,

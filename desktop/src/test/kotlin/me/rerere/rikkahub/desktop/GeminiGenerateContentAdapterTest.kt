@@ -217,12 +217,14 @@ class GeminiGenerateContentAdapterTest {
     fun parsesOnlyGenerateContentModelsAndGeminiErrors() {
         val payload = """
             {"models":[
-              {"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent"]},
+              {"name":"models/gemini-2.5-flash","displayName":"Gemini 2.5 Flash","supportedGenerationMethods":["generateContent"]},
               {"name":"models/text-embedding-004","supportedGenerationMethods":["embedContent"]}
             ]}
         """.trimIndent()
 
-        assertEquals(listOf("gemini-2.5-flash"), GeminiGenerateContentAdapter.parseModels(payload))
+        val listing = GeminiGenerateContentAdapter.parseModelListing(payload)
+        assertEquals(listOf("gemini-2.5-flash"), listing.ids)
+        assertEquals("Gemini 2.5 Flash", listing.displayNames["gemini-2.5-flash"])
         assertFails { GeminiGenerateContentAdapter.parseModels("""{"data":[]}""") }
         assertEquals(
             "invalid request",

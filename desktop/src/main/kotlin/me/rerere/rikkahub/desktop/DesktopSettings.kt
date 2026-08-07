@@ -1095,7 +1095,7 @@ internal fun DesktopSettingsPane(
                                         ) {
                                             assistantProvider.discoveredModels.forEach { model ->
                                                 DropdownMenuItem(
-                                                    text = { Text(model) },
+                                                    text = { Text(assistantProvider.modelNameForDisplay(model)) },
                                                     onClick = {
                                                         assistantModelMenuOpen = false
                                                         draftAssistant = draftAssistant.copy(model = model)
@@ -2619,7 +2619,7 @@ internal fun DesktopSettingsPane(
                                         ) {
                                             draftProvider.discoveredModels.forEach { model ->
                                                 DropdownMenuItem(
-                                                    text = { Text(model) },
+                                                    text = { Text(draftProvider.modelNameForDisplay(model)) },
                                                     onClick = {
                                                         modelMenuOpen = false
                                                         draftProvider = draftProvider.copy(
@@ -3059,9 +3059,10 @@ internal fun DesktopSettingsPane(
                                                         .fold(
                                                             onSuccess = { models ->
                                                                 draftProvider = draftProvider.copy(
-                                                                    discoveredModels = models
+                                                                    discoveredModels = models.ids,
+                                                                    discoveredModelNames = models.displayNames
                                                                 )
-                                                                ConnectionState.Success(models)
+                                                                ConnectionState.Success(models.ids)
                                                             },
                                                             onFailure = {
                                                                 ConnectionState.Failure(
