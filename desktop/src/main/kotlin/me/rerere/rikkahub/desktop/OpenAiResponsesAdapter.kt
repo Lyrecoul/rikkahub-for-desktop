@@ -173,7 +173,9 @@ internal object OpenAiResponsesAdapter : DesktopChatProviderAdapter {
         val response = json.parseToJsonElement(data).jsonObject
         parseError(data)?.let { error(it) }
         val output = response["output"]?.jsonArray.orEmpty()
-        val content = output.flatMap { item ->
+        val content = output.filter { item ->
+            item.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "message"
+        }.flatMap { item ->
             item.jsonObject["content"]?.jsonArray.orEmpty().mapNotNull { part ->
                 val objectPart = part.jsonObject
                 objectPart["text"]?.jsonPrimitive?.contentOrNull
@@ -183,8 +185,10 @@ internal object OpenAiResponsesAdapter : DesktopChatProviderAdapter {
         val reasoning = output.filter { item ->
             item.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "reasoning"
         }.flatMap { item ->
-            item.jsonObject["summary"]?.jsonArray.orEmpty().mapNotNull { summary ->
-                summary.jsonObject["text"]?.jsonPrimitive?.contentOrNull
+            listOf("content", "summary").flatMap { field ->
+                item.jsonObject[field]?.jsonArray.orEmpty().mapNotNull { part ->
+                    part.jsonObject["text"]?.jsonPrimitive?.contentOrNull
+                }
             }
         }.joinToString("")
         val toolCalls = output.mapNotNull { item ->

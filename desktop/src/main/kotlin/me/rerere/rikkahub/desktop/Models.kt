@@ -1085,10 +1085,11 @@ internal fun DesktopData.titleGenerationConfig(conversation: DesktopConversation
 /** Background reply-suggestion requests use a lightweight model configuration without reasoning. */
 internal fun DesktopData.suggestionGenerationConfig(conversation: DesktopConversation): DesktopConfig {
     val config = configForConversation(conversation)
-    return config.backgroundRequestConfig(maxTokens = 256).copy(
+    val backgroundConfig = config.backgroundRequestConfig(maxTokens = 256)
+    return backgroundConfig.copy(
         model = config.suggestionModel.ifBlank { config.model },
         reasoningEffort = "",
-        customBodies = config.customBodies.filterNot { body ->
+        customBodies = backgroundConfig.customBodies.filterNot { body ->
             body.key in setOf("model", "max_tokens", "reasoning_effort")
         }
     )
@@ -1104,7 +1105,14 @@ internal fun DesktopConfig.backgroundRequestConfig(maxTokens: Int = this.maxToke
     memoryEnabled = false,
     mcpServers = emptyList(),
     customBodies = customBodies.filterNot { body ->
-        body.key in setOf("stream", "messages", "model", "tools", "stream_options", "web_search_options")
+        body.key in setOf(
+            "stream",
+            "messages",
+            "model",
+            "tools",
+            "stream_options",
+            "web_search_options"
+        )
     }
 )
 

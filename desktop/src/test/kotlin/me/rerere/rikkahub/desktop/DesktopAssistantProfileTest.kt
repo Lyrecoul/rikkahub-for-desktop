@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.desktop
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -130,7 +132,9 @@ class DesktopAssistantProfileTest {
                         customBodies = listOf(
                             DesktopCustomBody("model", "\"overridden-model\""),
                             DesktopCustomBody("max_tokens", "1"),
-                            DesktopCustomBody("reasoning_effort", "\"high\"")
+                            DesktopCustomBody("reasoning_effort", "\"high\""),
+                            DesktopCustomBody("tools", "[{\"type\":\"web_search\"}]"),
+                            DesktopCustomBody("response_format", "{\"type\":\"text\"}")
                         )
                     )
                 )
@@ -143,7 +147,14 @@ class DesktopAssistantProfileTest {
         assertEquals(256, suggestionConfig.maxTokens)
         assertEquals(false, suggestionConfig.streamOutput)
         assertEquals(emptySet(), suggestionConfig.localTools)
-        assertEquals(emptyList(), suggestionConfig.customBodies)
+        assertEquals(listOf("response_format"), suggestionConfig.customBodies.map { it.key })
+        val suggestionBody = Json.parseToJsonElement(
+            OpenAiResponsesAdapter.buildRequestBody(
+                suggestionConfig.copy(protocol = DesktopProviderProtocol.OPENAI_RESPONSES),
+                listOf(ChatMessage("user", "suggest replies"))
+            )
+        ).jsonObject
+        assertTrue("tools" !in suggestionBody)
     }
 
     @Test
@@ -156,8 +167,9 @@ class DesktopAssistantProfileTest {
             memoryEnabled = true,
             mcpServers = listOf(DesktopMcpServer(name = "Tools")),
             customBodies = listOf(
-                DesktopCustomBody("tools", "[]"),
+                DesktopCustomBody("tools", "[{\"type\":\"web_search\"}]"),
                 DesktopCustomBody("stream", "true"),
+                DesktopCustomBody("web_search_options", "{}"),
                 DesktopCustomBody("max_tokens", "1"),
                 DesktopCustomBody("reasoning_effort", "\"high\""),
                 DesktopCustomBody("response_format", "{\"type\":\"text\"}")
@@ -177,6 +189,13 @@ class DesktopAssistantProfileTest {
             listOf("max_tokens", "reasoning_effort", "response_format"),
             background.customBodies.map { it.key }
         )
+        val responseBody = Json.parseToJsonElement(
+            OpenAiResponsesAdapter.buildRequestBody(
+                background.copy(protocol = DesktopProviderProtocol.OPENAI_RESPONSES),
+                listOf(ChatMessage("user", "translate or title"))
+            )
+        ).jsonObject
+        assertTrue("tools" !in responseBody)
     }
 
     @Test

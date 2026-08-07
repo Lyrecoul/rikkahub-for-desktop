@@ -180,6 +180,28 @@ class OpenAiResponsesAdapterTest {
     }
 
     @Test
+    fun keepsDeepSeekReasoningContentOutOfVisibleResponseText() {
+        val payload = """
+            {
+              "model":"deepseek-v4-flash",
+              "output":[
+                {"type":"reasoning","content":[
+                  {"type":"reasoning_text","text":"We need translate this precisely."}
+                ]},
+                {"type":"message","role":"assistant","content":[
+                  {"type":"output_text","text":"精简后的正文"}
+                ]}
+              ]
+            }
+        """.trimIndent()
+
+        val result = OpenAiResponsesAdapter.parseCompleteResponse(payload)
+
+        assertEquals("精简后的正文", result.content)
+        assertEquals("We need translate this precisely.", result.reasoning)
+    }
+
+    @Test
     fun parsesCompleteResponsesPayloadWithReasoningToolsAndCitations() {
         val payload = """
             {
