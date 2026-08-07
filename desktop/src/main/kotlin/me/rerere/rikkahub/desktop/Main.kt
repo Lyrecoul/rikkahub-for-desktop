@@ -1455,10 +1455,12 @@ private fun RikkaHubDesktop(
         translationTarget?.let { target ->
             TranslationDialog(
                 language = data.preferences.language,
+                initialTargetLanguage = defaultTranslationTargetLanguage(data.preferences.language),
                 onDismiss = { translationTarget = null },
-                onConfirm = { language ->
+                onConfirm = { targetLanguage ->
+                    val normalizedTargetLanguage = targetLanguage.trim()
                     translationTarget = null
-                    startTranslation(target, language)
+                    startTranslation(target, normalizedTargetLanguage)
                 }
             )
         }
@@ -1741,19 +1743,61 @@ private fun ConversationStatsDialog(
 }
 
 @Composable
-private fun TranslationDialog(language: DesktopLanguage, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
-    var targetLanguage by remember(language) { mutableStateOf(desktopText(language, "language.chinese")) }
+private fun TranslationDialog(
+    language: DesktopLanguage,
+    initialTargetLanguage: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var targetLanguage by remember(initialTargetLanguage) { mutableStateOf(initialTargetLanguage) }
+    var targetLanguageMenuExpanded by remember { mutableStateOf(false) }
+    var targetLanguageFieldWidth by remember { mutableStateOf(0) }
+    val targetLanguageOptions = remember(language) { translationTargetLanguageOptions(language) }
+    val targetLanguageMenuOffset = with(LocalDensity.current) {
+        DpOffset(
+            (targetLanguageFieldWidth - 220.dp.roundToPx()).coerceAtLeast(0).toDp(),
+            0.dp
+        )
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(desktopText(language, "dialog.translate_message")) },
         text = {
-            OutlinedTextField(
-                value = targetLanguage,
-                onValueChange = { targetLanguage = it },
-                label = { Text(desktopText(language, "dialog.target_language")) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Box(Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = targetLanguage,
+                    onValueChange = { targetLanguage = it },
+                    label = { Text(desktopText(language, "dialog.target_language")) },
+                    singleLine = true,
+                    trailingIcon = {
+                        IconButton(onClick = { targetLanguageMenuExpanded = !targetLanguageMenuExpanded }) {
+                            Icon(
+                                Lucide.ChevronDown,
+                                desktopText(language, "dialog.target_language")
+                            )
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onSizeChanged { targetLanguageFieldWidth = it.width }
+                )
+                DropdownMenu(
+                    expanded = targetLanguageMenuExpanded,
+                    onDismissRequest = { targetLanguageMenuExpanded = false },
+                    offset = targetLanguageMenuOffset,
+                    modifier = Modifier.width(220.dp)
+                ) {
+                    targetLanguageOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option) },
+                            onClick = {
+                                targetLanguage = option
+                                targetLanguageMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
         },
         confirmButton = {
             Button(onClick = { onConfirm(targetLanguage.trim()) }, enabled = targetLanguage.isNotBlank()) {

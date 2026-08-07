@@ -37,6 +37,15 @@ internal fun DesktopLanguage.displayName(language: DesktopLanguage): String = wh
     DesktopLanguage.PORTUGUESE_BRAZIL -> "Português (Brasil)"
 }
 
+/** Returns the default target language shown by the message translation dialog. */
+internal fun defaultTranslationTargetLanguage(language: DesktopLanguage): String =
+    DesktopLanguage.CHINESE_SIMPLIFIED.displayName(language)
+
+internal fun translationTargetLanguageOptions(language: DesktopLanguage): List<String> =
+    DesktopLanguage.entries
+        .filterNot { it == DesktopLanguage.SYSTEM }
+        .map { it.displayName(language) }
+
 /** Returns the translation for [key], falling back to English and finally the key itself. */
 internal fun desktopText(language: DesktopLanguage, key: String): String {
     val resolvedLanguage = language.resolved()
