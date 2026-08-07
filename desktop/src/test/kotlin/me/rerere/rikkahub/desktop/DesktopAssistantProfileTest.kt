@@ -102,6 +102,9 @@ class DesktopAssistantProfileTest {
                         memoryEnabled = true,
                         customBodies = listOf(
                             DesktopCustomBody("stream", "true"),
+                            DesktopCustomBody("model", "\"overridden-model\""),
+                            DesktopCustomBody("max_tokens", "1"),
+                            DesktopCustomBody("reasoning_effort", "\"high\""),
                             DesktopCustomBody("response_format", "{\"type\":\"text\"}")
                         )
                     )
@@ -116,6 +119,7 @@ class DesktopAssistantProfileTest {
         assertEquals(emptySet(), titleConfig.localTools)
         assertEquals(false, titleConfig.memoryEnabled)
         assertEquals(emptyList(), titleConfig.mcpServers)
+        assertEquals(128, titleConfig.maxTokens)
         assertEquals(listOf("response_format"), titleConfig.customBodies.map { it.key })
     }
 

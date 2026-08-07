@@ -824,6 +824,7 @@ private fun RikkaHubDesktop(
             val outcome = execution.execute(
                 ConversationExecutionRequest(conversationId, requestMessages, title, alternativeTarget)
             )
+            generationJobs.remove(conversationId)
             when (outcome) {
                 ConversationExecutionOutcome.Completed -> {
                     val latest = data.conversations.firstOrNull { it.id == conversationId }
@@ -838,7 +839,6 @@ private fun RikkaHubDesktop(
                 ConversationExecutionOutcome.Cancelled,
                 is ConversationExecutionOutcome.Stopped -> Unit
             }
-            generationJobs.remove(conversationId)
         }
         generationJobs[conversationId] = executionJob
         executionJob.start()

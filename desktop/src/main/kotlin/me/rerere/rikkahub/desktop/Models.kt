@@ -1074,11 +1074,17 @@ fun DesktopData.configForConversation(conversation: DesktopConversation): Deskto
 /** Background title requests intentionally omit chat-only state such as tools, memory and web search. */
 internal fun DesktopData.titleGenerationConfig(conversation: DesktopConversation): DesktopConfig {
     val config = configForConversation(conversation)
-    return config.backgroundRequestConfig().copy(
+    val backgroundConfig = config.backgroundRequestConfig(maxTokens = 128)
+    return backgroundConfig.copy(
         model = config.titleModel.ifBlank { config.model },
         temperature = 0.3,
         reasoningEffort = "",
-        maxTokens = 0
+        customBodies = backgroundConfig.customBodies.filterNot { body ->
+            body.key in setOf(
+                "model", "max_tokens", "max_completion_tokens", "max_output_tokens",
+                "reasoning_effort", "reasoning"
+            )
+        }
     )
 }
 
