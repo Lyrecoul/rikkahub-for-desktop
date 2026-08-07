@@ -16,6 +16,8 @@ internal val TraditionalChineseDesktopTranslations = mapOf(
     "settings.font" to "介面字型",
     "settings.font_description" to "%s；程式碼區塊保持等寬字型",
     "settings.chat_font_size" to "聊天字型大小",
+    "settings.composer_transparency" to "輸入框透明度",
+    "settings.composer_blur" to "輸入框模糊強度",
     "sidebar.welcome" to "歡迎回來",
     "sidebar.new_chat" to "新增對話",
     "sidebar.search_chats" to "搜尋對話",

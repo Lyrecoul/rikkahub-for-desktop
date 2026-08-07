@@ -16,6 +16,8 @@ internal val GermanDesktopTranslations = mapOf(
     "settings.font" to "Oberflächenschrift",
     "settings.font_description" to "%s; Codeblöcke bleiben monospaced",
     "settings.chat_font_size" to "Chat-Schriftgröße",
+    "settings.composer_transparency" to "Transparenz des Eingabefelds",
+    "settings.composer_blur" to "Unschärfestärke des Eingabefelds",
     "sidebar.welcome" to "Willkommen zurück",
     "sidebar.new_chat" to "Neuer Chat",
     "sidebar.search_chats" to "Chats suchen",

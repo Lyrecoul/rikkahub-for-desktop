@@ -3220,6 +3220,8 @@ private fun ChatPane(
                     onSettings = onSettings,
                     onAssistantSettings = onAssistantSettings,
                     sendOnEnter = preferences.sendOnEnter,
+                    composerTransparency = preferences.composerTransparency,
+                    composerBlurRadius = preferences.composerBlurRadius,
                     providers = providers,
                     selectedProviderId = selectedProviderId,
                     webSearchEnabled = webSearchEnabled,
@@ -5047,6 +5049,8 @@ private fun Composer(
     onSettings: () -> Unit,
     onAssistantSettings: () -> Unit,
     sendOnEnter: Boolean,
+    composerTransparency: Float,
+    composerBlurRadius: Float,
     providers: List<DesktopProviderProfile>,
     selectedProviderId: String,
     webSearchEnabled: Boolean,
@@ -5099,9 +5103,9 @@ private fun Composer(
                 .clip(composerShape)
                 .hazeEffect(hazeState) {
                     blurEffect {
-                        blurRadius = 40.dp
+                        blurRadius = composerBlurRadius.dp
                         noiseFactor = 0.04f
-                        backgroundColor = glassSurface.copy(alpha = 0.68f)
+                        backgroundColor = glassSurface.copy(alpha = 1f - composerTransparency)
                         colorEffects = listOf(
                             HazeColorEffect.tint(glassSurface.copy(alpha = 0.80f))
                         )

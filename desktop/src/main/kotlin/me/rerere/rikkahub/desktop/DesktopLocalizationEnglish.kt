@@ -16,6 +16,8 @@ internal val EnglishDesktopTranslations = mapOf(
     "settings.font" to "Interface font",
     "settings.font_description" to "%s; code blocks remain monospaced",
     "settings.chat_font_size" to "Chat font size",
+    "settings.composer_transparency" to "Input transparency",
+    "settings.composer_blur" to "Input blur strength",
     "sidebar.welcome" to "Welcome back",
     "sidebar.new_chat" to "New chat",
     "sidebar.search_chats" to "Search chats",

@@ -16,6 +16,8 @@ internal val RussianDesktopTranslations = mapOf(
     "settings.font" to "Шрифт интерфейса",
     "settings.font_description" to "%s; блоки кода остаются моноширинными",
     "settings.chat_font_size" to "Размер шрифта чата",
+    "settings.composer_transparency" to "Прозрачность поля ввода",
+    "settings.composer_blur" to "Сила размытия поля ввода",
     "sidebar.welcome" to "С возвращением",
     "sidebar.new_chat" to "Новый чат",
     "sidebar.search_chats" to "Поиск чатов",

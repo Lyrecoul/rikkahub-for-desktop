@@ -16,6 +16,8 @@ internal val PortugueseBrazilDesktopTranslations = mapOf(
     "settings.font" to "Fonte da interface",
     "settings.font_description" to "%s; blocos de código permanecem monoespaçados",
     "settings.chat_font_size" to "Tamanho da fonte do chat",
+    "settings.composer_transparency" to "Transparência do campo de entrada",
+    "settings.composer_blur" to "Intensidade do desfoque do campo de entrada",
     "sidebar.welcome" to "Bem-vindo de volta",
     "sidebar.new_chat" to "Novo chat",
     "sidebar.search_chats" to "Pesquisar chats",

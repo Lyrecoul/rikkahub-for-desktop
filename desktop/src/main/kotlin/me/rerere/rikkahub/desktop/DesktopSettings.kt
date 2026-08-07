@@ -466,6 +466,36 @@ internal fun DesktopSettingsPane(
                                 }
                                 SettingsDivider()
                                 SettingsRow(
+                                    title = desktopText(preferences.language, "settings.composer_transparency"),
+                                    description = "${(preferences.composerTransparency * 100).roundToInt()}%"
+                                ) {
+                                    Slider(
+                                        value = preferences.composerTransparency,
+                                        onValueChange = {
+                                            onPreferencesChange(preferences.copy(composerTransparency = it))
+                                        },
+                                        valueRange = 0f..1f,
+                                        steps = 19,
+                                        modifier = Modifier.widthIn(min = 180.dp, max = 240.dp)
+                                    )
+                                }
+                                SettingsDivider()
+                                SettingsRow(
+                                    title = desktopText(preferences.language, "settings.composer_blur"),
+                                    description = "${preferences.composerBlurRadius.roundToInt()} dp"
+                                ) {
+                                    Slider(
+                                        value = preferences.composerBlurRadius,
+                                        onValueChange = {
+                                            onPreferencesChange(preferences.copy(composerBlurRadius = it))
+                                        },
+                                        valueRange = 0f..60f,
+                                        steps = 11,
+                                        modifier = Modifier.widthIn(min = 180.dp, max = 240.dp)
+                                    )
+                                }
+                                SettingsDivider()
+                                SettingsRow(
                                     title = desktopText(preferences.language, "settings.chat_font_size"),
                                     description = "${(preferences.fontScale * 100).roundToInt()}%"
                                 ) {

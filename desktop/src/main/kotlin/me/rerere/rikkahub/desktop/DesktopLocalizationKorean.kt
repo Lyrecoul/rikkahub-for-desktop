@@ -16,6 +16,8 @@ internal val KoreanDesktopTranslations = mapOf(
     "settings.font" to "인터페이스 글꼴",
     "settings.font_description" to "%s; 코드 블록은 고정폭 글꼴을 유지합니다",
     "settings.chat_font_size" to "채팅 글꼴 크기",
+    "settings.composer_transparency" to "입력창 투명도",
+    "settings.composer_blur" to "입력창 흐림 강도",
     "sidebar.welcome" to "다시 오셨군요",
     "sidebar.new_chat" to "새 채팅",
     "sidebar.search_chats" to "채팅 검색",

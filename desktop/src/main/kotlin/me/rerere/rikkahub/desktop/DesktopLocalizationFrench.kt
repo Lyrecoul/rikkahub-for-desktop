@@ -16,6 +16,8 @@ internal val FrenchDesktopTranslations = mapOf(
     "settings.font" to "Police de l'interface",
     "settings.font_description" to "%s ; les blocs de code restent à chasse fixe",
     "settings.chat_font_size" to "Taille de police du chat",
+    "settings.composer_transparency" to "Transparence du champ de saisie",
+    "settings.composer_blur" to "Intensité du flou du champ de saisie",
     "sidebar.welcome" to "Bon retour",
     "sidebar.new_chat" to "Nouveau chat",
     "sidebar.search_chats" to "Rechercher des chats",

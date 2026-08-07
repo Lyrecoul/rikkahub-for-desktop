@@ -368,6 +368,10 @@ internal fun DesktopData.normalized(): DesktopData {
     val conversationId = selectedConversationId.takeIf { id -> validConversations.any { it.id == id } }
         ?: validConversations.first().id
     return copy(
+        preferences = preferences.copy(
+            composerTransparency = preferences.composerTransparency.coerceIn(0f, 1f),
+            composerBlurRadius = preferences.composerBlurRadius.coerceIn(0f, 60f)
+        ),
         providers = validProviders,
         selectedProviderId = providerId,
         assistants = validAssistants,

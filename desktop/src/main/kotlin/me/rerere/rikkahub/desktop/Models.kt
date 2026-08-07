@@ -323,6 +323,8 @@ data class DesktopPreferences(
     val fontFamily: DesktopFontFamily = DesktopFontFamily.SYSTEM,
     val language: DesktopLanguage = DesktopLanguage.SYSTEM,
     val fontScale: Float = 1.0f,
+    val composerTransparency: Float = 0.65f,
+    val composerBlurRadius: Float = 40f,
     val showUserAvatar: Boolean = true,
     val userNickname: String = "",
     val showModelIcon: Boolean = true,

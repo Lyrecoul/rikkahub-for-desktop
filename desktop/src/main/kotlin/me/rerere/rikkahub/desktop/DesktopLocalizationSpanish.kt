@@ -16,6 +16,8 @@ internal val SpanishDesktopTranslations = mapOf(
     "settings.font" to "Fuente de la interfaz",
     "settings.font_description" to "%s; los bloques de código permanecen monoespaciados",
     "settings.chat_font_size" to "Tamaño de fuente del chat",
+    "settings.composer_transparency" to "Transparencia del campo de entrada",
+    "settings.composer_blur" to "Intensidad de desenfoque del campo de entrada",
     "sidebar.welcome" to "Bienvenido de nuevo",
     "sidebar.new_chat" to "Chat nuevo",
     "sidebar.search_chats" to "Buscar chats",

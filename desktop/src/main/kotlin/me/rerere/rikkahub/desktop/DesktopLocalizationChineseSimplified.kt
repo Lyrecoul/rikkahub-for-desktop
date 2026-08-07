@@ -16,6 +16,8 @@ internal val SimplifiedChineseDesktopTranslations = mapOf(
     "settings.font" to "界面字体",
     "settings.font_description" to "%s，代码块保持等宽字体",
     "settings.chat_font_size" to "聊天字体大小",
+    "settings.composer_transparency" to "输入框透明度",
+    "settings.composer_blur" to "输入框模糊强度",
     "sidebar.welcome" to "欢迎回来",
     "sidebar.new_chat" to "新建对话",
     "sidebar.search_chats" to "搜索对话",

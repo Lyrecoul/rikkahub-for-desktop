@@ -16,6 +16,8 @@ internal val JapaneseDesktopTranslations = mapOf(
     "settings.font" to "インターフェースのフォント",
     "settings.font_description" to "%s。コードブロックは等幅のままです",
     "settings.chat_font_size" to "チャットのフォントサイズ",
+    "settings.composer_transparency" to "入力欄の透明度",
+    "settings.composer_blur" to "入力欄のぼかし強度",
     "sidebar.welcome" to "おかえりなさい",
     "sidebar.new_chat" to "新しいチャット",
     "sidebar.search_chats" to "チャットを検索",
