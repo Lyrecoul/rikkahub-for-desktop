@@ -31,6 +31,18 @@ internal data class SettingsEditSession(
 
     fun update(transform: (DesktopData) -> DesktopData): SettingsEditSession = copy(draft = transform(draft))
 
+    fun stageCurrentDrafts(
+        language: DesktopLanguage? = null,
+        assistant: DesktopAssistantProfile? = null,
+        provider: DesktopProviderProfile? = null
+    ): SettingsEditSession = update { current ->
+        var next = current
+        language?.let { next = next.copy(preferences = next.preferences.copy(language = it)) }
+        assistant?.let { next = next.saveAssistantProfile(it) }
+        provider?.let { next = next.saveProviderProfile(it) }
+        next
+    }
+
     fun discard(): SettingsEditSession = copy(draft = original)
 
     fun commitOrNull(): SettingsEditCommit? = if (isValid) commit() else null

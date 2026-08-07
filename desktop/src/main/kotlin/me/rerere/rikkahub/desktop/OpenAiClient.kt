@@ -108,6 +108,7 @@ class OpenAiClient(
                 val data = line.removePrefix("data:").trim()
                 if (!line.startsWith("data:") || data.isBlank()) continue
                 if (data == "[DONE]") break
+                validateStreamEvent(data)
                 val responseError = when (config.protocol) {
                     DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS -> parseError(data)
                     DesktopProviderProtocol.OPENAI_RESPONSES -> OpenAiResponsesAdapter.parseError(data)
@@ -140,6 +141,10 @@ class OpenAiClient(
 
     internal fun buildRequestBody(config: DesktopConfig, messages: List<ChatMessage>): String =
         desktopChatProviderAdapter(config.protocol).buildRequestBody(config, messages)
+
+    internal fun validateStreamEvent(data: String) {
+        json.parseToJsonElement(data).jsonObject
+    }
 
     internal fun mergeCustomBodies(base: JsonObject, bodies: List<DesktopCustomBody>): JsonObject =
         mergeDesktopCustomBodies(base, bodies, json)
@@ -327,12 +332,14 @@ class OpenAiClient(
         return value
     }
 
-    internal fun parseModels(payload: String): List<String> = runCatching {
+    internal fun parseModels(payload: String): List<String> {
         val body = json.parseToJsonElement(payload).jsonObject
-        body["data"]?.jsonArray.orEmpty().mapNotNull { model ->
-            runCatching { model.jsonObject["id"]?.jsonPrimitive?.contentOrNull }.getOrNull()
-        }.sorted()
-    }.getOrDefault(emptyList())
+        val models = body["data"]?.jsonArray ?: error("Model response did not contain a data array")
+        return models.map { model ->
+            model.jsonObject["id"]?.jsonPrimitive?.contentOrNull
+                ?: error("Model response contained an item without an id")
+        }.distinct().sorted()
+    }
 
     internal suspend fun executeToolCalls(
         config: DesktopConfig,

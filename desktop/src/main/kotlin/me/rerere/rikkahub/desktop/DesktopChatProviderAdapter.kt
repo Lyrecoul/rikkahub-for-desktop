@@ -42,7 +42,9 @@ internal object OpenAiChatCompletionsAdapter : DesktopChatProviderAdapter {
             put("temperature", config.temperature)
             put("top_p", config.topP)
             if (config.reasoningEffort.isNotBlank()) put("reasoning_effort", config.reasoningEffort)
-            if (config.maxTokens > 0) put("max_tokens", config.maxTokens)
+            if (config.maxTokens > 0) {
+                put(if (config.usesMaxCompletionTokens()) "max_completion_tokens" else "max_tokens", config.maxTokens)
+            }
             if (config.requestTokenUsage && config.streamOutput) {
                 putJsonObject("stream_options") { put("include_usage", true) }
             }
@@ -122,6 +124,12 @@ internal object OpenAiChatCompletionsAdapter : DesktopChatProviderAdapter {
         }
         return mergeDesktopCustomBodies(base, config.customBodies, json).toString()
     }
+}
+
+private fun DesktopConfig.usesMaxCompletionTokens(): Boolean {
+    val normalizedModel = model.removePrefix("models/").lowercase()
+    return reasoningEffort.isNotBlank() || normalizedModel.startsWith("o1") || normalizedModel.startsWith("o3") ||
+        normalizedModel.startsWith("o4") || normalizedModel.startsWith("gpt-5")
 }
 
 internal fun mergeDesktopCustomBodies(

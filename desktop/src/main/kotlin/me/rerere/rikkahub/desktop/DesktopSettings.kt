@@ -122,8 +122,8 @@ internal fun DesktopSettingsPane(
     showMenu: Boolean,
     showSidebarToggle: Boolean,
     onMenu: () -> Unit,
-    onBack: (DesktopLanguage?) -> Unit,
-    onSaveAll: () -> Unit,
+    onBack: (SettingsEditSession) -> Unit,
+    onSaveAll: (SettingsEditSession) -> Unit,
     onExportData: () -> String?,
     onImportData: () -> String?,
     onResetData: () -> Unit
@@ -141,7 +141,6 @@ internal fun DesktopSettingsPane(
     val modifiedAssistantIds = session.modifiedAssistantIds
     val modifiedSections = session.modifiedSections
     val hasUnsavedChanges = session.hasChanges
-    val onProviderSelect = { providerId: String -> onSessionChange { it.selectProviderConfig(providerId) } }
     val onProviderSave = { profile: DesktopProviderProfile -> onSessionChange { it.saveProviderProfile(profile) } }
     val onProviderAdd = {
         val profile = DesktopProviderProfile(
@@ -157,9 +156,6 @@ internal fun DesktopSettingsPane(
         }
     }
     val onProviderDelete = { providerId: String -> onSessionChange { it.deleteProviderProfile(providerId) } }
-    val onAssistantSelect = { assistantId: String -> onSessionChange { data ->
-        if (data.assistants.any { it.id == assistantId }) data.copy(selectedAssistantId = assistantId) else data
-    } }
     val onAssistantSave = { profile: DesktopAssistantProfile -> onSessionChange { it.saveAssistantProfile(profile) } }
     val onAssistantAdd = {
         val assistant = DesktopAssistantProfile(name = desktopText(preferences.language, "defaults.new_assistant"))
@@ -215,14 +211,11 @@ internal fun DesktopSettingsPane(
         modifiedSections
     }
 
-    fun saveDraftLanguage() {
-        if (draftLanguage != preferences.language) onPreferencesChange(preferences.copy(language = draftLanguage))
-    }
-
-    fun saveCurrentProfileDrafts() {
-        if (assistantDraftChanged && assistantDraftValid) onAssistantSave(draftAssistant)
-        if (providerDraftChanged && providerDraftValid) onProviderSave(draftProvider)
-    }
+    fun sessionWithCurrentDrafts(): SettingsEditSession = session.stageCurrentDrafts(
+        language = draftLanguage.takeIf { it != preferences.language },
+        assistant = draftAssistant.takeIf { assistantDraftChanged && assistantDraftValid },
+        provider = draftProvider.takeIf { providerDraftChanged && providerDraftValid }
+    )
 
     fun updateCurrentModelCapabilities(transform: (DesktopModelCapabilities) -> DesktopModelCapabilities) {
         val model = draftProvider.config.model.trim()
@@ -245,14 +238,11 @@ internal fun DesktopSettingsPane(
     }
 
     fun requestBack() {
-        saveCurrentProfileDrafts()
-        onBack(draftLanguage.takeIf { it != preferences.language })
+        onBack(sessionWithCurrentDrafts())
     }
 
     fun saveAll() {
-        saveDraftLanguage()
-        saveCurrentProfileDrafts()
-        onSaveAll()
+        onSaveAll(sessionWithCurrentDrafts())
     }
 
     val scope = rememberCoroutineScope()
@@ -923,8 +913,14 @@ internal fun DesktopSettingsPane(
                                         FilterChip(
                                             selected = assistant.id == selectedAssistant.id,
                                             onClick = {
-                                                saveCurrentProfileDrafts()
-                                                onAssistantSelect(assistant.id)
+                                                val staged = sessionWithCurrentDrafts().draft
+                                                onSessionChange {
+                                                    if (staged.assistants.any { it.id == assistant.id }) {
+                                                        staged.copy(selectedAssistantId = assistant.id)
+                                                    } else {
+                                                        staged
+                                                    }
+                                                }
                                             },
                                             label = {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2377,8 +2373,8 @@ internal fun DesktopSettingsPane(
                                         FilterChip(
                                             selected = provider.id == selectedProvider.id,
                                             onClick = {
-                                                saveCurrentProfileDrafts()
-                                                onProviderSelect(provider.id)
+                                                val staged = sessionWithCurrentDrafts().draft
+                                                onSessionChange { staged.selectProviderConfig(provider.id) }
                                             },
                                             label = {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {

@@ -451,8 +451,8 @@ private fun RikkaHubDesktop(
         settingsSession = (settingsSession ?: SettingsEditSession(data)).update(transform)
     }
 
-    fun saveSettingsDraft() {
-        val commit = (settingsSession ?: SettingsEditSession(data)).commitOrNull() ?: return
+    fun saveSettingsDraft(session: SettingsEditSession = settingsSession ?: SettingsEditSession(data)) {
+        val commit = session.commitOrNull() ?: return
         commit.deletedProviderIds.forEach(store::deleteProviderSecret)
         val dataWithDeletedAssistants = commit.deletedAssistantIds.fold(data) { current, assistantId ->
             current.deleteAssistantProfile(assistantId)
@@ -473,13 +473,19 @@ private fun RikkaHubDesktop(
         )
     }
 
-    fun requestSettingsExit(afterExit: () -> Unit = {}, language: DesktopLanguage? = null) {
+    fun requestSettingsExit(
+        afterExit: () -> Unit = {},
+        language: DesktopLanguage? = null,
+        stagedSession: SettingsEditSession? = null
+    ) {
+        var exitSession = stagedSession ?: settingsSession
         language?.takeIf { it != data.preferences.language }?.let { selectedLanguage ->
-            settingsSession = (settingsSession ?: SettingsEditSession(data)).update { current ->
+            exitSession = (exitSession ?: SettingsEditSession(data)).update { current ->
                 current.copy(preferences = current.preferences.copy(language = selectedLanguage))
             }
         }
-        if (settingsSession?.hasChanges == true) {
+        settingsSession = exitSession
+        if (exitSession?.hasChanges == true) {
             pendingSettingsExit = afterExit
             settingsExitConfirmationOpen = true
         } else {
@@ -1103,9 +1109,11 @@ private fun RikkaHubDesktop(
                                 showMenu = compact,
                                 showSidebarToggle = !compact && !showSidebar,
                                 onMenu = { showSidebar = true },
-                                onBack = { language -> requestSettingsExit(language = language) },
-                                onSaveAll = {
-                                    saveSettingsDraft()
+                                onBack = { stagedSession ->
+                                    requestSettingsExit(stagedSession = stagedSession)
+                                },
+                                onSaveAll = { stagedSession ->
+                                    saveSettingsDraft(stagedSession)
                                     settingsSession = null
                                 },
                                 onExportData = {

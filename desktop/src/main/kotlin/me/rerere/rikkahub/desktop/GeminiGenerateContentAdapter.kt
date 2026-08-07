@@ -220,8 +220,10 @@ internal object GeminiGenerateContentAdapter : DesktopChatProviderAdapter {
             ?.get("message")?.jsonPrimitive?.contentOrNull
     }.getOrNull()
 
-    internal fun parseModels(data: String): List<String> = runCatching {
-        json.parseToJsonElement(data).jsonObject["models"]?.jsonArray.orEmpty().mapNotNull { element ->
+    internal fun parseModels(data: String): List<String> {
+        val body = json.parseToJsonElement(data).jsonObject
+        val entries = body["models"]?.jsonArray ?: error("Model response did not contain a models array")
+        return entries.mapNotNull { element ->
             val model = element.jsonObject
             val methods = model["supportedGenerationMethods"]?.jsonArray.orEmpty()
                 .mapNotNull { it.jsonPrimitive.contentOrNull }
@@ -229,7 +231,7 @@ internal object GeminiGenerateContentAdapter : DesktopChatProviderAdapter {
                 ?.takeIf { "generateContent" in methods }
                 ?.removePrefix("models/")
         }.distinct().sorted()
-    }.getOrDefault(emptyList())
+    }
 
     private fun parseGroundingCitations(candidate: JsonObject?): List<DesktopCitation> {
         val chunks = candidate?.get("groundingMetadata")?.jsonObject

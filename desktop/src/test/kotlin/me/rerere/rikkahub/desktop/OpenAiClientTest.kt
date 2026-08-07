@@ -65,6 +65,12 @@ class OpenAiClientTest {
     }
 
     @Test
+    fun rejectsMalformedStreamEventsBeforeProtocolParsing() {
+        assertFails { client.validateStreamEvent("not-json") }
+        client.validateStreamEvent("""{"type":"provider.future_event"}""")
+    }
+
+    @Test
     fun parsesReasoningDeltaFromCompatibleProviders() {
         val payload = """{"choices":[{"delta":{"reasoning_content":"checking"}}]}"""
 
@@ -243,7 +249,8 @@ class OpenAiClientTest {
         assertEquals(0.7, body.getValue("temperature").jsonPrimitive.double)
         assertEquals(0.85, body.getValue("top_p").jsonPrimitive.double)
         assertEquals("medium", body.getValue("reasoning_effort").jsonPrimitive.content)
-        assertEquals(2048, body.getValue("max_tokens").jsonPrimitive.int)
+        assertEquals(2048, body.getValue("max_completion_tokens").jsonPrimitive.int)
+        assertTrue("max_tokens" !in body)
         assertEquals(
             true,
             body.getValue("stream_options").jsonObject.getValue("include_usage").jsonPrimitive.boolean
@@ -251,10 +258,36 @@ class OpenAiClientTest {
     }
 
     @Test
+    fun keepsLegacyMaxTokensForGenericCompatibleModels() {
+        val body = Json.parseToJsonElement(
+            client.buildRequestBody(DesktopConfig(model = "compatible-model", maxTokens = 512), emptyList())
+        ).jsonObject
+
+        assertEquals(512, body.getValue("max_tokens").jsonPrimitive.int)
+        assertTrue("max_completion_tokens" !in body)
+    }
+
+    @Test
+    fun usesMaxCompletionTokensForOpenAiReasoningModelsWithoutAnExplicitEffort() {
+        val body = Json.parseToJsonElement(
+            client.buildRequestBody(DesktopConfig(model = "gpt-5-mini", maxTokens = 512), emptyList())
+        ).jsonObject
+
+        assertEquals(512, body.getValue("max_completion_tokens").jsonPrimitive.int)
+        assertTrue("max_tokens" !in body)
+    }
+
+    @Test
     fun parsesAndSortsProviderModels() {
         val payload = """{"data":[{"id":"model-z"},{"id":"model-a"}]}"""
 
         assertEquals(listOf("model-a", "model-z"), client.parseModels(payload))
+    }
+
+    @Test
+    fun rejectsMalformedProviderModelResponses() {
+        assertFails { client.parseModels("""{"models":[]}""") }
+        assertFails { client.parseModels("""{"data":[{}]}""") }
     }
 
     @Test

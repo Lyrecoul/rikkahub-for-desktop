@@ -53,6 +53,29 @@ class SettingsEditSessionTest {
     }
 
     @Test
+    fun stagesLanguageAssistantAndProviderDraftsAtomically() {
+        val provider = DesktopProviderProfile(id = "provider", name = "Provider")
+        val assistant = DesktopAssistantProfile(id = "assistant", name = "Assistant")
+        val original = DesktopData(
+            providers = listOf(provider),
+            selectedProviderId = provider.id,
+            assistants = listOf(assistant),
+            selectedAssistantId = assistant.id
+        )
+
+        val staged = SettingsEditSession(original).stageCurrentDrafts(
+            language = DesktopLanguage.CHINESE_SIMPLIFIED,
+            assistant = assistant.copy(name = "Changed assistant"),
+            provider = provider.copy(name = "Changed provider")
+        )
+        val commit = requireNotNull(staged.commitOrNull())
+
+        assertEquals(DesktopLanguage.CHINESE_SIMPLIFIED, commit.data.preferences.language)
+        assertEquals("Changed assistant", commit.data.assistants.single().name)
+        assertEquals("Changed provider", commit.data.providers.single().name)
+    }
+
+    @Test
     fun invalidProviderOrAssistantCannotCommit() {
         val invalidProvider = SettingsEditSession(DesktopData()).update { data ->
             data.copy(providers = listOf(DesktopProviderProfile(name = "", config = DesktopConfig(model = ""))))

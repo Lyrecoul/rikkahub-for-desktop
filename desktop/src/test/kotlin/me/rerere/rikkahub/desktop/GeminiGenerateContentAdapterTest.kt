@@ -223,6 +223,7 @@ class GeminiGenerateContentAdapterTest {
         """.trimIndent()
 
         assertEquals(listOf("gemini-2.5-flash"), GeminiGenerateContentAdapter.parseModels(payload))
+        assertFails { GeminiGenerateContentAdapter.parseModels("""{"data":[]}""") }
         assertEquals(
             "invalid request",
             GeminiGenerateContentAdapter.parseError(
