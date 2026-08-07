@@ -1108,7 +1108,10 @@ internal fun DesktopData.suggestionGenerationConfig(conversation: DesktopConvers
         model = config.suggestionModel.ifBlank { config.model },
         reasoningEffort = "",
         customBodies = backgroundConfig.customBodies.filterNot { body ->
-            body.key in setOf("model", "max_tokens", "reasoning_effort")
+            body.key in setOf(
+                "model", "max_tokens", "max_completion_tokens", "max_output_tokens",
+                "reasoning_effort", "reasoning"
+            )
         }
     )
 }
@@ -1142,10 +1145,30 @@ internal fun DesktopConfig.backgroundRequestConfig(maxTokens: Int = this.maxToke
         body.key in setOf(
             "stream",
             "messages",
+            "input",
+            "instructions",
+            "previous_response_id",
+            "conversation",
+            "prompt",
+            "system",
+            "contents",
+            "systemInstruction",
             "model",
             "tools",
+            "tool_choice",
+            "parallel_tool_calls",
+            "toolConfig",
             "stream_options",
-            "web_search_options"
+            "web_search_options",
+            "temperature",
+            "top_p",
+            "max_tokens",
+            "max_completion_tokens",
+            "max_output_tokens",
+            "reasoning_effort",
+            "reasoning",
+            "thinking",
+            "generationConfig"
         )
     }
 )

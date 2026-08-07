@@ -37,7 +37,8 @@ internal object AnthropicMessagesAdapter : DesktopChatProviderAdapter {
             "high" -> 8_192
             else -> null
         }
-        val maxTokens = maxOf(config.maxTokens.takeIf { it > 0 } ?: 4_096, (thinkingBudget ?: 0) + 1_024)
+        val configuredMaxTokens = config.maxTokens.takeIf { it > 0 } ?: 4_096
+        val maxTokens = thinkingBudget?.let { maxOf(configuredMaxTokens, it + 1_024) } ?: configuredMaxTokens
         val base = buildJsonObject {
             put("model", config.model)
             put("max_tokens", maxTokens)

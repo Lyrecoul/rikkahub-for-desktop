@@ -1,7 +1,10 @@
 package me.rerere.rikkahub.desktop
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -136,7 +139,11 @@ class DesktopAssistantProfileTest {
                         customBodies = listOf(
                             DesktopCustomBody("model", "\"overridden-model\""),
                             DesktopCustomBody("max_tokens", "1"),
+                            DesktopCustomBody("max_output_tokens", "1"),
                             DesktopCustomBody("reasoning_effort", "\"high\""),
+                            DesktopCustomBody("reasoning", "{\"effort\":\"high\"}"),
+                            DesktopCustomBody("input", "\"unrelated stale request\""),
+                            DesktopCustomBody("instructions", "\"ignore the reply-suggestion task\""),
                             DesktopCustomBody("tools", "[{\"type\":\"web_search\"}]"),
                             DesktopCustomBody("response_format", "{\"type\":\"text\"}")
                         )
@@ -159,6 +166,14 @@ class DesktopAssistantProfileTest {
             )
         ).jsonObject
         assertTrue("tools" !in suggestionBody)
+        assertTrue("reasoning" !in suggestionBody)
+        assertEquals(256, suggestionBody.getValue("max_output_tokens").jsonPrimitive.int)
+        assertTrue("instructions" !in suggestionBody)
+        assertEquals(
+            "suggest replies",
+            suggestionBody.getValue("input").jsonArray.single().jsonObject
+                .getValue("content").jsonArray.single().jsonObject.getValue("text").jsonPrimitive.content
+        )
     }
 
     @Test
@@ -172,10 +187,32 @@ class DesktopAssistantProfileTest {
             mcpServers = listOf(DesktopMcpServer(name = "Tools")),
             customBodies = listOf(
                 DesktopCustomBody("tools", "[{\"type\":\"web_search\"}]"),
+                DesktopCustomBody("tool_choice", "\"required\""),
+                DesktopCustomBody("parallel_tool_calls", "true"),
+                DesktopCustomBody("toolConfig", "{\"functionCallingConfig\":{\"mode\":\"ANY\"}}"),
                 DesktopCustomBody("stream", "true"),
+                DesktopCustomBody("messages", "[{\"role\":\"user\",\"content\":\"stale OpenAI request\"}]"),
+                DesktopCustomBody("input", "\"stale Responses request\""),
+                DesktopCustomBody("instructions", "\"stale Responses instructions\""),
+                DesktopCustomBody("previous_response_id", "\"resp_stale\""),
+                DesktopCustomBody("conversation", "\"conv_stale\""),
+                DesktopCustomBody("prompt", "{\"id\":\"pmpt_stale\"}"),
+                DesktopCustomBody("system", "\"stale Anthropic system\""),
+                DesktopCustomBody("contents", "[{\"role\":\"user\",\"parts\":[{\"text\":\"stale Gemini request\"}]}]"),
+                DesktopCustomBody("systemInstruction", "{\"parts\":[{\"text\":\"stale Gemini system\"}]}"),
+                DesktopCustomBody(
+                    "generationConfig",
+                    "{\"maxOutputTokens\":1,\"thinkingConfig\":{\"thinkingBudget\":1024}}"
+                ),
                 DesktopCustomBody("web_search_options", "{}"),
+                DesktopCustomBody("temperature", "0.9"),
+                DesktopCustomBody("top_p", "0.1"),
                 DesktopCustomBody("max_tokens", "1"),
+                DesktopCustomBody("max_completion_tokens", "1"),
+                DesktopCustomBody("max_output_tokens", "1"),
                 DesktopCustomBody("reasoning_effort", "\"high\""),
+                DesktopCustomBody("reasoning", "{\"effort\":\"high\"}"),
+                DesktopCustomBody("thinking", "{\"type\":\"enabled\",\"budget_tokens\":1024}"),
                 DesktopCustomBody("response_format", "{\"type\":\"text\"}")
             )
         )
@@ -189,17 +226,52 @@ class DesktopAssistantProfileTest {
         assertEquals(false, background.memoryEnabled)
         assertEquals(emptyList(), background.mcpServers)
         assertEquals(320, background.maxTokens)
-        assertEquals(
-            listOf("max_tokens", "reasoning_effort", "response_format"),
-            background.customBodies.map { it.key }
-        )
+        assertEquals(listOf("response_format"), background.customBodies.map { it.key })
+        val messages = listOf(ChatMessage("user", "translate or title"))
         val responseBody = Json.parseToJsonElement(
             OpenAiResponsesAdapter.buildRequestBody(
                 background.copy(protocol = DesktopProviderProtocol.OPENAI_RESPONSES),
-                listOf(ChatMessage("user", "translate or title"))
+                messages
             )
         ).jsonObject
         assertTrue("tools" !in responseBody)
+        assertEquals(320, responseBody.getValue("max_output_tokens").jsonPrimitive.int)
+        assertEquals(
+            "translate or title",
+            responseBody.getValue("input").jsonArray.single().jsonObject
+                .getValue("content").jsonArray.single().jsonObject.getValue("text").jsonPrimitive.content
+        )
+
+        val anthropicBody = Json.parseToJsonElement(
+            AnthropicMessagesAdapter.buildRequestBody(
+                background.copy(protocol = DesktopProviderProtocol.ANTHROPIC_MESSAGES),
+                messages
+            )
+        ).jsonObject
+        assertTrue("system" !in anthropicBody)
+        assertTrue("thinking" !in anthropicBody)
+        assertEquals(320, anthropicBody.getValue("max_tokens").jsonPrimitive.int)
+        assertEquals(
+            "translate or title",
+            anthropicBody.getValue("messages").jsonArray.single().jsonObject
+                .getValue("content").jsonArray.single().jsonObject.getValue("text").jsonPrimitive.content
+        )
+
+        val geminiBody = Json.parseToJsonElement(
+            GeminiGenerateContentAdapter.buildRequestBody(
+                background.copy(protocol = DesktopProviderProtocol.GEMINI_GENERATE_CONTENT),
+                messages
+            )
+        ).jsonObject
+        assertTrue("systemInstruction" !in geminiBody)
+        assertEquals(
+            "translate or title",
+            geminiBody.getValue("contents").jsonArray.single().jsonObject
+                .getValue("parts").jsonArray.single().jsonObject.getValue("text").jsonPrimitive.content
+        )
+        val generationConfig = geminiBody.getValue("generationConfig").jsonObject
+        assertEquals(320, generationConfig.getValue("maxOutputTokens").jsonPrimitive.int)
+        assertTrue("thinkingConfig" !in generationConfig)
     }
 
     @Test

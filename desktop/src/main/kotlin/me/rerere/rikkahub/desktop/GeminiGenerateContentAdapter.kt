@@ -39,7 +39,7 @@ internal object GeminiGenerateContentAdapter : DesktopChatProviderAdapter {
         val contents = buildGeminiContents(config, messages.filterNot { it.role == "system" })
         val thinkingBudget = thinkingBudget(config.reasoningEffort)
         val maxOutputTokens = config.maxTokens.takeIf { it > 0 }?.let { configured ->
-            maxOf(configured, (thinkingBudget ?: 0) + 1_024)
+            thinkingBudget?.let { maxOf(configured, it + 1_024) } ?: configured
         }
         val base = buildJsonObject {
             if (systemParts.isNotEmpty()) {
