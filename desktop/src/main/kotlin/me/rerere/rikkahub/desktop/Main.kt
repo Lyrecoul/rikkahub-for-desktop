@@ -1108,6 +1108,7 @@ private fun RikkaHubDesktop(
                                 onSessionChange = ::updateSettingsDraft,
                                 client = client,
                                 mcpClient = mcpClient,
+                                agentRuntime = agentRuntime,
                                 initialSection = settingsSection,
                                 showMenu = compact,
                                 showSidebarToggle = !compact && !showSidebar,

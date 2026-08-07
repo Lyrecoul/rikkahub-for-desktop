@@ -82,10 +82,14 @@ data class DesktopModelCapabilities(
 enum class DesktopAgentBackend { LOCAL, DOCKER }
 
 @Serializable
+enum class DesktopAgentDockerNetworkMode { BRIDGE, HOST }
+
+@Serializable
 data class DesktopAgentWorkspace(
     val rootPath: String = "",
     val backend: DesktopAgentBackend = DesktopAgentBackend.DOCKER,
-    val dockerImage: String = "ubuntu:24.04"
+    val dockerImage: String = "ubuntu:24.04",
+    val dockerNetworkMode: DesktopAgentDockerNetworkMode = DesktopAgentDockerNetworkMode.BRIDGE
 )
 
 @Serializable

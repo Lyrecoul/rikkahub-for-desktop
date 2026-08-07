@@ -118,6 +118,7 @@ internal fun DesktopSettingsPane(
     onSessionChange: ((DesktopData) -> DesktopData) -> Unit,
     client: OpenAiClient,
     mcpClient: DesktopMcpClient,
+    agentRuntime: DesktopAgentRuntime,
     initialSection: DesktopSettingsSection,
     showMenu: Boolean,
     showSidebarToggle: Boolean,
@@ -198,6 +199,12 @@ internal fun DesktopSettingsPane(
     var balanceStatus by remember(selectedProvider.id) { mutableStateOf<String?>(null) }
     var balanceStatusIsError by remember(selectedProvider.id) { mutableStateOf(false) }
     var resetConfirmationOpen by remember { mutableStateOf(false) }
+    var dockerWorkspaceStatus by remember(selectedAssistant.id) {
+        mutableStateOf<DesktopAgentDockerWorkspaceStatus?>(null)
+    }
+    var dockerWorkspaceBusy by remember(selectedAssistant.id) { mutableStateOf(false) }
+    var dockerWorkspaceError by remember(selectedAssistant.id) { mutableStateOf<String?>(null) }
+    var dockerResetWorkspace by remember(selectedAssistant.id) { mutableStateOf<DesktopAgentWorkspace?>(null) }
     val messageTemplateValid = remember(draftAssistant.messageTemplate) {
         validateMessageTemplate(draftAssistant.messageTemplate).isSuccess
     }
@@ -1312,6 +1319,110 @@ internal fun DesktopSettingsPane(
                                                 },
                                                 singleLine = true
                                             )
+                                            Text(
+                                                desktopText(preferences.language, "assistant.docker_network_mode"),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 13.sp
+                                            )
+                                            FlowRow(
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                FilterChip(
+                                                    selected = workspace.dockerNetworkMode == DesktopAgentDockerNetworkMode.BRIDGE,
+                                                    onClick = {
+                                                        draftAssistant = draftAssistant.copy(
+                                                            agentWorkspace = workspace.copy(
+                                                                dockerNetworkMode = DesktopAgentDockerNetworkMode.BRIDGE
+                                                            )
+                                                        )
+                                                    },
+                                                    label = {
+                                                        Text(
+                                                            desktopText(
+                                                                preferences.language,
+                                                                "assistant.docker_network_bridge"
+                                                            )
+                                                        )
+                                                    }
+                                                )
+                                                FilterChip(
+                                                    selected = workspace.dockerNetworkMode == DesktopAgentDockerNetworkMode.HOST,
+                                                    onClick = {
+                                                        draftAssistant = draftAssistant.copy(
+                                                            agentWorkspace = workspace.copy(
+                                                                dockerNetworkMode = DesktopAgentDockerNetworkMode.HOST
+                                                            )
+                                                        )
+                                                    },
+                                                    label = {
+                                                        Text(
+                                                            desktopText(
+                                                                preferences.language,
+                                                                "assistant.docker_network_host"
+                                                            )
+                                                        )
+                                                    }
+                                                )
+                                            }
+                                            dockerWorkspaceStatus?.let { status ->
+                                                val available = desktopText(preferences.language, "assistant.docker_available")
+                                                val missing = desktopText(preferences.language, "assistant.docker_missing")
+                                                Text(
+                                                    buildString {
+                                                        append(desktopText(preferences.language, "assistant.docker_container"))
+                                                        append(": ")
+                                                        append(status.containerState ?: missing)
+                                                        append(" | ")
+                                                        append(desktopText(preferences.language, "assistant.docker_checkpoint"))
+                                                        append(": ")
+                                                        append(if (status.checkpointExists) available else missing)
+                                                        append(" | ")
+                                                        append(desktopText(preferences.language, "assistant.docker_home_volume"))
+                                                        append(": ")
+                                                        append(if (status.homeVolumeExists) available else missing)
+                                                    },
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontSize = 13.sp
+                                                )
+                                            }
+                                            dockerWorkspaceError?.let { error ->
+                                                Text(error, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                                            }
+                                            FlowRow(
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                OutlinedButton(
+                                                    enabled = workspace.rootPath.isNotBlank() && !dockerWorkspaceBusy,
+                                                    onClick = {
+                                                        scope.launch {
+                                                            dockerWorkspaceBusy = true
+                                                            dockerWorkspaceError = null
+                                                            runCatching { agentRuntime.dockerWorkspaceStatus(workspace) }
+                                                                .onSuccess { dockerWorkspaceStatus = it }
+                                                                .onFailure { dockerWorkspaceError = it.message.orEmpty() }
+                                                            dockerWorkspaceBusy = false
+                                                        }
+                                                    }
+                                                ) {
+                                                    if (dockerWorkspaceBusy) {
+                                                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                                    } else {
+                                                        Icon(Lucide.RotateCcw, null, Modifier.size(16.dp))
+                                                    }
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text(desktopText(preferences.language, "assistant.docker_refresh"))
+                                                }
+                                                OutlinedButton(
+                                                    enabled = workspace.rootPath.isNotBlank() && !dockerWorkspaceBusy,
+                                                    onClick = { dockerResetWorkspace = workspace }
+                                                ) {
+                                                    Icon(Lucide.Trash2, null, Modifier.size(16.dp))
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text(desktopText(preferences.language, "assistant.docker_reset"))
+                                                }
+                                            }
                                         }
                                         OutlinedTextField(
                                             value = draftAssistant.enabledSkillNames.joinToString(", "),
@@ -3162,6 +3273,37 @@ internal fun DesktopSettingsPane(
                             "common.cancel"
                         )
                     )
+                }
+            }
+        )
+    }
+
+    dockerResetWorkspace?.let { workspace ->
+        AlertDialog(
+            onDismissRequest = { dockerResetWorkspace = null },
+            title = { Text(desktopText(preferences.language, "assistant.docker_reset_title")) },
+            text = { Text(desktopText(preferences.language, "assistant.docker_reset_description")) },
+            confirmButton = {
+                Button(
+                    enabled = !dockerWorkspaceBusy,
+                    onClick = {
+                        dockerResetWorkspace = null
+                        scope.launch {
+                            dockerWorkspaceBusy = true
+                            dockerWorkspaceError = null
+                            runCatching { agentRuntime.resetDockerWorkspace(workspace) }
+                                .onSuccess {
+                                    dockerWorkspaceStatus = DesktopAgentDockerWorkspaceStatus(null, false, false)
+                                }
+                                .onFailure { dockerWorkspaceError = it.message.orEmpty() }
+                            dockerWorkspaceBusy = false
+                        }
+                    }
+                ) { Text(desktopText(preferences.language, "assistant.docker_reset")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { dockerResetWorkspace = null }) {
+                    Text(desktopText(preferences.language, "common.cancel"))
                 }
             }
         )

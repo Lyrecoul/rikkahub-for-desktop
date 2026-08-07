@@ -1,7 +1,10 @@
 package me.rerere.rikkahub.desktop
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -20,6 +23,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 internal const val DesktopAgentListFilesToolName = "agent_list_files"
@@ -82,6 +86,12 @@ internal data class DesktopAgentCommandResult(
     val stderr: String,
     val timedOut: Boolean = false,
     val truncated: Boolean = false
+)
+
+internal data class DesktopAgentDockerWorkspaceStatus(
+    val containerState: String?,
+    val checkpointExists: Boolean,
+    val homeVolumeExists: Boolean
 )
 
 internal fun interface DesktopAgentCommandRunner {
@@ -160,6 +170,42 @@ internal class DesktopAgentRuntime(
     private val commandRunner: DesktopAgentCommandRunner = ProcessDesktopAgentCommandRunner(),
     private val skillsRoot: Path = defaultDesktopSkillsRoot()
 ) {
+    private val dockerWorkspaceLocks = ConcurrentHashMap<String, Mutex>()
+
+    suspend fun dockerWorkspaceStatus(workspace: DesktopAgentWorkspace): DesktopAgentDockerWorkspaceStatus =
+        withContext(Dispatchers.IO) {
+            require(workspace.backend == DesktopAgentBackend.DOCKER) { "Workspace does not use Docker" }
+            val name = dockerWorkspaceName(requireWorkspaceRoot(workspace))
+            dockerWorkspaceLocks.computeIfAbsent(name) { Mutex() }.withLock {
+                val container = runCommand(
+                    listOf("docker", "container", "inspect", "--format", "{{.State.Status}}", name),
+                    null,
+                    10_000
+                )
+                DesktopAgentDockerWorkspaceStatus(
+                    containerState = container.stdout.trim().takeIf { container.exitCode == 0 && it.isNotEmpty() },
+                    checkpointExists = dockerImageExists("$name-snapshot"),
+                    homeVolumeExists = runCommand(
+                        listOf("docker", "volume", "inspect", "$name-home"),
+                        null,
+                        10_000
+                    ).exitCode == 0
+                )
+            }
+        }
+
+    suspend fun resetDockerWorkspace(workspace: DesktopAgentWorkspace) = withContext(Dispatchers.IO) {
+        require(workspace.backend == DesktopAgentBackend.DOCKER) { "Workspace does not use Docker" }
+        val name = dockerWorkspaceName(requireWorkspaceRoot(workspace))
+        dockerWorkspaceLocks.computeIfAbsent(name) { Mutex() }.withLock {
+            removeDockerResource(listOf("docker", "rm", "-f", "$name-network"), "remove Docker network session")
+            removeDockerResource(listOf("docker", "rm", "-f", name), "remove Docker workspace")
+            removeDockerResource(listOf("docker", "image", "rm", "$name-snapshot"), "remove Docker checkpoint")
+            removeDockerResource(listOf("docker", "network", "rm", "$name-network"), "remove Docker workspace network")
+            removeDockerResource(listOf("docker", "volume", "rm", "$name-home"), "remove Docker workspace home")
+        }
+    }
+
     suspend fun execute(
         config: DesktopAgentConfig,
         call: DesktopToolCall,
@@ -343,44 +389,79 @@ internal class DesktopAgentRuntime(
         approve: suspend (DesktopAgentApprovalRequest) -> Boolean
     ): DesktopAgentCommandResult {
         require(',' !in root.toString()) { "Docker workspaces cannot contain commas in their path" }
-        val name = "rikkahub-agent-${
-            UUID.nameUUIDFromBytes(root.toString().toByteArray()).toString().replace("-", "").take(24)
-        }"
-        if (runCommand(listOf("docker", "image", "inspect", workspace.dockerImage), null, 10_000).exitCode != 0) {
-            requireApproval(
-                approve(
-                    DesktopAgentApprovalRequest(
-                        DesktopAgentApprovalKind.IMAGE_PULL,
-                        "下载容器镜像",
-                        workspace.dockerImage,
-                        workspace = workspace
-                    )
-                )
-            )
-            requireDockerSuccess(
-                runCommand(listOf("docker", "pull", workspace.dockerImage), null, 600_000),
-                "pull Docker image"
-            )
+        val name = dockerWorkspaceName(root)
+        return dockerWorkspaceLocks.computeIfAbsent(name) { Mutex() }.withLock {
+            dockerShellLocked(workspace, root, command, cwd, network, name, approve)
         }
+    }
+
+    private suspend fun dockerShellLocked(
+        workspace: DesktopAgentWorkspace,
+        root: Path,
+        command: String,
+        cwd: String,
+        network: Boolean,
+        name: String,
+        approve: suspend (DesktopAgentApprovalRequest) -> Boolean
+    ): DesktopAgentCommandResult {
         ensureDockerNetwork(DesktopAgentIsolatedNetworkName, internal = true)
         val existing = runCommand(listOf("docker", "container", "inspect", name), null, 10_000)
-        val containerImage = if (existing.exitCode == 0 && containerNeedsMigration(name)) {
-            migrateLegacyContainer(name)
-        } else {
-            workspace.dockerImage
-        }
-        if (existing.exitCode != 0 || containerImage != workspace.dockerImage) {
-            val create = dockerCreateCommand(name, containerImage, DesktopAgentIsolatedNetworkName, root)
-            requireDockerSuccess(runCommand(create, null, 30_000), "create Docker workspace")
+        if (existing.exitCode != 0) {
+            val checkpoint = "$name-snapshot"
+            val image = if (dockerImageExists(checkpoint)) {
+                checkpoint
+            } else {
+                ensureDockerBaseImage(workspace, approve)
+                workspace.dockerImage
+            }
+            ensureDockerHomeVolume(name)
+            requireDockerSuccess(
+                runCommand(
+                    dockerCreateCommand(
+                        name,
+                        name,
+                        image,
+                        workspace.dockerImage,
+                        DesktopAgentIsolatedNetworkName,
+                        root
+                    ),
+                    null,
+                    30_000
+                ),
+                "create Docker workspace"
+            )
+        } else if (containerNeedsMigration(name)) {
+            val image = migrateLegacyContainer(name)
+            ensureDockerHomeVolume(name)
+            requireDockerSuccess(
+                runCommand(
+                    dockerCreateCommand(
+                        name,
+                        name,
+                        image,
+                        workspace.dockerImage,
+                        DesktopAgentIsolatedNetworkName,
+                        root
+                    ),
+                    null,
+                    30_000
+                ),
+                "create migrated Docker workspace"
+            )
         }
         val start = runCommand(listOf("docker", "start", name), null, 30_000)
         if (start.exitCode != 0 && !start.stderr.contains("already started", ignoreCase = true)) {
             requireDockerSuccess(start, "start Docker workspace")
         }
-        if (network) return if (DesktopPlatform.isWindows) {
-            dockerShellWithApprovedBridgeNetwork(name, root, cwd, command)
-        } else {
-            dockerShellWithHostNetwork(name, root, cwd, command)
+        if (network) return when (workspace.dockerNetworkMode) {
+            DesktopAgentDockerNetworkMode.BRIDGE -> dockerShellWithApprovedBridgeNetwork(name, cwd, command)
+            DesktopAgentDockerNetworkMode.HOST -> dockerShellWithHostNetwork(
+                name,
+                root,
+                cwd,
+                command,
+                workspace.dockerImage
+            )
         }
         return runCommand(
             listOf("docker", "exec", "-w", "/workspace/$cwd", name, "/bin/sh", "-lc", command),
@@ -388,6 +469,30 @@ internal class DesktopAgentRuntime(
             600_000
         )
     }
+
+    private suspend fun ensureDockerBaseImage(
+        workspace: DesktopAgentWorkspace,
+        approve: suspend (DesktopAgentApprovalRequest) -> Boolean
+    ) {
+        if (dockerImageExists(workspace.dockerImage)) return
+        requireApproval(
+            approve(
+                DesktopAgentApprovalRequest(
+                    DesktopAgentApprovalKind.IMAGE_PULL,
+                    "下载容器镜像",
+                    workspace.dockerImage,
+                    workspace = workspace
+                )
+            )
+        )
+        requireDockerSuccess(
+            runCommand(listOf("docker", "pull", workspace.dockerImage), null, 600_000),
+            "pull Docker image"
+        )
+    }
+
+    private suspend fun dockerImageExists(image: String): Boolean =
+        runCommand(listOf("docker", "image", "inspect", image), null, 10_000).exitCode == 0
 
     /**
      * Some Linux hosts deliberately disable Docker bridge NAT. A temporary host-network container
@@ -398,21 +503,28 @@ internal class DesktopAgentRuntime(
         name: String,
         root: Path,
         cwd: String,
-        command: String
+        command: String,
+        baseImage: String
     ): DesktopAgentCommandResult {
         val snapshot = "$name-snapshot"
         val networkName = "$name-network"
+        val previousCheckpointId = dockerImageId(snapshot)
         requireDockerSuccess(
             runCommand(listOf("docker", "commit", name, snapshot), null, 600_000),
             "snapshot Docker workspace"
         )
-        requireDockerSuccess(
-            runCommand(listOf("docker", "rm", "-f", name), null, 30_000),
-            "prepare approved network session"
-        )
+        val networkBaseImageId = dockerImageId(snapshot)
         try {
             requireDockerSuccess(
-                runCommand(dockerCreateCommand(networkName, snapshot, "host", root), null, 30_000),
+                runCommand(listOf("docker", "rm", "-f", name), null, 30_000),
+                "prepare approved network session"
+            )
+            requireDockerSuccess(
+                runCommand(
+                    dockerCreateCommand(networkName, name, snapshot, baseImage, "host", root),
+                    null,
+                    30_000
+                ),
                 "create approved network session"
             )
             requireDockerSuccess(
@@ -430,69 +542,144 @@ internal class DesktopAgentRuntime(
             )
             return result
         } finally {
-            runCommand(listOf("docker", "rm", "-f", networkName), null, 30_000)
-            if (runCommand(listOf("docker", "container", "inspect", name), null, 10_000).exitCode != 0) {
-                ensureDockerNetwork(DesktopAgentIsolatedNetworkName, internal = true)
-                requireDockerSuccess(
-                    runCommand(
-                        dockerCreateCommand(name, snapshot, DesktopAgentIsolatedNetworkName, root),
-                        null,
-                        30_000
-                    ),
-                    "restore isolated Docker workspace"
-                )
+            withContext(NonCancellable) {
+                runCommand(listOf("docker", "rm", "-f", networkName), null, 30_000)
+                if (runCommand(listOf("docker", "container", "inspect", name), null, 10_000).exitCode != 0) {
+                    ensureDockerNetwork(DesktopAgentIsolatedNetworkName, internal = true)
+                    requireDockerSuccess(
+                        runCommand(
+                            dockerCreateCommand(
+                                name,
+                                name,
+                                snapshot,
+                                baseImage,
+                                DesktopAgentIsolatedNetworkName,
+                                root
+                            ),
+                            null,
+                            30_000
+                        ),
+                        "restore isolated Docker workspace"
+                    )
+                }
+                removeSupersededDockerImage(previousCheckpointId, snapshot)
+                removeSupersededDockerImage(networkBaseImageId, snapshot)
             }
         }
     }
 
     private suspend fun dockerShellWithApprovedBridgeNetwork(
         name: String,
-        root: Path,
         cwd: String,
         command: String
     ): DesktopAgentCommandResult {
-        val snapshot = "$name-snapshot"
         val networkName = "$name-network"
-        requireDockerSuccess(runCommand(listOf("docker", "commit", name, snapshot), null, 600_000), "snapshot Docker workspace")
-        requireDockerSuccess(runCommand(listOf("docker", "rm", "-f", name), null, 30_000), "prepare approved network session")
-        try {
-            ensureDockerNetwork(networkName, internal = false)
-            requireDockerSuccess(
-                runCommand(dockerCreateCommand(networkName, snapshot, networkName, root), null, 30_000),
-                "create approved network session"
-            )
-            requireDockerSuccess(runCommand(listOf("docker", "start", networkName), null, 30_000), "start approved network session")
-            val result = runCommand(
-                listOf("docker", "exec", "-w", "/workspace/$cwd", networkName, "/bin/sh", "-lc", command),
+        ensureDockerNetwork(networkName, internal = false)
+        var commandStarted = false
+        return try {
+            val connect = runCommand(listOf("docker", "network", "connect", networkName, name), null, 30_000)
+            if (connect.exitCode != 0 && !connect.stderr.contains("already exists", ignoreCase = true)) {
+                requireDockerSuccess(connect, "connect approved Docker network")
+            }
+            commandStarted = true
+            runCommand(
+                listOf("docker", "exec", "-w", "/workspace/$cwd", name, "/bin/sh", "-lc", command),
                 null,
                 600_000
             )
-            requireDockerSuccess(runCommand(listOf("docker", "commit", networkName, snapshot), null, 600_000), "persist approved network session")
-            return result
         } finally {
-            runCommand(listOf("docker", "rm", "-f", networkName), null, 30_000)
-            if (runCommand(listOf("docker", "container", "inspect", name), null, 10_000).exitCode != 0) {
-                ensureDockerNetwork(DesktopAgentIsolatedNetworkName, internal = true)
-                requireDockerSuccess(
-                    runCommand(dockerCreateCommand(name, snapshot, DesktopAgentIsolatedNetworkName, root), null, 30_000),
-                    "restore isolated Docker workspace"
+            withContext(NonCancellable) {
+                val disconnect = runCommand(
+                    listOf("docker", "network", "disconnect", "-f", networkName, name),
+                    null,
+                    30_000
                 )
+                if (disconnect.exitCode != 0 && !disconnect.stderr.contains("not connected", ignoreCase = true)) {
+                    requireDockerSuccess(disconnect, "disconnect approved Docker network")
+                }
+                if (commandStarted) checkpointDockerWorkspace(name)
             }
         }
     }
 
-    private fun dockerCreateCommand(name: String, image: String, network: String, root: Path): List<String> = listOf(
-        "docker", "create", "--name", name, "--network", network, "--cap-drop", "ALL",
+    private suspend fun checkpointDockerWorkspace(name: String) {
+        val snapshot = "$name-snapshot"
+        val previousImageId = dockerImageId(snapshot)
+        requireDockerSuccess(
+            runCommand(listOf("docker", "commit", name, snapshot), null, 600_000),
+            "checkpoint Docker workspace"
+        )
+        removeSupersededDockerImage(previousImageId, snapshot)
+    }
+
+    private suspend fun removeSupersededDockerImage(imageId: String?, currentImage: String) {
+        if (imageId != null && imageId != dockerImageId(currentImage)) {
+            // Docker rejects removal while an existing container still references the image.
+            runCommand(listOf("docker", "image", "rm", imageId), null, 30_000)
+        }
+    }
+
+    private suspend fun dockerImageId(image: String): String? {
+        val result = runCommand(
+            listOf("docker", "image", "inspect", "--format", "{{.Id}}", image),
+            null,
+            10_000
+        )
+        return result.stdout.trim().takeIf { result.exitCode == 0 && it.isNotEmpty() }
+    }
+
+    private fun dockerCreateCommand(
+        containerName: String,
+        workspaceName: String,
+        image: String,
+        baseImage: String,
+        network: String,
+        root: Path
+    ): List<String> = listOf(
+        "docker", "create", "--name", containerName, "--network", network,
+        "--label", "io.rikkahub.agent.managed=true",
+        "--label", "io.rikkahub.agent.workspace=$workspaceName",
+        "--label", "io.rikkahub.agent.schema=2",
+        "--label", "io.rikkahub.agent.base-image=$baseImage",
+        "--cap-drop", "ALL",
         "--cap-add", "SETUID", "--cap-add", "SETGID", "--cap-add", "CHOWN", "--cap-add", "FOWNER",
         "--cap-add", "DAC_OVERRIDE", "--security-opt", "no-new-privileges",
-        "--mount", "type=bind,src=${root},dst=/workspace", image, "sleep", "infinity"
+        "--mount", "type=bind,src=${root},dst=/workspace",
+        "--mount", "type=volume,src=$workspaceName-home,dst=/root",
+        "--tmpfs", "/tmp:rw,nosuid,nodev,size=536870912",
+        image, "sleep", "infinity"
     )
+
+    private suspend fun ensureDockerHomeVolume(workspaceName: String) {
+        val volumeName = "$workspaceName-home"
+        if (runCommand(listOf("docker", "volume", "inspect", volumeName), null, 10_000).exitCode == 0) return
+        requireDockerSuccess(
+            runCommand(
+                listOf(
+                    "docker", "volume", "create",
+                    "--label", "io.rikkahub.agent.managed=true",
+                    "--label", "io.rikkahub.agent.workspace=$workspaceName",
+                    "--label", "io.rikkahub.agent.schema=2",
+                    volumeName
+                ),
+                null,
+                30_000
+            ),
+            "create Docker workspace home volume"
+        )
+    }
 
     private suspend fun ensureDockerNetwork(name: String, internal: Boolean) {
         val inspect = runCommand(listOf("docker", "network", "inspect", name), null, 10_000)
         if (inspect.exitCode == 0) return
         val command = buildList {
-            addAll(listOf("docker", "network", "create", "--driver", "bridge"))
+            addAll(
+                listOf(
+                    "docker", "network", "create", "--driver", "bridge",
+                    "--label", "io.rikkahub.agent.managed=true",
+                    "--label", "io.rikkahub.agent.schema=2"
+                )
+            )
             if (internal) add("--internal")
             add(name)
         }
@@ -508,16 +695,28 @@ internal class DesktopAgentRuntime(
 
     private suspend fun containerNeedsMigration(name: String): Boolean {
         val result = runCommand(
-            listOf("docker", "inspect", "--format", "{{.HostConfig.NetworkMode}}|{{json .HostConfig.CapAdd}}", name),
+            listOf(
+                "docker", "inspect", "--format",
+                "{{.HostConfig.NetworkMode}}|{{json .HostConfig.CapAdd}}|{{json .Config.Labels}}|" +
+                    "{{json .Mounts}}|{{json .HostConfig.Tmpfs}}",
+                name
+            ),
             null,
             10_000
         )
         val config = result.stdout.trim()
-        return result.exitCode == 0 && (config.startsWith("none|") || !config.contains("SETUID"))
+        return result.exitCode == 0 && (
+            config.startsWith("none|") ||
+                !config.contains("SETUID") ||
+                !config.contains("\"io.rikkahub.agent.schema\":\"2\"") ||
+                !config.contains("\"Destination\":\"/root\"") ||
+                !config.contains("\"/tmp\":")
+            )
     }
 
     private suspend fun migrateLegacyContainer(name: String): String {
         val snapshot = "${name}-snapshot"
+        val previousImageId = dockerImageId(snapshot)
         requireDockerSuccess(
             runCommand(listOf("docker", "commit", name, snapshot), null, 600_000),
             "snapshot legacy Docker workspace"
@@ -526,7 +725,22 @@ internal class DesktopAgentRuntime(
             runCommand(listOf("docker", "rm", "-f", name), null, 30_000),
             "migrate legacy Docker workspace"
         )
+        removeSupersededDockerImage(previousImageId, snapshot)
         return snapshot
+    }
+
+    private fun dockerWorkspaceName(root: Path): String = "rikkahub-agent-${
+        UUID.nameUUIDFromBytes(root.toString().toByteArray()).toString().replace("-", "").take(24)
+    }"
+
+    private suspend fun removeDockerResource(command: List<String>, action: String) {
+        val result = runCommand(command, null, 30_000)
+        val detail = dockerFailureDetail(result)
+        if (result.exitCode != 0 && !detail.contains("not found", ignoreCase = true) &&
+            !detail.contains("no such", ignoreCase = true)
+        ) {
+            requireDockerSuccess(result, action)
+        }
     }
 
     private suspend fun runCommand(

@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.desktop
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -11,6 +14,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -20,6 +24,10 @@ import kotlin.test.assertTrue
 class DesktopAgentTest {
     @TempDir
     lateinit var root: Path
+
+    private val managedDockerConfig =
+        "rikkahub-agent-isolated|[\"SETUID\"]|{\"io.rikkahub.agent.schema\":\"2\"}|" +
+            "[{\"Destination\":\"/root\"}]|{\"/tmp\":\"rw,nosuid,nodev,size=536870912\"}"
 
     @Test
     fun readsOnlyFilesInsideTheSelectedWorkspace() = runBlocking {
@@ -187,6 +195,253 @@ class DesktopAgentTest {
 
         assertTrue(setOf(grant).approves(request))
         assertFalse(setOf(grant).approves(differentImage))
+    }
+
+    @Test
+    fun missingDockerContainerRecoversFromItsCheckpointImage() = runBlocking {
+        val commands = mutableListOf<List<String>>()
+        val runtime = DesktopAgentRuntime(
+            commandRunner = DesktopAgentCommandRunner { command, _, _ ->
+                commands += command
+                when {
+                    command.take(3) == listOf("docker", "image", "inspect") &&
+                        command.last().endsWith("-snapshot") -> DesktopAgentCommandResult(0, "", "")
+                    command.take(3) == listOf("docker", "image", "inspect") ->
+                        DesktopAgentCommandResult(1, "", "base image was pruned")
+                    command.take(3) == listOf("docker", "container", "inspect") ->
+                        DesktopAgentCommandResult(1, "", "not found")
+                    else -> DesktopAgentCommandResult(0, "", "")
+                }
+            },
+            skillsRoot = root.resolve("skills")
+        )
+        val workspace = DesktopAgentWorkspace(root.toString(), DesktopAgentBackend.DOCKER)
+
+        runtime.execute(
+            DesktopAgentConfig(workspace),
+            DesktopToolCall("shell", DesktopAgentShellToolName, "{\"command\":\"true\",\"network\":false}")
+        ) { true }
+
+        val create = commands.single { it.take(2) == listOf("docker", "create") }
+        assertTrue(create[create.lastIndex - 2].endsWith("-snapshot"))
+        assertFalse(commands.any { it.take(2) == listOf("docker", "pull") })
+    }
+
+    @Test
+    fun legacyDockerContainerIsMigratedToPersistentHomeStorage() = runBlocking {
+        val commands = mutableListOf<List<String>>()
+        val runtime = DesktopAgentRuntime(
+            commandRunner = DesktopAgentCommandRunner { command, _, _ ->
+                commands += command
+                when {
+                    command.take(3) == listOf("docker", "inspect", "--format") ->
+                        DesktopAgentCommandResult(0, "rikkahub-agent-isolated|[\"SETUID\"]\n", "")
+                    command.take(3) == listOf("docker", "volume", "inspect") ->
+                        DesktopAgentCommandResult(1, "", "not found")
+                    else -> DesktopAgentCommandResult(0, "", "")
+                }
+            },
+            skillsRoot = root.resolve("skills")
+        )
+        val config = DesktopAgentConfig(DesktopAgentWorkspace(root.toString(), DesktopAgentBackend.DOCKER))
+
+        runtime.execute(
+            config,
+            DesktopToolCall("shell", DesktopAgentShellToolName, "{\"command\":\"true\",\"network\":false}")
+        ) { true }
+
+        assertTrue(commands.any { it.take(2) == listOf("docker", "commit") })
+        val create = commands.single { it.take(2) == listOf("docker", "create") }
+        assertTrue(create.any { it.endsWith("-home,dst=/root") })
+        assertTrue(create.windowed(2).any { it == listOf("--tmpfs", "/tmp:rw,nosuid,nodev,size=536870912") })
+        assertTrue(create.windowed(2).any { it == listOf("--label", "io.rikkahub.agent.managed=true") })
+        val volumeCreate = commands.single { it.take(3) == listOf("docker", "volume", "create") }
+        assertTrue(volumeCreate.windowed(2).any { it == listOf("--label", "io.rikkahub.agent.managed=true") })
+    }
+
+    @Test
+    fun dockerCommandsForTheSameWorkspaceRunSerially() = runBlocking {
+        val activeCommands = AtomicInteger()
+        val maximumActiveCommands = AtomicInteger()
+        val runtime = DesktopAgentRuntime(
+            commandRunner = DesktopAgentCommandRunner { command, _, _ ->
+                if (command.take(2) == listOf("docker", "exec")) {
+                    val active = activeCommands.incrementAndGet()
+                    maximumActiveCommands.updateAndGet { maxOf(it, active) }
+                    Thread.sleep(100)
+                    activeCommands.decrementAndGet()
+                }
+                if (command.take(3) == listOf("docker", "inspect", "--format")) {
+                    DesktopAgentCommandResult(0, managedDockerConfig, "")
+                } else {
+                    DesktopAgentCommandResult(0, "", "")
+                }
+            },
+            skillsRoot = root.resolve("skills")
+        )
+        val config = DesktopAgentConfig(DesktopAgentWorkspace(root.toString(), DesktopAgentBackend.DOCKER))
+
+        List(2) { index ->
+            async {
+                runtime.execute(
+                    config,
+                    DesktopToolCall(
+                        "shell-$index",
+                        DesktopAgentShellToolName,
+                        "{\"command\":\"true\",\"network\":false}"
+                    )
+                ) { true }
+            }
+        }.awaitAll()
+
+        assertEquals(1, maximumActiveCommands.get())
+    }
+
+    @Test
+    fun cancellingHostNetworkCommandRestoresTheIsolatedContainer() = runBlocking {
+        val commandStarted = CompletableDeferred<Unit>()
+        val commands = mutableListOf<List<String>>()
+        var mainContainerName: String? = null
+        var mainContainerExists = true
+        val runtime = DesktopAgentRuntime(
+            commandRunner = DesktopAgentCommandRunner { command, _, _ ->
+                synchronized(commands) { commands += command }
+                when {
+                    command.take(3) == listOf("docker", "container", "inspect") -> {
+                        mainContainerName = mainContainerName ?: command.last()
+                        DesktopAgentCommandResult(
+                            if (mainContainerExists) 0 else 1,
+                            "",
+                            if (mainContainerExists) "" else "not found"
+                        )
+                    }
+                    command.take(3) == listOf("docker", "inspect", "--format") ->
+                        DesktopAgentCommandResult(0, managedDockerConfig, "")
+                    command.take(3) == listOf("docker", "rm", "-f") && command.last() == mainContainerName -> {
+                        mainContainerExists = false
+                        DesktopAgentCommandResult(0, "", "")
+                    }
+                    command.take(3) == listOf("docker", "create", "--name") &&
+                        command[3] == mainContainerName -> {
+                        mainContainerExists = true
+                        DesktopAgentCommandResult(0, "", "")
+                    }
+                    command.take(2) == listOf("docker", "exec") -> {
+                        commandStarted.complete(Unit)
+                        Thread.sleep(30_000)
+                        DesktopAgentCommandResult(0, "", "")
+                    }
+                    else -> DesktopAgentCommandResult(0, "", "")
+                }
+            },
+            skillsRoot = root.resolve("skills")
+        )
+        val workspace = DesktopAgentWorkspace(
+            root.toString(),
+            DesktopAgentBackend.DOCKER,
+            dockerNetworkMode = DesktopAgentDockerNetworkMode.HOST
+        )
+        val job = launch {
+            runtime.execute(
+                DesktopAgentConfig(workspace),
+                DesktopToolCall("shell", DesktopAgentShellToolName, "{\"command\":\"curl example.com\",\"network\":true}")
+            ) { true }
+        }
+
+        withTimeout(5_000) { commandStarted.await() }
+        withTimeout(5_000) { job.cancelAndJoin() }
+
+        assertTrue(mainContainerExists)
+        assertTrue(
+            synchronized(commands) {
+                commands.any { command ->
+                    command.take(3) == listOf("docker", "create", "--name") &&
+                        command[3] == mainContainerName && command[command.lastIndex - 2].endsWith("-snapshot")
+                }
+            }
+        )
+    }
+
+    @Test
+    fun bridgeNetworkReusesTheContainerAndCreatesOneCheckpoint() = runBlocking {
+        val commands = mutableListOf<List<String>>()
+        val runtime = DesktopAgentRuntime(
+            commandRunner = DesktopAgentCommandRunner { command, _, _ ->
+                commands += command
+                when {
+                    command.take(3) == listOf("docker", "inspect", "--format") ->
+                        DesktopAgentCommandResult(0, managedDockerConfig, "")
+                    command.take(3) == listOf("docker", "image", "inspect") &&
+                        "--format" in command -> DesktopAgentCommandResult(0, "sha256:checkpoint\n", "")
+                    else -> DesktopAgentCommandResult(0, "", "")
+                }
+            },
+            skillsRoot = root.resolve("skills")
+        )
+        val workspace = DesktopAgentWorkspace(
+            root.toString(),
+            DesktopAgentBackend.DOCKER,
+            dockerNetworkMode = DesktopAgentDockerNetworkMode.BRIDGE
+        )
+
+        runtime.execute(
+            DesktopAgentConfig(workspace),
+            DesktopToolCall("shell", DesktopAgentShellToolName, "{\"command\":\"curl example.com\",\"network\":true}")
+        ) { true }
+
+        assertEquals(1, commands.count { it.take(2) == listOf("docker", "commit") })
+        assertFalse(commands.any { it.take(3) == listOf("docker", "rm", "-f") })
+        assertTrue(commands.any { it.take(3) == listOf("docker", "network", "connect") })
+        assertTrue(commands.any { it.take(3) == listOf("docker", "network", "disconnect") })
+    }
+
+    @Test
+    fun dockerWorkspaceStatusReportsManagedResources() = runBlocking {
+        val runtime = DesktopAgentRuntime(
+            commandRunner = DesktopAgentCommandRunner { command, _, _ ->
+                when {
+                    command.take(3) == listOf("docker", "container", "inspect") ->
+                        DesktopAgentCommandResult(0, "running\n", "")
+                    command.take(3) == listOf("docker", "image", "inspect") ->
+                        DesktopAgentCommandResult(0, "", "")
+                    command.take(3) == listOf("docker", "volume", "inspect") ->
+                        DesktopAgentCommandResult(0, "", "")
+                    else -> DesktopAgentCommandResult(1, "", "not found")
+                }
+            },
+            skillsRoot = root.resolve("skills")
+        )
+
+        val status = runtime.dockerWorkspaceStatus(
+            DesktopAgentWorkspace(root.toString(), DesktopAgentBackend.DOCKER)
+        )
+
+        assertEquals("running", status.containerState)
+        assertTrue(status.checkpointExists)
+        assertTrue(status.homeVolumeExists)
+    }
+
+    @Test
+    fun resettingDockerWorkspaceRemovesOnlyItsManagedResources() = runBlocking {
+        val commands = mutableListOf<List<String>>()
+        val runtime = DesktopAgentRuntime(
+            commandRunner = DesktopAgentCommandRunner { command, _, _ ->
+                commands += command
+                DesktopAgentCommandResult(0, "", "")
+            },
+            skillsRoot = root.resolve("skills")
+        )
+
+        runtime.resetDockerWorkspace(DesktopAgentWorkspace(root.toString(), DesktopAgentBackend.DOCKER))
+
+        val containerRemovals = commands.filter { it.take(3) == listOf("docker", "rm", "-f") }
+        assertEquals(2, containerRemovals.size)
+        val workspaceName = containerRemovals.first().last().removeSuffix("-network")
+        assertTrue(containerRemovals.any { it.last() == workspaceName })
+        assertTrue(containerRemovals.any { it.last() == "$workspaceName-network" })
+        assertTrue(commands.any { it == listOf("docker", "image", "rm", "$workspaceName-snapshot") })
+        assertTrue(commands.any { it == listOf("docker", "network", "rm", "$workspaceName-network") })
+        assertTrue(commands.any { it == listOf("docker", "volume", "rm", "$workspaceName-home") })
     }
 
     @Test
