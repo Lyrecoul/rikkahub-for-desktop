@@ -875,7 +875,7 @@ private fun RikkaHubDesktop(
         }
         val recentMessages = conversation.messages.takeRecentMessagesPreservingToolCalls(keepRecentMessages)
         val messagesToCompress = conversation.messages.dropLast(recentMessages.size)
-        val config = data.configForConversation(conversation).backgroundRequestConfig(maxTokens = targetTokens)
+        val config = data.configForConversation(conversation).compressionRequestConfig(maxTokens = targetTokens)
         val request = buildString {
             appendLine("You are a conversation compression assistant. Summarize the conversation below for a future assistant.")
             appendLine("Preserve facts, decisions, user preferences, unresolved work, and important details.")

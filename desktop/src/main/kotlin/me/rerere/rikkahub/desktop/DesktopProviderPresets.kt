@@ -4,7 +4,8 @@ internal data class DesktopProviderPreset(
     val name: String,
     val baseUrl: String,
     val balanceOptions: DesktopBalanceOptions = DesktopBalanceOptions(),
-    val protocol: DesktopProviderProtocol = DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS
+    val protocol: DesktopProviderProtocol = DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS,
+    val reasoningDisableStrategy: DesktopReasoningDisableStrategy = DesktopReasoningDisableStrategy.OMIT
 )
 
 internal val DesktopProviderPresets = listOf(
@@ -27,7 +28,8 @@ internal val DesktopProviderPresets = listOf(
     ),
     DesktopProviderPreset(
         "DeepSeek", "https://api.deepseek.com/v1",
-        DesktopBalanceOptions(true, "/user/balance", "balance_infos[0].total_balance")
+        DesktopBalanceOptions(true, "/user/balance", "balance_infos[0].total_balance"),
+        reasoningDisableStrategy = DesktopReasoningDisableStrategy.RESPONSES_EFFORT_NONE
     ),
     DesktopProviderPreset(
         "OpenRouter", "https://openrouter.ai/api/v1",

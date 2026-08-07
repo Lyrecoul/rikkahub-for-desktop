@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.desktop
 
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -22,6 +23,90 @@ class OpenAiResponsesAdapterTest {
         assertEquals(DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS, legacy.protocol)
         assertTrue("input" in body)
         assertTrue("messages" !in body)
+    }
+
+    @Test
+    fun disablesReasoningOnlyWhenProviderStrategySupportsIt() {
+        fun requestBody(strategy: DesktopReasoningDisableStrategy) = Json.parseToJsonElement(
+            OpenAiResponsesAdapter.buildRequestBody(
+                DesktopConfig(
+                    protocol = DesktopProviderProtocol.OPENAI_RESPONSES,
+                    baseUrl = "https://relay.example.com/v1",
+                    model = "test-model",
+                    reasoningDisableStrategy = strategy,
+                    reasoningMode = DesktopReasoningMode.DISABLED
+                ),
+                listOf(ChatMessage("user", "hello"))
+            )
+        ).jsonObject
+
+        val supported = requestBody(DesktopReasoningDisableStrategy.RESPONSES_EFFORT_NONE)
+        val omitted = requestBody(DesktopReasoningDisableStrategy.OMIT)
+
+        assertEquals(
+            "none",
+            supported.getValue("reasoning").jsonObject.getValue("effort").jsonPrimitive.content
+        )
+        assertTrue("reasoning" !in omitted)
+    }
+
+    @Test
+    fun disableIntentTakesPrecedenceOverExplicitReasoningEffort() {
+        val body = Json.parseToJsonElement(
+            OpenAiResponsesAdapter.buildRequestBody(
+                DesktopConfig(
+                    protocol = DesktopProviderProtocol.OPENAI_RESPONSES,
+                    baseUrl = "https://relay.example.com/v1",
+                    model = "test-model",
+                    reasoningEffort = "high",
+                    reasoningDisableStrategy = DesktopReasoningDisableStrategy.RESPONSES_EFFORT_NONE,
+                    reasoningMode = DesktopReasoningMode.DISABLED
+                ),
+                listOf(ChatMessage("user", "hello"))
+            )
+        ).jsonObject
+
+        assertEquals(
+            "none",
+            body.getValue("reasoning").jsonObject.getValue("effort").jsonPrimitive.content
+        )
+    }
+
+    @Test
+    fun backgroundTaskConfigsDisableReasoningWhileChatKeepsExplicitEffort() {
+        val base = DesktopConfig(
+            protocol = DesktopProviderProtocol.OPENAI_RESPONSES,
+            model = "test-model",
+            reasoningEffort = "high",
+            reasoningDisableStrategy = DesktopReasoningDisableStrategy.RESPONSES_EFFORT_NONE
+        )
+        val conversation = DesktopConversation()
+        val data = DesktopData(
+            config = base,
+            providers = listOf(DesktopProviderProfile(config = base)),
+            conversations = listOf(conversation)
+        )
+        fun effort(config: DesktopConfig): String = Json.parseToJsonElement(
+            OpenAiResponsesAdapter.buildRequestBody(config, listOf(ChatMessage("user", "hello")))
+        ).jsonObject.getValue("reasoning").jsonObject.getValue("effort").jsonPrimitive.content
+
+        assertEquals("high", effort(base))
+        assertEquals("none", effort(data.titleGenerationConfig(conversation)))
+        assertEquals("none", effort(data.suggestionGenerationConfig(conversation)))
+        assertEquals("none", effort(base.translationRequestConfig()))
+        assertEquals("none", effort(base.compressionRequestConfig(maxTokens = 512)))
+    }
+
+    @Test
+    fun requestReasoningModeIsNotPersisted() {
+        val encoded = Json.encodeToString(
+            DesktopConfig.serializer(),
+            DesktopConfig(reasoningMode = DesktopReasoningMode.DISABLED)
+        )
+        val decoded = Json.decodeFromString<DesktopConfig>(encoded)
+
+        assertTrue("reasoningMode" !in encoded)
+        assertEquals(DesktopReasoningMode.INHERIT, decoded.reasoningMode)
     }
 
     @Test

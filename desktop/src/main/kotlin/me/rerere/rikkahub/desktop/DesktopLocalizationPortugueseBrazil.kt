@@ -383,6 +383,8 @@ internal val PortugueseBrazilDesktopTranslations = mapOf(
     "provider.title_model_help" to "Deixe em branco para usar o modelo de chat",
     "provider.suggestion_model" to "Modelo de sugestões de resposta",
     "provider.suggestion_model_help" to "Deixe em branco para usar o modelo de chat; o raciocínio é desativado para sugestões",
+    "provider.responses_disable_reasoning" to "Desativar explicitamente o raciocínio para tarefas em segundo plano",
+    "provider.responses_disable_reasoning_help" to "Envia reasoning.effort=none para tarefas da API Responses, como sugestões de resposta. Ative apenas se o provedor oferecer suporte.",
     "provider.title_prompt" to "Prompt de título",
     "provider.title_prompt_help" to "Suporta os marcadores {locale} e {content}",
     "provider.token_usage" to "Uso de tokens",

@@ -25,7 +25,11 @@ internal object OpenAiResponsesAdapter : DesktopChatProviderAdapter {
             put("temperature", config.temperature)
             put("top_p", config.topP)
             if (config.maxTokens > 0) put("max_output_tokens", config.maxTokens)
-            if (config.reasoningEffort.isNotBlank()) {
+            if (config.reasoningMode == DesktopReasoningMode.DISABLED) {
+                if (config.reasoningDisableStrategy == DesktopReasoningDisableStrategy.RESPONSES_EFFORT_NONE) {
+                    putJsonObject("reasoning") { put("effort", "none") }
+                }
+            } else if (config.reasoningEffort.isNotBlank()) {
                 putJsonObject("reasoning") { put("effort", config.reasoningEffort) }
             }
             val tools = buildResponsesTools(config)

@@ -123,6 +123,8 @@ class DesktopAssistantProfileTest {
         assertEquals(false, titleConfig.memoryEnabled)
         assertEquals(emptyList(), titleConfig.mcpServers)
         assertEquals(128, titleConfig.maxTokens)
+        assertEquals("", titleConfig.reasoningEffort)
+        assertEquals(DesktopReasoningMode.DISABLED, titleConfig.reasoningMode)
         assertEquals(listOf("response_format"), titleConfig.customBodies.map { it.key })
     }
 
@@ -155,6 +157,7 @@ class DesktopAssistantProfileTest {
 
         assertEquals("suggestion-model", suggestionConfig.model)
         assertEquals("", suggestionConfig.reasoningEffort)
+        assertEquals(DesktopReasoningMode.DISABLED, suggestionConfig.reasoningMode)
         assertEquals(256, suggestionConfig.maxTokens)
         assertEquals(false, suggestionConfig.streamOutput)
         assertEquals(emptySet(), suggestionConfig.localTools)

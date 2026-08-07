@@ -383,6 +383,8 @@ internal val KoreanDesktopTranslations = mapOf(
     "provider.title_model_help" to "비워 두면 채팅 모델 사용",
     "provider.suggestion_model" to "답변 제안 모델",
     "provider.suggestion_model_help" to "비워 두면 채팅 모델 사용. 제안 생성에서는 추론을 사용하지 않음",
+    "provider.responses_disable_reasoning" to "백그라운드 작업에서 추론 명시적으로 끄기",
+    "provider.responses_disable_reasoning_help" to "답변 제안과 같은 Responses API 작업에 reasoning.effort=none을 전송합니다. 제공업체가 지원하는 경우에만 사용하세요.",
     "provider.title_prompt" to "제목 프롬프트",
     "provider.title_prompt_help" to "{locale} 및 {content} 자리 표시자 지원",
     "provider.token_usage" to "토큰 사용량",

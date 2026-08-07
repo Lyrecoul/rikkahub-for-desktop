@@ -2555,7 +2555,8 @@ internal fun DesktopSettingsPane(
                                                             config = draftProvider.config.copy(
                                                                 baseUrl = preset.baseUrl,
                                                                 balanceOptions = preset.balanceOptions,
-                                                                protocol = preset.protocol
+                                                                protocol = preset.protocol,
+                                                                reasoningDisableStrategy = preset.reasoningDisableStrategy
                                                             )
                                                         )
                                                         balanceStatus = null
@@ -2965,6 +2966,27 @@ internal fun DesktopSettingsPane(
                                                         ) else desktopText(preferences.language, "model_picker.$effort")
                                                     )
                                                 }
+                                            )
+                                        }
+                                    }
+                                    if (draftProvider.config.protocol == DesktopProviderProtocol.OPENAI_RESPONSES) {
+                                        PreferenceSwitch(
+                                            desktopText(preferences.language, "provider.responses_disable_reasoning"),
+                                            desktopText(
+                                                preferences.language,
+                                                "provider.responses_disable_reasoning_help"
+                                            ),
+                                            draftProvider.config.reasoningDisableStrategy ==
+                                                DesktopReasoningDisableStrategy.RESPONSES_EFFORT_NONE
+                                        ) {
+                                            draftProvider = draftProvider.copy(
+                                                config = draftProvider.config.copy(
+                                                    reasoningDisableStrategy = if (it) {
+                                                        DesktopReasoningDisableStrategy.RESPONSES_EFFORT_NONE
+                                                    } else {
+                                                        DesktopReasoningDisableStrategy.OMIT
+                                                    }
+                                                )
                                             )
                                         }
                                     }

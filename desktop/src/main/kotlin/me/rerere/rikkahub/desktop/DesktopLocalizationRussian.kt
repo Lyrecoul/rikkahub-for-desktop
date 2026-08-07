@@ -383,6 +383,8 @@ internal val RussianDesktopTranslations = mapOf(
     "provider.title_model_help" to "Оставьте пустым, чтобы использовать модель чата",
     "provider.suggestion_model" to "Модель предложений ответа",
     "provider.suggestion_model_help" to "Оставьте пустым, чтобы использовать модель чата; для предложений рассуждение отключено",
+    "provider.responses_disable_reasoning" to "Явно отключать рассуждения для фоновых задач",
+    "provider.responses_disable_reasoning_help" to "Отправляет reasoning.effort=none для задач Responses API, например предложений ответа. Включайте, только если провайдер поддерживает параметр.",
     "provider.title_prompt" to "Промпт заголовка",
     "provider.title_prompt_help" to "Поддерживает заполнители {locale} и {content}",
     "provider.token_usage" to "Использование токенов",

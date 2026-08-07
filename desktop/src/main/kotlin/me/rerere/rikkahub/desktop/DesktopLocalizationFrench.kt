@@ -383,6 +383,8 @@ internal val FrenchDesktopTranslations = mapOf(
     "provider.title_model_help" to "Laissez vide pour utiliser le modèle de chat",
     "provider.suggestion_model" to "Modèle de suggestions de réponse",
     "provider.suggestion_model_help" to "Laissez vide pour utiliser le modèle de chat ; le raisonnement est désactivé pour les suggestions",
+    "provider.responses_disable_reasoning" to "Désactiver explicitement le raisonnement pour les tâches en arrière-plan",
+    "provider.responses_disable_reasoning_help" to "Envoie reasoning.effort=none pour les tâches de l'API Responses, comme les suggestions de réponse. Activez cette option seulement si le fournisseur le prend en charge.",
     "provider.title_prompt" to "Invite de titre",
     "provider.title_prompt_help" to "Prend en charge les espaces réservés {locale} et {content}",
     "provider.token_usage" to "Utilisation des jetons",

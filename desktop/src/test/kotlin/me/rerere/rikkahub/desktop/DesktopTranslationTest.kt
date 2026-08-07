@@ -106,6 +106,7 @@ class DesktopTranslationTest {
 
         assertEquals(0.0, translationConfig.temperature)
         assertEquals("", translationConfig.reasoningEffort)
+        assertEquals(DesktopReasoningMode.DISABLED, translationConfig.reasoningMode)
         assertEquals(DesktopTranslationSystemPrompt, translationConfig.systemPrompt)
         assertEquals(listOf("response_format"), translationConfig.customBodies.map { it.key })
     }

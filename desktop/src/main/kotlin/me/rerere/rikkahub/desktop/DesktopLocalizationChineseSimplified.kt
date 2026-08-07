@@ -383,6 +383,8 @@ internal val SimplifiedChineseDesktopTranslations = mapOf(
     "provider.title_model_help" to "留空时使用聊天模型",
     "provider.suggestion_model" to "回复建议模型",
     "provider.suggestion_model_help" to "留空时使用聊天模型；建议生成会关闭推理",
+    "provider.responses_disable_reasoning" to "为后台任务显式关闭推理",
+    "provider.responses_disable_reasoning_help" to "为回复建议等 Responses API 后台任务发送 reasoning.effort=none；仅在服务商支持时启用。",
     "provider.title_prompt" to "标题提示词",
     "provider.title_prompt_help" to "支持 {locale} 与 {content} 占位符",
     "provider.token_usage" to "Token 用量",

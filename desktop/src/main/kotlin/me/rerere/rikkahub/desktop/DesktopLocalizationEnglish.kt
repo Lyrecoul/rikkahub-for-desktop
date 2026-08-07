@@ -388,6 +388,8 @@ internal val EnglishDesktopTranslations = mapOf(
     "provider.title_model_help" to "Leave empty to use the chat model",
     "provider.suggestion_model" to "Reply suggestion model",
     "provider.suggestion_model_help" to "Leave empty to use the chat model; reasoning is disabled for suggestions",
+    "provider.responses_disable_reasoning" to "Explicitly disable reasoning for background tasks",
+    "provider.responses_disable_reasoning_help" to "Send reasoning.effort=none for Responses API tasks such as reply suggestions. Enable only when the provider supports it.",
     "provider.title_prompt" to "Title prompt",
     "provider.title_prompt_help" to "Supports the {locale} and {content} placeholders",
     "provider.token_usage" to "Token usage",

@@ -383,6 +383,8 @@ internal val SpanishDesktopTranslations = mapOf(
     "provider.title_model_help" to "Déjalo vacío para usar el modelo de chat",
     "provider.suggestion_model" to "Modelo de sugerencias de respuesta",
     "provider.suggestion_model_help" to "Déjalo vacío para usar el modelo de chat; el razonamiento se desactiva para las sugerencias",
+    "provider.responses_disable_reasoning" to "Desactivar explícitamente el razonamiento para tareas en segundo plano",
+    "provider.responses_disable_reasoning_help" to "Envía reasoning.effort=none para tareas de Responses API como las sugerencias de respuesta. Actívalo solo si el proveedor lo admite.",
     "provider.title_prompt" to "Prompt de título",
     "provider.title_prompt_help" to "Admite los marcadores {locale} y {content}",
     "provider.token_usage" to "Uso de tokens",

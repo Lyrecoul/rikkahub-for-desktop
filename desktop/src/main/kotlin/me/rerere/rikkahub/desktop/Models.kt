@@ -2,6 +2,7 @@ package me.rerere.rikkahub.desktop
 
 import dev.darkokoa.pangu.spacingText
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import java.net.URI
 import java.util.Locale
 import java.util.UUID
@@ -33,6 +34,10 @@ data class DesktopConfig(
     val temperature: Double = 1.0,
     val topP: Double = 1.0,
     val reasoningEffort: String = "",
+    val reasoningDisableStrategy: DesktopReasoningDisableStrategy = DesktopReasoningDisableStrategy.OMIT,
+    /** Per-request intent derived by task configs; never persisted as provider configuration. */
+    @Transient
+    val reasoningMode: DesktopReasoningMode = DesktopReasoningMode.INHERIT,
     val maxTokens: Int = 0,
     val requestTokenUsage: Boolean = false,
     val webSearchEnabled: Boolean = false,
@@ -54,6 +59,17 @@ enum class DesktopProviderProtocol {
     OPENAI_RESPONSES,
     ANTHROPIC_MESSAGES,
     GEMINI_GENERATE_CONTENT
+}
+
+@Serializable
+enum class DesktopReasoningDisableStrategy {
+    OMIT,
+    RESPONSES_EFFORT_NONE
+}
+
+enum class DesktopReasoningMode {
+    INHERIT,
+    DISABLED
 }
 
 @Serializable
@@ -1090,51 +1106,38 @@ fun DesktopData.configForConversation(conversation: DesktopConversation): Deskto
 /** Background title requests intentionally omit chat-only state such as tools, memory and web search. */
 internal fun DesktopData.titleGenerationConfig(conversation: DesktopConversation): DesktopConfig {
     val config = configForConversation(conversation)
-    val backgroundConfig = config.backgroundRequestConfig(maxTokens = 128)
-    return backgroundConfig.copy(
+    return config.backgroundRequestConfig(maxTokens = 128).withReasoningDisabled().copy(
         model = config.titleModel.ifBlank { config.model },
-        temperature = 0.3,
-        reasoningEffort = "",
-        customBodies = backgroundConfig.customBodies.filterNot { body ->
-            body.key in setOf(
-                "model", "max_tokens", "max_completion_tokens", "max_output_tokens",
-                "reasoning_effort", "reasoning"
-            )
-        }
+        temperature = 0.3
     )
 }
 
 /** Background reply-suggestion requests use a lightweight model configuration without reasoning. */
 internal fun DesktopData.suggestionGenerationConfig(conversation: DesktopConversation): DesktopConfig {
     val config = configForConversation(conversation)
-    val backgroundConfig = config.backgroundRequestConfig(maxTokens = 256)
-    return backgroundConfig.copy(
-        model = config.suggestionModel.ifBlank { config.model },
-        reasoningEffort = "",
-        customBodies = backgroundConfig.customBodies.filterNot { body ->
-            body.key in setOf(
-                "model", "max_tokens", "max_completion_tokens", "max_output_tokens",
-                "reasoning_effort", "reasoning"
-            )
-        }
+    return config.backgroundRequestConfig(maxTokens = 256).withReasoningDisabled().copy(
+        model = config.suggestionModel.ifBlank { config.model }
     )
 }
 
 /** Translation requests are deterministic one-shot calls and must not inherit chat reasoning limits. */
-internal fun DesktopConfig.translationRequestConfig(): DesktopConfig {
-    val backgroundConfig = backgroundRequestConfig()
-    return backgroundConfig.copy(
+internal fun DesktopConfig.translationRequestConfig(): DesktopConfig =
+    backgroundRequestConfig().withReasoningDisabled().copy(
         systemPrompt = DesktopTranslationSystemPrompt,
-        temperature = 0.0,
-        reasoningEffort = "",
-        customBodies = backgroundConfig.customBodies.filterNot { body ->
-            body.key in setOf(
-                "temperature", "reasoning_effort", "reasoning",
-                "max_tokens", "max_completion_tokens", "max_output_tokens"
-            )
-        }
+        temperature = 0.0
     )
-}
+
+/** Compression is a background summarization task and does not inherit interactive chat reasoning. */
+internal fun DesktopConfig.compressionRequestConfig(maxTokens: Int): DesktopConfig =
+    backgroundRequestConfig(maxTokens = maxTokens).withReasoningDisabled()
+
+internal fun DesktopConfig.withReasoningDisabled(): DesktopConfig = copy(
+    reasoningEffort = "",
+    reasoningMode = DesktopReasoningMode.DISABLED,
+    customBodies = customBodies.filterNot { body ->
+        body.key in setOf("reasoning_effort", "reasoning", "thinking")
+    }
+)
 
 /** Background one-shot tasks do not execute chat tools or inherit chat transport overrides. */
 internal fun DesktopConfig.backgroundRequestConfig(maxTokens: Int = this.maxTokens): DesktopConfig = copy(
