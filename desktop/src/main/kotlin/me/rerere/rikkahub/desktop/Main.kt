@@ -3673,7 +3673,7 @@ private fun MessageBlock(
                 if (!isUser) {
                     val messageModel = message.modelId ?: model
                     if (preferences.showModelIcon) {
-                        DesktopProviderIcon(message.modelId ?: providerName)
+                        DesktopProviderIcon(message.modelId ?: providerName, iconSize = 28.dp)
                     }
                     if (preferences.showModelName) {
                         Text(
