@@ -4827,6 +4827,7 @@ private fun ModelPickerMenu(
     onSettings: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
+    val collapsedProviderIds = remember { mutableStateMapOf<String, Boolean>() }
     var reasoningSliderValue by remember(reasoningEffort) {
         mutableFloatStateOf(listOf("", "low", "medium", "high").indexOf(reasoningEffort).coerceAtLeast(0).toFloat())
     }
@@ -4919,11 +4920,20 @@ private fun ModelPickerMenu(
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             filteredProviders.forEachIndexed { providerIndex, (provider, models) ->
+                val expanded = query.isNotBlank() || collapsedProviderIds[provider.id] != true
                 if (providerIndex > 0) HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 3.dp),
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { collapsedProviderIds[provider.id] = expanded }
+                        .padding(horizontal = 2.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Icon(
+                        if (expanded) Lucide.ChevronDown else Lucide.ChevronRight,
+                        null,
+                        Modifier.size(16.dp)
+                    )
                     DesktopProviderIcon(provider.name, iconSize = 16.dp)
                     Text(
                         provider.name,
@@ -4955,33 +4965,35 @@ private fun ModelPickerMenu(
                         }
                     }
                 }
-                models.forEach { availableModel ->
-                    val selected = provider.id == selectedProviderId && availableModel == selectedModel
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().clickable { onSelect(provider.id, availableModel) },
-                        shape = RoundedCornerShape(6.dp),
-                        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
-                    ) {
-                        Column(Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (expanded) {
+                    models.forEach { availableModel ->
+                        val selected = provider.id == selectedProviderId && availableModel == selectedModel
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().clickable { onSelect(provider.id, availableModel) },
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+                        ) {
+                            Column(Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        availableModel,
+                                        Modifier.weight(1f),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    if (selected) Icon(
+                                        Lucide.Sparkles,
+                                        desktopText(language, "model_picker.current_model"),
+                                        Modifier.size(14.dp),
+                                        MaterialTheme.colorScheme.primary
+                                    )
+                                }
                                 Text(
-                                    availableModel,
-                                    Modifier.weight(1f),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                if (selected) Icon(
-                                    Lucide.Sparkles,
-                                    desktopText(language, "model_picker.current_model"),
-                                    Modifier.size(14.dp),
-                                    MaterialTheme.colorScheme.primary
+                                    modelCapabilityLabels(provider.config, availableModel, language).joinToString(" · "),
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Text(
-                                modelCapabilityLabels(provider.config, availableModel, language).joinToString(" · "),
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
                     }
                 }
