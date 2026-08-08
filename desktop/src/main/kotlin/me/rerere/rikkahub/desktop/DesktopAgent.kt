@@ -168,9 +168,16 @@ private class AgentStreamCollector(stream: InputStream) {
 
 internal class DesktopAgentRuntime(
     private val commandRunner: DesktopAgentCommandRunner = ProcessDesktopAgentCommandRunner(),
-    private val skillsRoot: Path = defaultDesktopSkillsRoot()
+    private val skillsRoot: Path = defaultDesktopSkillsRoot(),
+    private val firewalldZoneFile: Path = Path.of("/etc/firewalld/zones/docker.xml")
 ) {
     private val dockerWorkspaceLocks = ConcurrentHashMap<String, Mutex>()
+
+    /**
+     * Bridge networks whose traffic firewalld refuses to forward. Once a bridge is excluded the
+     * situation cannot improve on its own, so remember it and skip the bridge path for later commands.
+     */
+    private val firewalldBlockedBridgeNetworks = ConcurrentHashMap.newKeySet<String>()
 
     suspend fun dockerWorkspaceStatus(workspace: DesktopAgentWorkspace): DesktopAgentDockerWorkspaceStatus =
         withContext(Dispatchers.IO) {
@@ -198,6 +205,7 @@ internal class DesktopAgentRuntime(
         require(workspace.backend == DesktopAgentBackend.DOCKER) { "Workspace does not use Docker" }
         val name = dockerWorkspaceName(requireWorkspaceRoot(workspace))
         dockerWorkspaceLocks.computeIfAbsent(name) { Mutex() }.withLock {
+            firewalldBlockedBridgeNetworks.remove("$name-network")
             removeDockerResource(listOf("docker", "rm", "-f", "$name-network"), "remove Docker network session")
             removeDockerResource(listOf("docker", "rm", "-f", name), "remove Docker workspace")
             removeDockerResource(listOf("docker", "image", "rm", "$name-snapshot"), "remove Docker checkpoint")
@@ -454,7 +462,13 @@ internal class DesktopAgentRuntime(
             requireDockerSuccess(start, "start Docker workspace")
         }
         if (network) return when (workspace.dockerNetworkMode) {
-            DesktopAgentDockerNetworkMode.BRIDGE -> dockerShellWithApprovedBridgeNetwork(name, cwd, command)
+            DesktopAgentDockerNetworkMode.BRIDGE -> dockerShellWithApprovedBridgeNetworkOrHostFallback(
+                name,
+                root,
+                cwd,
+                command,
+                workspace.dockerImage
+            )
             DesktopAgentDockerNetworkMode.HOST -> dockerShellWithHostNetwork(
                 name,
                 root,
@@ -567,6 +581,72 @@ internal class DesktopAgentRuntime(
             }
         }
     }
+
+    /**
+     * Bridge networking depends on the host forwarding and masquerading traffic from the workspace
+     * bridge network. Some hosts run firewalld and never register bridges that Docker creates after
+     * the daemon started, so firewalld silently rejects all traffic from those bridges. Detect that
+     * case before using the bridge and fall back to the reliable host-network path, noting it in the
+     * result so the agent can report why.
+     */
+    private suspend fun dockerShellWithApprovedBridgeNetworkOrHostFallback(
+        name: String,
+        root: Path,
+        cwd: String,
+        command: String,
+        baseImage: String
+    ): DesktopAgentCommandResult {
+        val networkName = "$name-network"
+        ensureDockerNetwork(networkName, internal = false)
+        if (bridgeNetworkUsable(networkName)) {
+            return dockerShellWithApprovedBridgeNetwork(name, cwd, command)
+        }
+        return dockerShellWithHostNetwork(name, root, cwd, command, baseImage).withFallbackNote(
+            "note: bridge networking is unavailable because the host firewall (firewalld) does not " +
+                "forward traffic from the workspace bridge network; the command used host networking instead."
+        )
+    }
+
+    /**
+     * True when traffic from the workspace bridge network can actually reach the host network stack.
+     * firewalld only forwards traffic from interfaces in its docker zone, and Docker does not register
+     * bridges created while the daemon is already running, so such bridges get their forwarded traffic
+     * rejected by firewalld. When firewalld is active and the bridge is missing from the zone, the
+     * bridge path cannot work and the caller must fall back to host networking.
+     */
+    private suspend fun bridgeNetworkUsable(networkName: String): Boolean {
+        if (networkName in firewalldBlockedBridgeNetworks) return false
+        val networkId = runCommand(
+            listOf("docker", "network", "inspect", "--format", "{{.Id}}", networkName),
+            null,
+            10_000
+        ).stdout.trim()
+        if (networkId.isEmpty()) return true
+        val bridgeName = "br-${networkId.take(12)}"
+        if (!Files.isRegularFile(firewalldZoneFile)) return true
+        val firewalldActive = try {
+            val status = runCommand(listOf("systemctl", "is-active", "firewalld"), null, 5_000)
+            status.exitCode == 0 && status.stdout.trim() == "active"
+        } catch (_: Exception) {
+            false
+        }
+        if (!firewalldActive) return true
+        if (firewalldZoneFile.readDockerZoneInterfaces().contains(bridgeName)) return true
+        firewalldBlockedBridgeNetworks += networkName
+        return false
+    }
+
+    private fun Path.readDockerZoneInterfaces(): Set<String> {
+        if (!Files.isRegularFile(this)) return emptySet()
+        return runCatching {
+            Regex("""<interface name="([^"]+)"/>""").findAll(Files.readString(this, StandardCharsets.UTF_8))
+                .map { it.groupValues[1] }
+                .toSet()
+        }.getOrDefault(emptySet())
+    }
+
+    private fun DesktopAgentCommandResult.withFallbackNote(note: String): DesktopAgentCommandResult =
+        if (stdout.isBlank()) copy(stdout = note) else copy(stdout = "$note\n$stdout")
 
     private suspend fun dockerShellWithApprovedBridgeNetwork(
         name: String,

@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -393,6 +394,133 @@ class DesktopAgentTest {
         assertFalse(commands.any { it.take(3) == listOf("docker", "rm", "-f") })
         assertTrue(commands.any { it.take(3) == listOf("docker", "network", "connect") })
         assertTrue(commands.any { it.take(3) == listOf("docker", "network", "disconnect") })
+    }
+
+    @Test
+    fun bridgeNetworkFallsBackToHostNetworkingWhenFirewalldExcludesTheBridge() = runBlocking {
+        val zoneFile = root.resolve("docker-zone.xml")
+        Files.writeString(zoneFile, """<zone><interface name="br-1234567890ab"/></zone>""")
+        val commands = mutableListOf<List<String>>()
+        val runtime = DesktopAgentRuntime(
+            commandRunner = DesktopAgentCommandRunner { command, _, _ ->
+                commands += command
+                when {
+                    command.take(3) == listOf("docker", "inspect", "--format") ->
+                        DesktopAgentCommandResult(0, managedDockerConfig, "")
+                    command.take(4) == listOf("docker", "network", "inspect", "--format") ->
+                        DesktopAgentCommandResult(
+                            0,
+                            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890\n",
+                            ""
+                        )
+                    command.take(3) == listOf("systemctl", "is-active", "firewalld") ->
+                        DesktopAgentCommandResult(0, "active\n", "")
+                    else -> DesktopAgentCommandResult(0, "", "")
+                }
+            },
+            skillsRoot = root.resolve("skills"),
+            firewalldZoneFile = zoneFile
+        )
+        val workspace = DesktopAgentWorkspace(
+            root.toString(),
+            DesktopAgentBackend.DOCKER,
+            dockerNetworkMode = DesktopAgentDockerNetworkMode.BRIDGE
+        )
+
+        val result = runtime.execute(
+            DesktopAgentConfig(workspace),
+            DesktopToolCall("shell", DesktopAgentShellToolName, "{\"command\":\"curl example.com\",\"network\":true}")
+        ) { true }
+
+        val workspaceName = "rikkahub-agent-${
+            UUID.nameUUIDFromBytes(root.toString().toByteArray()).toString().replace("-", "").take(24)
+        }"
+        assertFalse(commands.any { it.take(3) == listOf("docker", "network", "connect") })
+        assertTrue(commands.any { it.take(3) == listOf("docker", "rm", "-f") })
+        assertTrue(
+            commands.any { command ->
+                command.take(3) == listOf("docker", "create", "--name") &&
+                    command[3] == "$workspaceName-network" &&
+                    command.windowed(2).any { it == listOf("--network", "host") }
+            }
+        )
+        assertTrue(result.contains("host networking"))
+    }
+
+    @Test
+    fun bridgeNetworkProceedsWhenFirewalldRegistersTheBridge() = runBlocking {
+        val zoneFile = root.resolve("docker-zone.xml")
+        Files.writeString(zoneFile, """<zone><interface name="br-abcdef123456"/></zone>""")
+        val commands = mutableListOf<List<String>>()
+        val runtime = DesktopAgentRuntime(
+            commandRunner = DesktopAgentCommandRunner { command, _, _ ->
+                commands += command
+                when {
+                    command.take(3) == listOf("docker", "inspect", "--format") ->
+                        DesktopAgentCommandResult(0, managedDockerConfig, "")
+                    command.take(4) == listOf("docker", "network", "inspect", "--format") ->
+                        DesktopAgentCommandResult(
+                            0,
+                            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890\n",
+                            ""
+                        )
+                    command.take(3) == listOf("systemctl", "is-active", "firewalld") ->
+                        DesktopAgentCommandResult(0, "active\n", "")
+                    else -> DesktopAgentCommandResult(0, "", "")
+                }
+            },
+            skillsRoot = root.resolve("skills"),
+            firewalldZoneFile = zoneFile
+        )
+        val workspace = DesktopAgentWorkspace(
+            root.toString(),
+            DesktopAgentBackend.DOCKER,
+            dockerNetworkMode = DesktopAgentDockerNetworkMode.BRIDGE
+        )
+
+        runtime.execute(
+            DesktopAgentConfig(workspace),
+            DesktopToolCall("shell", DesktopAgentShellToolName, "{\"command\":\"curl example.com\",\"network\":true}")
+        ) { true }
+
+        assertTrue(commands.any { it.take(3) == listOf("docker", "network", "connect") })
+        assertFalse(commands.any { it.take(3) == listOf("docker", "rm", "-f") })
+    }
+
+    @Test
+    fun bridgeNetworkProceedsWhenFirewalldIsNotActive() = runBlocking {
+        val zoneFile = root.resolve("docker-zone.xml")
+        Files.writeString(zoneFile, """<zone><interface name="br-other"/></zone>""")
+        val commands = mutableListOf<List<String>>()
+        val runtime = DesktopAgentRuntime(
+            commandRunner = DesktopAgentCommandRunner { command, _, _ ->
+                commands += command
+                when {
+                    command.take(3) == listOf("docker", "inspect", "--format") ->
+                        DesktopAgentCommandResult(0, managedDockerConfig, "")
+                    command.take(4) == listOf("docker", "network", "inspect", "--format") ->
+                        DesktopAgentCommandResult(0, "abcdef1234567890\n", "")
+                    command.take(3) == listOf("systemctl", "is-active", "firewalld") ->
+                        DesktopAgentCommandResult(1, "inactive\n", "")
+                    else -> DesktopAgentCommandResult(0, "", "")
+                }
+            },
+            skillsRoot = root.resolve("skills"),
+            firewalldZoneFile = zoneFile
+        )
+        val workspace = DesktopAgentWorkspace(
+            root.toString(),
+            DesktopAgentBackend.DOCKER,
+            dockerNetworkMode = DesktopAgentDockerNetworkMode.BRIDGE
+        )
+
+        runtime.execute(
+            DesktopAgentConfig(workspace),
+            DesktopToolCall("shell", DesktopAgentShellToolName, "{\"command\":\"curl example.com\",\"network\":true}")
+        ) { true }
+
+        assertTrue(commands.any { it.take(3) == listOf("docker", "network", "connect") })
+        assertFalse(commands.any { it.take(3) == listOf("docker", "rm", "-f") })
     }
 
     @Test
