@@ -161,6 +161,8 @@ class DesktopAssistantProfileTest {
         assertEquals(256, suggestionConfig.maxTokens)
         assertEquals(false, suggestionConfig.streamOutput)
         assertEquals(emptySet(), suggestionConfig.localTools)
+        assertEquals(DesktopSuggestionSystemPrompt, suggestionConfig.systemPrompt)
+        assertEquals(0.7, suggestionConfig.temperature)
         assertEquals(listOf("response_format"), suggestionConfig.customBodies.map { it.key })
         val suggestionBody = Json.parseToJsonElement(
             OpenAiResponsesAdapter.buildRequestBody(
@@ -171,7 +173,10 @@ class DesktopAssistantProfileTest {
         assertTrue("tools" !in suggestionBody)
         assertTrue("reasoning" !in suggestionBody)
         assertEquals(256, suggestionBody.getValue("max_output_tokens").jsonPrimitive.int)
-        assertTrue("instructions" !in suggestionBody)
+        assertEquals(
+            DesktopSuggestionSystemPrompt,
+            suggestionBody.getValue("instructions").jsonPrimitive.content
+        )
         assertEquals(
             "suggest replies",
             suggestionBody.getValue("input").jsonArray.single().jsonObject

@@ -486,6 +486,36 @@ class DesktopMessageBranchTest {
     }
 
     @Test
+    fun dropsAssistantVoiceReplySuggestions() {
+        assertEquals(
+            listOf("给我讲讲这个方案的细节", "换个角度解释一下", "I think option B is better"),
+            parseChatSuggestions(
+                """
+                1. 给我讲讲这个方案的细节
+                2. 我可以帮你优化这个方案
+                3. 换个角度解释一下
+                4. I can help you with that
+                5. I think option B is better
+                """.trimIndent()
+            )
+        )
+        assertEquals(
+            listOf("详细解释一下", "So what happens next?"),
+            parseChatSuggestions(
+                "As an AI, I would assist you with that\n详细解释一下\n需要我帮你总结吗？\nSo what happens next?"
+            )
+        )
+    }
+
+    @Test
+    fun keepsUserVoiceSuggestionsThatMentionTheAssistant() {
+        assertEquals(
+            listOf("作为AI，你怎么看这个问题", "我建议你先看看文档", "Here are the files you asked for"),
+            parseChatSuggestions("作为AI，你怎么看这个问题\n我建议你先看看文档\nHere are the files you asked for")
+        )
+    }
+
+    @Test
     fun appliesChineseTypographyToGeneratedTitlesAndSuggestionsOnlyWhenEnabled() {
         assertEquals("你好World", normalizeGeneratedTitle("你好World"))
         assertEquals("你好 World", normalizeGeneratedTitle("你好World", enableChineseTypography = true))

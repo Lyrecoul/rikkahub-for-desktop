@@ -21,6 +21,23 @@ internal const val DefaultDesktopTitlePrompt = """
     </content>
 """
 
+/**
+ * Reply suggestions must be written from the human user's perspective, as if the user typed them
+ * themselves. The instruction lives in the system prompt (the `instructions` field on the OpenAI
+ * Responses API) so the model never mistakes it for conversation content and keeps it out of
+ * suggestion output.
+ */
+internal const val DesktopSuggestionSystemPrompt = """
+    You generate reply suggestions for a chat application.
+    You will be given a conversation transcript between a human user and an AI assistant.
+    Write 3 short, natural messages the HUMAN USER would plausibly send next.
+    Write each suggestion from the user's own first-person perspective, in the user's own voice and
+    language, exactly as if the user typed it themselves.
+    Never write from the assistant's perspective: do not offer help ("I can help you...", "我可以帮你..."),
+    do not introduce yourself ("As an AI...", "作为AI..."), and do not draft the assistant's reply.
+    Reply with one suggestion per line. No numbering, bullets, quotes, labels, or introductory text.
+"""
+
 @Serializable
 data class DesktopConfig(
     val protocol: DesktopProviderProtocol = DesktopProviderProtocol.OPENAI_CHAT_COMPLETIONS,
@@ -856,11 +873,24 @@ internal fun parseChatSuggestions(value: String, enableChineseTypography: Boolea
         .map { it.trim().replaceFirst(Regex("^(?:[-*]|\\d+[.)])\\s*"), "") }
         .map { it.trim('"', '\'', '`') }
         .map { if (enableChineseTypography) it.spacingText() else it }
-        .filter { it.isNotBlank() }
+        .filter { it.isNotBlank() && !it.isAssistantVoiceSuggestion() }
         .distinct()
         .take(4)
         .map { it.take(160) }
         .toList()
+
+/**
+ * True when a generated line reads as the assistant speaking instead of the human user
+ * (e.g. "I can help you...", "我可以帮你...", "As an AI, I would..."). Only unambiguous
+ * help-offering phrasing is matched so legitimate user-voice suggestions are never dropped.
+ */
+private fun String.isAssistantVoiceSuggestion(): Boolean = Regex(
+    "(?i)^(?:as an? (?:ai|llm|assistant|language model|chatbot)\\b[^\\n]{0,24}[,;:：，。]?\\s*)?" +
+        "(?:i'?m (?:here|happy|glad) to (?:help|assist)|" +
+        "i (?:can|could|would|will|'?d) (?:help|assist)(?: (?:you|with|the))?|" +
+        "i'?d (?:be happy|love|like) to (?:help|assist)|" +
+        "我可以(?:帮|为|给)(?:你|您)|需要我(?:帮你|为您|给你)|我来(?:帮|为|给)(?:你|您))"
+).containsMatchIn(this)
 
 internal fun isSafeExternalUrl(value: String): Boolean = runCatching {
     URI(value).scheme?.lowercase() in setOf("http", "https")
@@ -1116,7 +1146,11 @@ internal fun DesktopData.titleGenerationConfig(conversation: DesktopConversation
 internal fun DesktopData.suggestionGenerationConfig(conversation: DesktopConversation): DesktopConfig {
     val config = configForConversation(conversation)
     return config.backgroundRequestConfig(maxTokens = 256).withReasoningDisabled().copy(
-        model = config.suggestionModel.ifBlank { config.model }
+        model = config.suggestionModel.ifBlank { config.model },
+        // Anchor the task in the system prompt (the `instructions` field on the Responses API) so
+        // suggestions are written from the human user's perspective, never the assistant's.
+        systemPrompt = DesktopSuggestionSystemPrompt,
+        temperature = 0.7
     )
 }
 

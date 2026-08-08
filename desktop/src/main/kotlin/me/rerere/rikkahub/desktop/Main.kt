@@ -724,12 +724,13 @@ private fun RikkaHubDesktop(
             "${message.role.uppercase()}: ${message.content.take(700)}"
         }
         val request = """
-            Suggest 3 concise, useful next messages the user could send to continue this conversation.
-            Use the user's primary language. Reply with one suggestion per line and no introduction.
-
             <conversation>
             $content
             </conversation>
+
+            The next turn in this conversation belongs to the human user.
+            Write 3 suggestions for what the user would naturally type next, from the user's own
+            first-person perspective, one suggestion per line.
         """.trimIndent()
         generationErrors.remove(conversationId)
         val job = scope.launch(start = CoroutineStart.LAZY) {
