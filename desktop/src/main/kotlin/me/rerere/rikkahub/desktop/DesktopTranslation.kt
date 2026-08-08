@@ -1,8 +1,5 @@
 package me.rerere.rikkahub.desktop
 
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.JsonPrimitive
 
 internal const val DesktopTranslationSystemPrompt = """You are a translation engine.
@@ -13,7 +10,7 @@ Return only the translated text without quotes, labels, explanations, or comment
 Do not copy the source unchanged; translate every natural-language passage into the target language.
 """
 
-private const val TranslationAttemptLimit = 3
+internal const val TranslationAttemptLimit = 3
 private val TranslationLabel = Regex(
     "^(?:translation|translated text|译文|翻译)\\s*[:：]\\s*",
     RegexOption.IGNORE_CASE,
@@ -40,47 +37,6 @@ internal fun buildMessageTranslationRequest(
 
 internal fun isTranslationUnchanged(sourceText: String, translation: String): Boolean =
     normalizeTranslationComparison(sourceText) == normalizeTranslationComparison(translation)
-
-internal fun cancelDesktopGeneration(
-    conversationId: String,
-    generationJobs: MutableMap<String, Job>,
-    responseGenerationIds: MutableMap<String, Unit>,
-) {
-    val job = generationJobs.remove(conversationId)
-    responseGenerationIds.remove(conversationId)
-    job?.cancel()
-}
-
-internal suspend fun finishDesktopGeneration(
-    conversationId: String,
-    generationJobs: MutableMap<String, Job>,
-    responseGenerationIds: MutableMap<String, Unit>,
-) {
-    val currentJob = currentCoroutineContext()[Job]
-    if (generationJobs[conversationId] !== currentJob) return
-    generationJobs.remove(conversationId)
-    responseGenerationIds.remove(conversationId)
-}
-
-internal suspend fun translateMessageWithRetry(
-    sourceText: String,
-    targetLanguage: String,
-    request: suspend (String) -> String,
-): String {
-    var result = ""
-    repeat(TranslationAttemptLimit) { attempt ->
-        currentCoroutineContext().ensureActive()
-        result = request(
-            buildMessageTranslationRequest(
-                sourceText,
-                targetLanguage,
-                unchangedAttemptCount = attempt,
-            )
-        ).trim()
-        if (result.isNotBlank() && !isTranslationUnchanged(sourceText, result)) return result
-    }
-    return result
-}
 
 private fun normalizeTranslationComparison(value: String): String {
     var normalized = value.trim()
