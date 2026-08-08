@@ -1358,6 +1358,16 @@ fun DesktopData.saveProviderProfile(profile: DesktopProviderProfile): DesktopDat
     )
 }
 
+/** 新增 provider 并选中；新配置成为全局配置（与 [saveProviderProfile] 的 fallback 语义一致）。 */
+fun DesktopData.withNewProvider(profile: DesktopProviderProfile): DesktopData {
+    val currentProviders = providers.ifEmpty { listOf(activeProvider()) }
+    return copy(
+        config = profile.config,
+        providers = currentProviders + profile,
+        selectedProviderId = profile.id
+    )
+}
+
 fun DesktopData.deleteProviderProfile(providerId: String): DesktopData {
     val currentProviders = providers.ifEmpty { listOf(activeProvider()) }
     if (currentProviders.size <= 1) return this
@@ -1381,6 +1391,14 @@ fun DesktopData.saveAssistantProfile(profile: DesktopAssistantProfile): DesktopD
         selectedAssistantId = selectedAssistantId.ifBlank { activeAssistant().id }
     )
 }
+
+/** 新增 assistant 并选中。 */
+fun DesktopData.withNewAssistant(profile: DesktopAssistantProfile): DesktopData =
+    copy(assistants = assistants + profile, selectedAssistantId = profile.id)
+
+/** 复制一个 assistant（新 id + "copy" 后缀）并选中。 */
+fun DesktopData.withCopyOfAssistant(source: DesktopAssistantProfile): DesktopData =
+    withNewAssistant(source.copy(id = UUID.randomUUID().toString(), name = "${source.name} copy"))
 
 fun DesktopData.deleteAssistantProfile(assistantId: String): DesktopData {
     if (assistants.size <= 1) return this

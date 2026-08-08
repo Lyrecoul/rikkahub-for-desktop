@@ -148,24 +148,17 @@ internal fun DesktopSettingsPane(
             name = desktopText(preferences.language, "defaults.new_provider"),
             config = DesktopConfig(model = "", systemPrompt = settingsData.config.systemPrompt)
         )
-        onSessionChange { data ->
-            data.copy(
-                config = profile.config,
-                providers = data.providers.ifEmpty { listOf(data.activeProvider()) } + profile,
-                selectedProviderId = profile.id
-            )
-        }
+        onSessionChange { it.withNewProvider(profile) }
     }
     val onProviderDelete = { providerId: String -> onSessionChange { it.deleteProviderProfile(providerId) } }
     val onAssistantSave = { profile: DesktopAssistantProfile -> onSessionChange { it.saveAssistantProfile(profile) } }
     val onAssistantAdd = {
         val assistant = DesktopAssistantProfile(name = desktopText(preferences.language, "defaults.new_assistant"))
-        onSessionChange { data -> data.copy(assistants = data.assistants + assistant, selectedAssistantId = assistant.id) }
+        onSessionChange { it.withNewAssistant(assistant) }
     }
     val onAssistantCopy = { assistantId: String ->
         settingsData.assistants.firstOrNull { it.id == assistantId }?.let { source ->
-            val copy = source.copy(id = java.util.UUID.randomUUID().toString(), name = "${source.name} copy")
-            onSessionChange { data -> data.copy(assistants = data.assistants + copy, selectedAssistantId = copy.id) }
+            onSessionChange { it.withCopyOfAssistant(source) }
         }
     }
     val onAssistantDelete = { assistantId: String -> onSessionChange { it.deleteAssistantProfile(assistantId) } }
@@ -185,7 +178,7 @@ internal fun DesktopSettingsPane(
     var apiKeyVisible by remember { mutableStateOf(false) }
     var webSearchApiKeyVisible by remember { mutableStateOf(false) }
     var connectionState by remember(selectedProvider.id) {
-        mutableStateOf<ConnectionState>(ConnectionState.Idle)
+        mutableStateOf<DesktopModelDiscoveryState>(DesktopModelDiscoveryState.Idle)
     }
     var modelMenuOpen by remember(selectedProvider.id) { mutableStateOf(false) }
     var protocolMenuOpen by remember(selectedProvider.id) { mutableStateOf(false) }
@@ -3184,30 +3177,18 @@ internal fun DesktopSettingsPane(
                                     ) {
                                         OutlinedButton(
                                             onClick = {
-                                                connectionState = ConnectionState.Testing
+                                                connectionState = DesktopModelDiscoveryState.Testing
                                                 scope.launch {
-                                                    connectionState = runCatching {
-                                                        client.listModels(draftProvider.config)
+                                                    val result = probeProviderModels { client.listModels(draftProvider.config) }
+                                                    if (result is DesktopModelDiscoveryState.Success) {
+                                                        draftProvider = draftProvider.withDiscoveredModels(result.listing)
                                                     }
-                                                        .fold(
-                                                            onSuccess = { models ->
-                                                                draftProvider = draftProvider.copy(
-                                                                    discoveredModels = models.ids,
-                                                                    discoveredModelNames = models.displayNames
-                                                                )
-                                                                ConnectionState.Success(models.ids)
-                                                            },
-                                                            onFailure = {
-                                                                ConnectionState.Failure(
-                                                                    it.message ?: "Connection failed"
-                                                                )
-                                                            }
-                                                        )
+                                                    connectionState = result
                                                 }
                                             },
-                                            enabled = connectionState !is ConnectionState.Testing
+                                            enabled = connectionState !is DesktopModelDiscoveryState.Testing
                                         ) {
-                                            if (connectionState is ConnectionState.Testing) {
+                                            if (connectionState is DesktopModelDiscoveryState.Testing) {
                                                 CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                                             } else {
                                                 Icon(Lucide.ServerCog, null, Modifier.size(17.dp))
@@ -4109,28 +4090,21 @@ private fun List<DesktopMcpServer>.replaceMcpServer(
     transform: (DesktopMcpServer) -> DesktopMcpServer
 ): List<DesktopMcpServer> = map { if (it.id == id) transform(it) else it }
 
-private sealed interface ConnectionState {
-    data object Idle : ConnectionState
-    data object Testing : ConnectionState
-    data class Success(val models: List<String>) : ConnectionState
-    data class Failure(val message: String) : ConnectionState
-}
-
 @Composable
-private fun ConnectionResult(state: ConnectionState, language: DesktopLanguage) {
+private fun ConnectionResult(state: DesktopModelDiscoveryState, language: DesktopLanguage) {
     when (state) {
-        ConnectionState.Idle, ConnectionState.Testing -> Unit
-        is ConnectionState.Success -> Row(verticalAlignment = Alignment.CenterVertically) {
+        DesktopModelDiscoveryState.Idle, DesktopModelDiscoveryState.Testing -> Unit
+        is DesktopModelDiscoveryState.Success -> Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Lucide.CircleCheck, null, Modifier.size(17.dp), tint = Color(0xFF2E7D32))
             Text(
-                desktopText(language, "provider.connection_success").replace("%d", state.models.size.toString()),
+                desktopText(language, "provider.connection_success").replace("%d", state.listing.ids.size.toString()),
                 Modifier.padding(start = 7.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp
             )
         }
 
-        is ConnectionState.Failure -> Row(verticalAlignment = Alignment.CenterVertically) {
+        is DesktopModelDiscoveryState.Failure -> Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Lucide.CircleX, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.error)
             Text(
                 state.message,

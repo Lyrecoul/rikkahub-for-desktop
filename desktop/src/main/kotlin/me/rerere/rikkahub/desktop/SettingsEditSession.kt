@@ -5,8 +5,7 @@ import kotlinx.serialization.json.Json
 internal data class SettingsEditCommit(
     val data: DesktopData,
     val modifiedSections: Set<DesktopSettingsSection>,
-    val deletedProviderIds: Set<String>,
-    val deletedAssistantIds: Set<String>
+    val deletedProviderIds: Set<String>
 )
 
 internal data class SettingsEditSession(
@@ -56,9 +55,7 @@ internal data class SettingsEditSession(
         data = draft,
         modifiedSections = modifiedSections,
         deletedProviderIds = original.providers.mapTo(mutableSetOf(), DesktopProviderProfile::id) -
-            draft.providers.mapTo(mutableSetOf(), DesktopProviderProfile::id),
-        deletedAssistantIds = original.assistants.mapTo(mutableSetOf(), DesktopAssistantProfile::id) -
-            draft.assistants.mapTo(mutableSetOf(), DesktopAssistantProfile::id)
+            draft.providers.mapTo(mutableSetOf(), DesktopProviderProfile::id)
     )
 }
 

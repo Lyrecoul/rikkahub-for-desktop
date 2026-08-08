@@ -120,4 +120,28 @@ class SettingsEditSessionTest {
         assertFalse(session.hasChanges)
         assertEquals("Original", session.draft.preferences.userNickname)
     }
+
+    @Test
+    fun commitDataCarriesDeletionRemappingForConversationsAndFolders() {
+        val provider = DesktopProviderProfile(id = "provider", name = "Provider")
+        val assistant = DesktopAssistantProfile(id = "assistant", name = "Assistant")
+        val fallback = DesktopAssistantProfile(id = "fallback", name = "Fallback")
+        val original = DesktopData(
+            providers = listOf(provider),
+            selectedProviderId = provider.id,
+            assistants = listOf(assistant, fallback),
+            selectedAssistantId = assistant.id,
+            conversations = listOf(DesktopConversation(id = "conversation", assistantId = assistant.id)),
+            selectedConversationId = "conversation"
+        )
+        // SettingsPane 的删除路径：删除直接在 draft 上应用（含 conversations/folders 重映射）
+        val session = SettingsEditSession(original).update { it.deleteAssistantProfile(assistant.id) }
+
+        val commit = requireNotNull(session.commitOrNull())
+
+        // commit.data 已经是完整可应用的结果：旧调用方对主 data 再跑 fold 是冗余的
+        assertEquals(listOf(fallback.id), commit.data.assistants.map { it.id })
+        assertEquals(fallback.id, commit.data.conversations.single().assistantId)
+        assertEquals(fallback.id, commit.data.selectedAssistantId)
+    }
 }
