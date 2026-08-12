@@ -2,6 +2,7 @@ package me.rerere.rikkahub.desktop
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -22,8 +23,6 @@ internal enum class CodeTokenType {
 
 internal data class CodeToken(val text: String, val type: CodeTokenType)
 
-private val identifier = Regex("[A-Za-z_][A-Za-z0-9_]*")
-private val number = Regex("(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|\\d[\\d_]*(?:\\.[\\d_]+)?(?:[eE][+-]?\\d+)?)")
 private const val MAX_HIGHLIGHT_LENGTH = 50_000
 
 private val keywordsByLanguage = mapOf(
@@ -49,107 +48,148 @@ internal fun tokenizeCode(code: String, language: String): List<CodeToken> {
     if (code.length > MAX_HIGHLIGHT_LENGTH) return listOf(CodeToken(code, CodeTokenType.Plain))
 
     val normalizedLanguage = language.lowercase().trim().let { languageAliases[it] ?: it }
-    val keywords = keywordsByLanguage[normalizedLanguage]
-        ?.split(' ')
-        ?.map { it.lowercase() }
-        ?.toSet()
-        .orEmpty()
+    val keywords = keywordsByLanguage[normalizedLanguage]?.split(' ')?.toSet().orEmpty()
+    val isMarkup = normalizedLanguage == "markup"
+    val isYaml = normalizedLanguage == "yaml"
     val tokens = mutableListOf<CodeToken>()
     var index = 0
+    var plainStart = 0
+    var yamlLineStart = 0
 
-    fun add(text: String, type: CodeTokenType) {
-        if (text.isNotEmpty()) tokens += CodeToken(text, type)
+    fun add(start: Int, end: Int, type: CodeTokenType) {
+        if (start < end) tokens += CodeToken(code.substring(start, end), type)
+    }
+
+    fun addHighlighted(end: Int, type: CodeTokenType) {
+        add(plainStart, index, CodeTokenType.Plain)
+        add(index, end, type)
+        index = end
+        plainStart = end
     }
 
     while (index < code.length) {
-        val remaining = code.substring(index)
-        val isMarkup = normalizedLanguage == "markup"
-        val isYaml = normalizedLanguage == "yaml"
-        val lineComment = when {
-            remaining.startsWith("//") -> remaining.indexOf('\n').let { if (it < 0) remaining.length else it }
-            remaining.startsWith('#') && (normalizedLanguage == "python" || normalizedLanguage == "shell" || isYaml) -> remaining.indexOf(
-                '\n'
-            ).let { if (it < 0) remaining.length else it }
-
-            remaining.startsWith("--") && normalizedLanguage == "sql" -> remaining.indexOf('\n')
-                .let { if (it < 0) remaining.length else it }
-
-            remaining.startsWith("<!--") && isMarkup -> remaining.indexOf("-->")
-                .let { if (it < 0) remaining.length else it + 3 }
-
-            else -> 0
+        if (isYaml && index == yamlLineStart && code[index] != '\n') {
+            val lineEnd = code.indexOf('\n', index).let { if (it < 0) code.length else it }
+            val colon = code.indexOf(':', index)
+            if (colon in (index + 1)..lineEnd) {
+                addHighlighted(colon, CodeTokenType.Annotation)
+                continue
+            }
         }
-        if (lineComment > 0) {
-            add(remaining.take(lineComment), CodeTokenType.Comment)
-            index += lineComment
+        val commentEnd = when {
+            code.startsWith("//", index) -> code.indexOf('\n', index).let { if (it < 0) code.length else it }
+            code[index] == '#' && (normalizedLanguage == "python" || normalizedLanguage == "shell" || isYaml) ->
+                code.indexOf('\n', index).let { if (it < 0) code.length else it }
+            code.startsWith("--", index) && normalizedLanguage == "sql" ->
+                code.indexOf('\n', index).let { if (it < 0) code.length else it }
+            code.startsWith("<!--", index) && isMarkup -> code.indexOf("-->", index + 4).let { if (it < 0) code.length else it + 3 }
+            code.startsWith("/*", index) -> code.indexOf("*/", index + 2).let { if (it < 0) code.length else it + 2 }
+            else -> index
+        }
+        if (commentEnd > index) {
+            addHighlighted(commentEnd, CodeTokenType.Comment)
             continue
         }
-        if (remaining.startsWith("/*")) {
-            val end = remaining.indexOf("*/").let { if (it < 0) remaining.length else it + 2 }
-            add(remaining.take(end), CodeTokenType.Comment)
-            index += end
-            continue
-        }
-        if (remaining.first() in "\"'`") {
-            val quote = remaining.first()
-            var end = 1
-            while (end < remaining.length) {
-                if (remaining[end] == '\\') end++
-                else if (remaining[end] == quote) {
+
+        val character = code[index]
+        if (character in "\"'`") {
+            var end = index + 1
+            while (end < code.length) {
+                if (code[end] == '\\') end++
+                else if (code[end] == character) {
                     end++
                     break
                 }
                 end++
             }
-            add(remaining.take(end), CodeTokenType.String)
-            index += end
+            addHighlighted(end.coerceAtMost(code.length), CodeTokenType.String)
             continue
         }
-        if (remaining.first() == '@' && (normalizedLanguage == "kotlin" || normalizedLanguage == "java")) {
-            val match = identifier.find(remaining, 1)
-            if (match?.range?.first == 1) {
-                add(remaining.substring(0, match.range.last + 1), CodeTokenType.Annotation)
-                index += match.range.last + 1
-                continue
-            }
-        }
-        val numeric = number.find(remaining)
-        if (numeric?.range?.first == 0) {
-            add(numeric.value, CodeTokenType.Number)
-            index += numeric.value.length
+
+        if (character == '@' && (normalizedLanguage == "kotlin" || normalizedLanguage == "java") &&
+            index + 1 < code.length && code[index + 1].isIdentifierStart()
+        ) {
+            var end = index + 2
+            while (end < code.length && code[end].isIdentifierPart()) end++
+            addHighlighted(end, CodeTokenType.Annotation)
             continue
         }
-        val word = identifier.find(remaining)
-        if (word?.range?.first == 0) {
-            val value = word.value
+
+        val numberEnd = code.numberEndAt(index)
+        if (numberEnd > index) {
+            addHighlighted(numberEnd, CodeTokenType.Number)
+            continue
+        }
+
+        if (character.isIdentifierStart()) {
+            var end = index + 1
+            while (end < code.length && code[end].isIdentifierPart()) end++
             val type = when {
-                value.lowercase() in keywords -> CodeTokenType.Keyword
-                remaining.drop(value.length).trimStart().startsWith("(") -> CodeTokenType.Function
-                value.first().isUpperCase() -> CodeTokenType.Type
+                code.substring(index, end).lowercase() in keywords -> CodeTokenType.Keyword
+                code.indexOfFirstNonWhitespace(end).let { it < code.length && code[it] == '(' } -> CodeTokenType.Function
+                character.isUpperCase() -> CodeTokenType.Type
                 else -> CodeTokenType.Plain
             }
-            add(value, type)
-            index += value.length
+            if (type != CodeTokenType.Plain) addHighlighted(end, type) else index = end
             continue
         }
-        if (isMarkup && remaining.first() in "</>") {
-            val end = remaining.indexOfFirst { it.isWhitespace() || it == '>' }.let { if (it < 0) 1 else it }
-            add(remaining.take(end), CodeTokenType.Keyword)
-            index += end
+
+        if (isMarkup && character in "</>") {
+            var end = index + 1
+            while (end < code.length && !code[end].isWhitespace() && code[end] != '>') end++
+            addHighlighted(end, CodeTokenType.Keyword)
             continue
         }
-        if (isYaml && remaining.first() != '\n') {
-            val colon = remaining.indexOf(':')
-            if (colon in 1..remaining.indexOf('\n').let { if (it < 0) remaining.length else it }) {
-                add(remaining.take(colon), CodeTokenType.Annotation)
-                index += colon
-                continue
-            }
-        }
-        add(remaining.take(1), CodeTokenType.Plain)
+
+        if (character == '\n') yamlLineStart = index + 1
         index++
     }
+    add(plainStart, code.length, CodeTokenType.Plain)
     return tokens
+}
+
+private fun Char.isIdentifierStart(): Boolean = this in 'A'..'Z' || this in 'a'..'z' || this == '_'
+
+private fun Char.isIdentifierPart(): Boolean = isIdentifierStart() || this in '0'..'9'
+
+private fun String.indexOfFirstNonWhitespace(start: Int): Int {
+    var index = start
+    while (index < length && this[index].isWhitespace()) index++
+    return index
+}
+
+private fun String.numberEndAt(start: Int): Int {
+    if (start >= length || this[start] !in '0'..'9') return start
+    var index = start
+    if (this[start] == '0' && start + 2 <= length) {
+        val radix = this.getOrNull(start + 1)
+        val validDigit: (Char) -> Boolean = when (radix) {
+            'x', 'X' -> { character -> character in '0'..'9' || character in 'a'..'f' || character in 'A'..'F' || character == '_' }
+            'b', 'B' -> { character -> character == '0' || character == '1' || character == '_' }
+            else -> return decimalNumberEndAt(start)
+        }
+        index += 2
+        while (index < length && validDigit(this[index])) index++
+        return if (index == start + 2) start else index
+    }
+    return decimalNumberEndAt(start)
+}
+
+private fun String.decimalNumberEndAt(start: Int): Int {
+    var index = start
+    while (index < length && (this[index] in '0'..'9' || this[index] == '_')) index++
+    if (index < length && this[index] == '.') {
+        index++
+        while (index < length && (this[index] in '0'..'9' || this[index] == '_')) index++
+    }
+    if (index < length && this[index] in "eE") {
+        val exponentStart = index++
+        if (index < length && this[index] in "+-") index++
+        val digitsStart = index
+        while (index < length && this[index] in '0'..'9') index++
+        if (index == digitsStart) index = exponentStart
+    }
+    return index
 }
 
 @Composable
@@ -164,8 +204,9 @@ internal fun highlightedCode(code: String, language: String): AnnotatedString {
         typeColor = colorScheme.secondary,
         annotation = colorScheme.tertiary,
     )
+    val tokens = remember(code, language) { tokenizeCode(code, language) }
     return buildAnnotatedString {
-        tokenizeCode(code, language).forEach { token ->
+        tokens.forEach { token ->
             val style = colors.styleFor(token.type)
             if (style == null) append(token.text) else withStyle(style) { append(token.text) }
         }

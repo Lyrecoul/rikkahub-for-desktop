@@ -3,6 +3,8 @@ package me.rerere.rikkahub.desktop
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.measureTime
 
 class DesktopCodeHighlighterTest {
     @Test
@@ -23,5 +25,13 @@ class DesktopCodeHighlighterTest {
         assertEquals(code, tokens.joinToString(separator = "") { it.text })
         assertTrue(tokens.any { it.text == "const" && it.type == CodeTokenType.Keyword })
         assertTrue(tokens.any { it.text == "42" && it.type == CodeTokenType.Number })
+    }
+
+    @Test
+    fun tokenizesLongPlainCodeInLinearTime() {
+        val code = ".".repeat(49_000)
+        val elapsed = measureTime { tokenizeCode(code, "kotlin") }
+
+        assertTrue(elapsed < 1.seconds, "Highlighting took $elapsed")
     }
 }
